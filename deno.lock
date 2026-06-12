@@ -1,0 +1,17 @@
+{
+  "version": "5",
+  "specifiers": {
+    "npm:@earlytexts/markit@3.2.2": "3.2.2",
+    "npm:@earlytexts/markit@^3.2.2": "3.2.2"
+  },
+  "npm": {
+    "@earlytexts/markit@3.2.2": {
+      "integrity": "sha512-PfJXVnhPr7PleausmFdJafVTh7W6ZQWjByjYQv9whzwDQ63SQnkA1eACM7QxIBJJkITHFGn4sN0yBaakHiOK2w=="
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:@earlytexts/markit@^3.2.2"
+    ]
+  }
+}

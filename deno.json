@@ -1,0 +1,10 @@
+{
+  "tasks": {
+    "test": "deno test --allow-read tests/",
+    "fix": "deno run --allow-read --allow-write scripts/fix.ts",
+    "check": "deno check tests/ scripts/ && deno lint tests/ scripts/ && deno fmt --check tests/ scripts/"
+  },
+  "imports": {
+    "@earlytexts/markit": "npm:@earlytexts/markit@^3.2.2"
+  }
+}

@@ -1,0 +1,20 @@
+# Hume.ETSS.1756
+
+[metadata]
+imported = true
+title = "Essays and Treatises on Several Subjects"
+breadcrumb = "Essays and Treatises"
+published = [1753]
+children = [
+  "../empl1/1753",
+  "../ehu/1756",
+  "../epm/1753",
+  "../empl2/1754"
+]
+
+{#title}
+^1 ESSAYS
+^4 AND
+^1 TREATISES
+^4 ON
+^2 SEVERAL SUBJECTS.

@@ -1,0 +1,19 @@
+# Hume.HE.1
+
+[metadata]
+imported = true
+title = "Volume 1. The Early History of England, Part 1"
+breadcrumb = "Volume 1"
+published = [1762]
+children = ["1", "2", "3", "App1", "4", "5", "6", "7", "8", "9", "10", "11", "App2"]
+
+{#title}
+^4 THE
+^2 HISTORY
+^4 OF
+^1 *England*,
+^2 VOL. I.
+^4 *from the*
+^3 INVASION OF JULIUS *C{ae}sar*
+^4 *to the*
+^3 ACCESSION OF HENRY VII.
