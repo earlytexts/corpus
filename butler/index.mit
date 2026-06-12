@@ -1,0 +1,15 @@
+---
+id: Butler
+author:
+  forename: Joseph
+  surname: Butler
+  birth: 1692
+  death: 1752
+  published: 1716
+  nationality: English
+  sex: Male
+texts:
+  - Butler.LCB
+  - Butler.S
+  - Butler.AR
+---

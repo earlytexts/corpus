@@ -1,0 +1,17 @@
+---
+imported: true
+id: Astell.RM
+title: Reflections Upon Marriage
+breadcrumb: Reflections Upon Marriage
+published: [1700]
+copytext: [1706]
+sourceUrl:  https://quod.lib.umich.edu/e/eebo/A26097.0001.001?rgn=main;view=fulltext
+sourceDesc: Astell's [Reflections Upon Marriage] was first published in 1700. Our copytext is the third edition of 1706, to which 'A Preface, in Answer to some Objections' is added. The text of the reflections themselves derives from a transcription of the first edition at EEBO-TCP, which has been modified to bring it in line with the third edition. The preface was transcribed for this project.
+texts:
+  - Astell.RM.Pref
+  - Astell.RM.Body
+---
+{title}
+£2 REFLECTIONS £2
+£3 UPON £3
+£1 MARRIAGE. £1

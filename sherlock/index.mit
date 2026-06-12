@@ -1,0 +1,18 @@
+---
+id: Sherlock
+author:
+  forename: William
+  surname: Sherlock
+  birth: 1641
+  death: 1707
+  published: 1700
+  nationality: English
+  sex: Male
+texts:
+  - Sherlock.DKC
+  - Sherlock.DKC2
+  - Sherlock.DD
+  - Sherlock.DFJ
+  - Sherlock.DDP
+  - Sherlock.S
+---

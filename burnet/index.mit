@@ -1,0 +1,13 @@
+---
+id: Burnet
+author:
+  forename: Gilbert
+  surname: Burnet
+  birth: 1690
+  death: 1726
+  published: 1736
+  nationality: Scottish
+  sex: Male
+texts:
+  - Burnet.LFV
+---

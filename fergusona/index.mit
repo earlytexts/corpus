@@ -1,0 +1,13 @@
+---
+id: FergusonA
+author:
+  forename: Adam
+  surname: Ferguson
+  birth: 1723
+  death: 1816
+  published: 1769
+  nationality: Scottish
+  sex: Male
+texts:
+  - FergusonA.IMP
+---

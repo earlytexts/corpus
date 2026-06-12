@@ -1,0 +1,20 @@
+---
+id: Wakefield
+author:
+  forename: Gilbert
+  surname: Wakefield
+  birth: 1756
+  death: 1801
+  published: 1789
+  nationality: English
+  sex: Male
+texts:
+  - Wakefield.IEC
+  - Wakefield.CR
+  - Wakefield.EPW
+  - Wakefield.GR
+  - Wakefield.EC
+  - Wakefield.SC
+  - Wakefield.EAR
+  - Wakefield.RSP
+---

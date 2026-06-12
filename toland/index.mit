@@ -1,0 +1,15 @@
+---
+id: Toland
+author:
+  forename: John
+  surname: Toland
+  birth: 1670
+  death: 1722
+  published: 1696
+  nationality: Irish
+  sex: Male
+texts:
+  - Toland.CNM
+  - Toland.AT
+  - Toland.LS
+---

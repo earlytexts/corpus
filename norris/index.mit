@@ -1,0 +1,28 @@
+---
+id: Norris
+author:
+  forename: John
+  surname: Norris
+  birth: 1657
+  death: 1711
+  published: 1687
+  nationality: English
+  sex: Male
+texts:
+  - Norris.CM
+  - Norris.TRL
+  - Norris.LPM
+  - Norris.RR
+  - Norris.PD
+  - Norris.RHL
+  - Norris.CSC
+  - Norris.TDL
+  - Norris.SC
+  - Norris.LLG
+  - Norris.ARF
+  - Norris.ETW
+  - Norris.PTH
+  - Norris.DIS
+  - Norris.LD
+  - Norris.TCP
+---

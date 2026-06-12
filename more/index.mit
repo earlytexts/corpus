@@ -1,0 +1,15 @@
+---
+id: More
+author:
+  forename: Henry
+  surname: More
+  birth: 1614
+  death: 1687
+  published: 1653
+  nationality: English
+  sex: Male
+texts:
+  - More.AA
+  - More.IS
+  - More.LPM
+---

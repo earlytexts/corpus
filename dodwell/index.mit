@@ -1,0 +1,17 @@
+---
+id: Dodwell
+author:
+  forename: Henry
+  surname: Dodwell
+  birth: 1641
+  death: 1711
+  published: 1706
+  nationality: Irish
+  sex: Male
+texts:
+  - Dodwell.ED
+  - Dodwell.DEP
+  - Dodwell.NMS
+  - Dodwell.ERP
+  - Dodwell.CFA
+---

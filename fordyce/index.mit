@@ -1,0 +1,13 @@
+---
+id: Fordyce
+author:
+  forename: David
+  surname: Fordyce
+  birth: 1711
+  death: 1751
+  published: 1754
+  nationality: Scottish
+  sex: Male
+texts:
+  - Fordyce.EMP
+---

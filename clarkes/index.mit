@@ -1,0 +1,20 @@
+---
+id: ClarkeS
+author:
+  forename: Samuel
+  surname: Clarke
+  birth: 1675
+  death: 1729
+  published: 1705
+  nationality: English
+  sex: Male
+texts:
+  - ClarkeS.DBG
+  - ClarkeS.DNR
+  - ClarkeS.LD
+  - ClarkeS.SDT
+  - ClarkeS.LCJ
+  - ClarkeS.LCB
+  - ClarkeS.RPE
+  - ClarkeS.SS
+---

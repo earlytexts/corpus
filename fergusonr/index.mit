@@ -1,0 +1,14 @@
+---
+id: FergusonR
+author:
+  forename: Robert
+  surname: Ferguson
+  birth: 1637
+  death: 1714
+  published: 1673
+  nationality: Scottish
+  sex: Male
+texts:
+  - FergusonR.ENV
+  - FergusonR.IRR
+---

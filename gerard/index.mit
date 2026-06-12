@@ -1,0 +1,15 @@
+---
+id: Gerard
+author:
+  forename: Alexander
+  surname: Gerard
+  birth: 1728
+  death: 1795
+  published: 1759
+  nationality: Scottish
+  sex: Male
+texts:
+  - Gerard.ET
+  - Gerard.DC
+  - Gerard.EG
+---

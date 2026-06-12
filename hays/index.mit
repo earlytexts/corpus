@@ -1,0 +1,15 @@
+---
+id: Hays
+author:
+  forename: Mary
+  surname: Hays
+  birth: 1759
+  death: 1843
+  published: 1791
+  nationality: English
+  sex: Female
+texts:
+  - Hays.CRE
+  - Hays.LE
+  - Hays.ABW
+---

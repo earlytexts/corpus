@@ -1,0 +1,19 @@
+---
+id: Berkeley
+author:
+  forename: George
+  surname: Berkeley
+  birth: 1685
+  death: 1753
+  published: 1709
+  nationality: Irish
+  sex: Male
+texts:
+  - Berkeley.ETV
+  - Berkeley.THK
+  - Berkeley.PO
+  - Berkeley.DHP
+  - Berkeley.A
+  - Berkeley.TV
+  - Berkeley.Q
+---

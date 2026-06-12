@@ -1,0 +1,19 @@
+---
+id: Collins
+author:
+  forename: Anthony
+  surname: Collins
+  birth: 1676
+  death: 1729
+  published: 1707
+  nationality: English
+  sex: Male
+texts:
+  - Collins.LD
+  - Collins.EUR
+  - Collins.DFT
+  - Collins.FDF
+  - Collins.IHL
+  - Collins.DCR
+  - Collins.DLN
+---

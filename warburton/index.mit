@@ -1,0 +1,14 @@
+---
+id: Warburton
+author:
+  forename: William
+  surname: Warburton
+  birth: 1698
+  death: 1759
+  published: 1754
+  nationality: English
+  sex: Male
+texts:
+  - Warburton.VBP
+  - Warburton.RHE
+---

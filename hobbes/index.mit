@@ -1,0 +1,20 @@
+---
+id: Hobbes
+author:
+  forename: Thomas
+  surname: Hobbes
+  birth: 1588
+  death: 1679
+  published: 1650
+  nationality: English
+  sex: Male
+texts:
+  - Hobbes.HN
+  - Hobbes.CP
+  - Hobbes.Civ
+  - Hobbes.L
+  - Hobbes.LN
+  - Hobbes.Cor
+  - Hobbes.B
+  - Hobbes.AB
+---

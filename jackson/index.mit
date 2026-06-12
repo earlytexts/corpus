@@ -1,0 +1,20 @@
+---
+id: Jackson
+author:
+  forename: John
+  surname: Jackson
+  birth: 1686
+  death: 1763
+  published: 1714
+  nationality: English
+  sex: Male
+texts:
+  - Jackson.LCJ
+  - Jackson.CQ
+  - Jackson.RCC
+  - Jackson.EUG
+  - Jackson.DEG
+  - Jackson.DMS
+  - Jackson.LDJ
+  - Jackson.AD
+---

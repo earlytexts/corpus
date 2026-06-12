@@ -1,0 +1,21 @@
+---
+id: Locke
+author:
+  forename: John
+  surname: Locke
+  birth: 1632
+  death: 1704
+  published: 1689
+  nationality: English
+  sex: Male
+texts:
+  - Locke.LT1
+  - Locke.TG
+  - Locke.EHU
+  - Locke.LT2
+  - Locke.LT3
+  - Locke.TCE
+  - Locke.RC
+  - Locke.VRC
+  - Locke.VC2
+---

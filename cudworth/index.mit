@@ -1,0 +1,14 @@
+---
+id: Cudworth
+author:
+  forename: Ralph
+  surname: Cudworth
+  birth: 1617
+  death: 1688
+  published: 1678
+  nationality: English
+  sex: Male
+texts:
+  - Cudworth.TSU
+  - Cudworth.TEM
+---

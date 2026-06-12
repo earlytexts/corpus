@@ -1,0 +1,14 @@
+---
+id: Clayton
+author:
+  forename: Robert
+  surname: Clayton
+  birth: 1695
+  death: 1758
+  published: 1751
+  nationality: Irish
+  sex: Male
+texts:
+  - Clayton.ES
+  - Clayton.TSL
+---

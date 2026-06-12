@@ -1,0 +1,18 @@
+---
+id: Mandeville
+author:
+  forename: Bernard
+  surname: Mandeville
+  birth: 1670
+  death: 1733
+  published: 1705
+  nationality: English [Dutch]
+  sex: Male
+texts:
+  - Mandeville.THP
+  - Mandeville.FB
+  - Mandeville.FTR
+  - Mandeville.P2
+  - Mandeville.EOH
+  - Mandeville.LD
+---

@@ -1,0 +1,16 @@
+---
+id: Edwards
+author:
+  forename: John
+  surname: Edwards
+  birth: 1637
+  death: 1716
+  published: 1695
+  nationality: English
+  sex: Male
+texts:
+  - Edwards.TCA
+  - Edwards.DEG
+  - Edwards.VCF
+  - Edwards.RGE
+---

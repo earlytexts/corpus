@@ -1,0 +1,32 @@
+---
+imported: true
+id: Berkeley.THK
+title: A Treatise Concerning the Principles of Human Knowledge
+breadcrumb: Treatise Concerning Human Knowledge
+published: [1710]
+copytext: [1734]
+sourceUrl: >
+  https://www.maths.tcd.ie/~dwilkins/Berkeley/HumanKnowledge/
+sourceDesc: >
+  Berkeley's [Treatise Concerning the Principles of Human Knowledge] was first
+  published in 1710, and then again in 1734 together with the [Three Dialogues
+  Between Hylas and Philonous]. Our copytext is this later edition, which
+  corrects a few typographical errors, makes some small stylistic improvements,
+  and uses more modern spelling. The original dedication and preface from the
+  1710 edition, not reprinted in 1734, are also included. The text here derives
+  from David Wilkins's online edition.
+texts:
+  - Berkeley.THK.Ded
+  - Berkeley.THK.Pref
+  - Berkeley.THK.Intro
+  - Berkeley.THK.1
+---
+{title}
+£4 A £4
+£1 TREATISE £1
+£4 Concerning the £4
+£2 PRINCIPLES £2
+£4 OF £4
+£2 _Human Knowledge._ £2
+Wherein the chief Causes of Error and Difficulty in the _Sciences_, with the
+Grounds of _Scepticism_, _Atheism_, and _Irreligion_, are inquir'd into.

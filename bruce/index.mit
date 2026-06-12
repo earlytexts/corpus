@@ -1,0 +1,13 @@
+---
+id: Bruce
+author:
+  forename: John
+  surname: Bruce
+  birth: 1744
+  death: 1826
+  published: 1780
+  nationality: Scottish
+  sex: Male
+texts:
+  - Bruce.ESE
+---

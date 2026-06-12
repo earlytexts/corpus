@@ -1,0 +1,16 @@
+---
+id: Shaftesbury
+author:
+  forename: Anthony
+  surname: Ashley Cooper
+  title: Lord Shaftesbury
+  birth: 1671
+  death: 1713
+  published: 1699
+  nationality: English
+  sex: Male
+texts:
+  - Shaftesbury.C
+  - Shaftesbury.LMU
+  - Shaftesbury.LM
+---

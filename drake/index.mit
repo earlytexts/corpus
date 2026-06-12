@@ -1,0 +1,13 @@
+---
+id: Drake
+author:
+  forename: Judith
+  surname: Drake
+  birth: 1670
+  death: 1723
+  published: 1696
+  nationality: English
+  sex: Female
+texts:
+  - Drake.DFS
+---

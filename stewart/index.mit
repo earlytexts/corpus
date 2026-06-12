@@ -1,0 +1,16 @@
+---
+id: Stewart
+author:
+  forename: Dugald
+  surname: Stewart
+  birth: 1753
+  death: 1828
+  published: 1792
+  nationality: Scottish
+  sex: Male
+texts:
+  - Stewart.EPM
+  - Stewart.PE
+  - Stewart.PP
+  - Stewart.PAP
+---

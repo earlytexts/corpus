@@ -1,0 +1,15 @@
+---
+id: ClarkeJ
+author:
+  forename: John
+  surname: Clarke
+  birth: 1687
+  death: 1734
+  published: 1725
+  nationality: English
+  sex: Male
+texts:
+  - ClarkeJ.EGE
+  - ClarkeJ.FM
+  - ClarkeJ.EMO
+---

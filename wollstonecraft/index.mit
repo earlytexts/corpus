@@ -1,0 +1,16 @@
+---
+id: Wollstonecraft
+author:
+  forename: Mary
+  surname: Wollstonecraft
+  birth: 1759
+  death: 1797
+  published: 1787
+  nationality: English
+  sex: Female
+texts:
+  - Wollstonecraft.VRM
+  - Wollstonecraft.TED
+  - Wollstonecraft.VRW
+  - Wollstonecraft.VFR
+---

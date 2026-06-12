@@ -1,0 +1,15 @@
+---
+id: Mill
+author:
+  forename: James
+  surname: Mill
+  birth: 1773
+  death: 1836
+  published: 1821
+  nationality: Scottish
+  sex: Male
+texts:
+  - Mill.EPE
+  - Mill.EG
+  - Mill.AHM
+---

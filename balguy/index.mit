@@ -1,0 +1,21 @@
+---
+id: Balguy
+author:
+  forename: John
+  surname: Balguy
+  birth: 1686
+  death: 1748
+  published: 1726
+  nationality: English
+  sex: Male
+texts:
+  - Balguy.LD
+  - Balguy.DBL
+  - Balguy.FMG
+  - Balguy.FP2
+  - Balguy.DR
+  - Balguy.LD2
+  - Balguy.LT
+  - Balguy.FS
+  - Balguy.ER
+---

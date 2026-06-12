@@ -1,0 +1,19 @@
+---
+id: Glanvill
+author:
+  forename: Joseph
+  surname: Glanvill
+  birth: 1636
+  death: 1680
+  published: 1661
+  nationality: English
+  sex: Male
+texts:
+  - Glanvill.VD
+  - Glanvill.LO
+  - Glanvill.SS
+  - Glanvill.LT
+  - Glanvill.WH
+  - Glanvill.PP
+  - Glanvill.ESS
+---

@@ -1,0 +1,14 @@
+---
+id: Talbot
+author:
+  forename: Catherine
+  surname: Talbot
+  birth: 1721
+  death: 1770
+  published: 1770
+  nationality: English
+  sex: Female
+texts:
+  - Talbot.RDW
+  - Talbot.EVS
+---

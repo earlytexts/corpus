@@ -1,0 +1,21 @@
+---
+id: Priestley
+author:
+  forename: Joseph
+  surname: Priestley
+  birth: 1733
+  death: 1804
+  published: 1768
+  nationality: English
+  sex: Male
+texts:
+  - Priestley.EPG
+  - Priestley.INR
+  - Priestley.RBO
+  - Priestley.DMS
+  - Priestley.DPN
+  - Priestley.LPU
+  - Priestley.LB
+  - Priestley.AL
+  - Priestley.LP2
+---

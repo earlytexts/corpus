@@ -1,0 +1,20 @@
+---
+id: Macaulay
+author:
+  forename: Catharine
+  surname: Macaulay
+  birth: 1731
+  death: 1791
+  published: 1763
+  nationality: English
+  sex: Female
+texts:
+  - Macaulay.HE
+  - Macaulay.LRH
+  - Macaulay.OP
+  - Macaulay.PPC
+  - Macaulay.APC
+  - Macaulay.TMT
+  - Macaulay.LE
+  - Macaulay.ORB
+---

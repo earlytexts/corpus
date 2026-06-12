@@ -1,0 +1,22 @@
+---
+id: Astell
+author:
+  forename: Mary
+  surname: Astell
+  birth: 1666
+  death: 1731
+  published: 1694
+  nationality: English
+  sex: Female
+texts:
+  - Astell.SPL
+  - Astell.LLG
+  - Astell.SFE
+  - Astell.SP2
+  - Astell.RM
+  - Astell.ECR
+  - Astell.MTS
+  - Astell.FWD
+  - Astell.CR
+  - Astell.BF
+---

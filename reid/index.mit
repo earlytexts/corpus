@@ -1,0 +1,15 @@
+---
+id: Reid
+author:
+  forename: Thomas
+  surname: Reid
+  birth: 1710
+  death: 1796
+  published: 1764
+  nationality: Scottish
+  sex: Male
+texts:
+  - Reid.IHM
+  - Reid.EPM
+  - Reid.IPM
+---

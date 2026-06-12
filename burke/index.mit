@@ -1,0 +1,23 @@
+---
+id: Burke
+author:
+  forename: Edmund
+  surname: Burke
+  birth: 1729
+  death: 1797
+  published: 1756
+  nationality: Irish
+  sex: Male
+texts:
+  - Burke.VNS
+  - Burke.ESB
+  - Burke.TPD
+  - Burke.SA
+  - Burke.SEB
+  - Burke.LTI
+  - Burke.SRP
+  - Burke.RRF
+  - Burke.FRR
+  - Burke.LRP
+  - Burke.TDS
+---

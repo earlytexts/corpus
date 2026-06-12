@@ -1,0 +1,18 @@
+---
+id: Dudgeon
+author:
+  forename: William
+  surname: Dudgeon
+  birth: 1705
+  death: 1743
+  published: 1731
+  nationality: Scottish
+  sex: Male
+texts:
+  - Dudgeon.DDD
+  - Dudgeon.SMW
+  - Dudgeon.RLP
+  - Dudgeon.LDJ
+  - Dudgeon.CRE
+  - Dudgeon.NBS
+---

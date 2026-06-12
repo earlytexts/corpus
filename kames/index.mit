@@ -1,0 +1,17 @@
+---
+id: Kames
+author:
+  forename: Henry
+  surname: Home
+  title: Lord Kames
+  birth: 1696
+  death: 1782
+  published: 1751
+  nationality: Scottish
+  sex: Male
+texts:
+  - Kames.EMR
+  - Kames.IAT
+  - Kames.EC
+  - Kames.SHM
+---

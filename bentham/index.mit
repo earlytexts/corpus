@@ -1,0 +1,14 @@
+---
+id: Bentham
+author:
+  forename: Jeremy
+  surname: Bentham
+  birth: 1748
+  death: 1832
+  published: 1776
+  nationality: English
+  sex: Male
+texts:
+  - Bentham.FG
+  - Bentham.IPM
+---

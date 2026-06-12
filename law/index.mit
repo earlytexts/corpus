@@ -1,0 +1,14 @@
+---
+id: Law
+author:
+  forename: Edmund
+  surname: Law
+  birth: 1703
+  death: 1787
+  published: 1734
+  nationality: English
+  sex: Male
+texts:
+  - Law.EST
+  - Law.CTR
+---
