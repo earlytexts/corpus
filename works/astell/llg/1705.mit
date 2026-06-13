@@ -1,0 +1,21 @@
+# Astell.LLG.1705
+
+[metadata]
+imported = true
+title = "Letters Concerning the Love of God, Between the Author of the Proposal to the Ladies and Mr. John Norris"
+breadcrumb = "Letters Concerning the Love of God"
+published = [1695]
+sourceUrl = "https://quod.lib.umich.edu/e/eebo/A52424.0001.001?rgn=main;view=fulltext"
+sourceDesc = "The letters between Astell and Norris were first published in 1695. Our copytext is the second edition of 1705, which is, according to its title page, 'Corrected by the Authors, with some few Things added'. The text is derived from a transcription of the first edition from EEBO-TCP. Several changes have been made to this source, correcting some errors and bringing the text in line with the 1705 edition."
+children = ["../../norris/llg/pref", "1", "../../norris/llg/2", "3", "../../norris/llg/4", "5", "../../norris/llg/6", "7", "../../norris/llg/8", "9", "../../norris/llg/10", "11", "app1", "../../norris/llg/app2"]
+
+{#title}
+^1 LETTERS
+^3 Concerning the
+^1 Love of GOD,
+^4 Between the Author of the
+^3 Proposal to the *Ladies*
+^4 *and*
+^3 Mr. _JOHN NORRIS:_
+
+Wherein his late Discourse, shewing, That it ought to be intire and exclusive of all other Loves, is further Cleared and Justified.

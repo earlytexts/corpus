@@ -1,0 +1,37 @@
+# Mandeville.EOH.1732
+
+[metadata]
+imported = false
+title = "An Enquiry into the Origin of Honour, and the Usefulness of Christianity in War"
+breadcrumb = "Enquiry into the Origin of Honour"
+published = [1732]
+
+## Pref
+
+[metadata]
+title = "The Preface"
+breadcrumb = "Preface"
+
+## 1
+
+[metadata]
+title = "The First Dialogue, between Horatio and Cleomenes"
+breadcrumb = "First Dialogue"
+
+## 2
+
+[metadata]
+title = "The Second Dialogue, between Horatio and Cleomenes"
+breadcrumb = "Second Dialogue"
+
+## 3
+
+[metadata]
+title = "The Third Dialogue, between Horatio and Cleomenes"
+breadcrumb = "Third Dialogue"
+
+## 4
+
+[metadata]
+title = "The Fourth Dialogue, between Horatio and Cleomenes"
+breadcrumb = "Fourth Dialogue"

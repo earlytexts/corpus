@@ -7,8 +7,8 @@ A corpus of early modern texts from the hand press era, stored in [Markit](https
 The corpus is organised around three entities:
 
 - **Author** — a person who wrote one or more works in the corpus.
-- **Work** — a distinct piece of writing by an author, abstracted from any particular printing (e.g. Hume's *Enquiry concerning Human Understanding*).
-- **Edition** — a concrete text of a work. Every work has a **reading text**: the curated, corrected text we present by default, constructed from a chosen copytext. A work may additionally have any number of **dated editions**: transcriptions of the work as it appeared in a particular year (`1748`, `1742a`, …), enabling edition-to-edition comparison.
+- **Work** — a distinct piece of writing by an author, abstracted from any particular printing (e.g. Hume's *Enquiry concerning Human Understanding*). A work is a directory; its `index.mit` is a metadata-only **stub** that holds the work's edition-independent identity (title, breadcrumb) and names its **canonical edition**.
+- **Edition** — a concrete dated text of a work: a transcription of the work as it appeared in a particular year (`1748`, `1742a`, …), enabling edition-to-edition comparison. Every work has at least one edition; the **canonical** one is the default a work resolves to (clicking the work, or searching without naming an edition). A work with only one edition still has that edition stored under a year slug.
 
 Two further notions are represented without dedicated entities:
 
@@ -19,24 +19,25 @@ Two further notions are represented without dedicated entities:
 
 ```
 authors/<author>.mit                      author metadata (no text)
-works/<author>/<work>.mit                 work whose only text is its reading text
-works/<author>/<work>/index.mit           reading text of a multi-edition or multi-file work
-works/<author>/<work>/<year>.mit          dated edition (year = 1748, 1742a, …)
-works/<author>/<work>/<year>/index.mit    dated edition split across files
+works/<author>/<work>/index.mit           the work stub (metadata + canonical pointer)
+works/<author>/<work>/<year>.mit          a dated edition (year = 1748, 1742a, …)
+works/<author>/<work>/<year>/index.mit    a dated edition split across files
+works/<author>/<work>/main.mit            retained old reading text (unexposed)
 works/<author>/<work>/.../<part>.mit      part files referenced via children
 ```
 
 - `<author>` and `<work>` directory/file names are lowercase slugs.
-- A work directory always contains an `index.mit` (its reading text). Sibling entries whose names look like years (`/^\d{4}[a-z]?$/`) are its dated editions; anything else is a part file or directory referenced via `children`.
-- A single `.mit` file directly under the author directory is a work with no dated editions and no separate part files: the file is the reading text.
+- **Every work is a directory.** Its `index.mit` is a metadata-only stub carrying `title`, `breadcrumb`, optional `published`, and `canonical` (the slug of the default edition). It holds no text and no `children`.
+- Sibling entries whose names look like years (`/^\d{4}[a-z]?$/`) are the work's dated editions; anything else is a part file or directory referenced via `children`.
+- `main.mit` is a reserved name for an old hand-curated reading text kept for editorial review. It is **not** an edition: tooling ignores it, pending manual reconciliation against the canonical edition and eventual deletion.
 
 ## Identifiers
 
-Markit document IDs follow the dotted form `Author.Work` (reading texts) or `Author.Work.Edition` (dated editions), e.g. `Hume.EHU` and `Hume.EHU.1748`. The ID must match the file path case-insensitively: `works/hume/ehu/1748.mit` holds `# Hume.EHU.1748`. Section IDs extend the document ID with one segment per level of nesting (`Hume.THN.1.2.3`); part files carry their full ID in their root heading (`# Astell.LLG.5`).
+Markit document IDs follow the dotted form `Author.Work` (the stub) or `Author.Work.Edition` (a dated edition), e.g. `Hume.EHU` and `Hume.EHU.1748`. The ID must match the file path case-insensitively: `works/hume/ehu/1748.mit` holds `# Hume.EHU.1748`, and the stub `works/hume/ehu/index.mit` holds `# Hume.EHU`. Section IDs extend the document ID with one segment per level of nesting (`Hume.THN.1.2.3`); part files carry their full ID in their root heading (`# Astell.LLG.5`).
 
 A part's author segment need not match the directory's author: a work may contain sections by another hand (e.g. `Norris.LLG.2` inside `works/astell/llg/`).
 
-For works with a clear primary author (collections, edited volumes) the work lives only under that author's directory. For **genuinely co-authored works** — epistolary exchanges where each author contributes equally — the work is stored under *both* authors and appears twice in the catalog. Each author's `index.mit` assembles the full sequence using `children`, with their own letters referenced by bare slug and the co-author's letters by a relative
+For works with a clear primary author (collections, edited volumes) the work lives only under that author's directory. For **genuinely co-authored works** — epistolary exchanges where each author contributes equally — the work is stored under *both* authors and appears twice in the catalog. Each author's canonical edition assembles the full sequence using `children`, with their own letters referenced by bare slug and the co-author's letters by a relative
 cross-directory path. The letters themselves are stored once, under their respective authors, and shared by reference. (LLG and LD are the current examples of this pattern.)
 
 ## The `children` metadata
@@ -69,7 +70,7 @@ Keys are camelCase. Values use Markit's TOML-style `key = value` syntax only (co
 
 One schema applies to every text, all the way down: document roots and sections take the same keys. The keys split into two groups:
 
-- **Identity keys** (`title`, `breadcrumb`, `children`) describe the text itself and are never inherited.
+- **Identity keys** (`title`, `breadcrumb`, `children`, `canonical`) describe the text itself and are never inherited.
 - **Cascading keys** (`imported`, `published`, `copytext`, `sourceUrl`, `sourceDesc`) describe provenance, which flows downward: a section without the key takes the nearest ancestor's value; setting it overrides the value for that text and its descendants. Don't set a cascading key on a section when the inherited value is already right.
 
 Inheritance operates within a file. Each file is valid on its own terms: required keys must be present on the document root, and present _or inherited_ on every section.
@@ -78,19 +79,20 @@ Inheritance operates within a file. Each file is valid on its own terms: require
 | ------------ | -------- | -------- | --------- | ------------------------------------------------------------ |
 | `title`      | string   | yes      | no        | full title; may contain Markit inline markup                 |
 | `breadcrumb` | string   | yes      | no        | short title for navigation                                   |
-| `imported`   | boolean  | yes      | yes       | whether the text itself is present, beyond its metadata      |
-| `published`  | number[] | yes      | yes       | years this text's content was first published                |
-| `copytext`   | string[] | no       | yes       | reading texts only: edition(s) this text is constructed from |
+| `canonical`  | string   | stub     | no        | **stub only**: slug of the work's default edition            |
+| `imported`   | boolean  | yes\*    | yes       | whether the text itself is present, beyond its metadata      |
+| `published`  | number[] | yes\*    | yes       | years this text's content was first published                |
+| `copytext`   | string[] | no       | yes       | the edition(s) a curated text is constructed from            |
 | `children`   | string[] | no       | no        | section references (see above)                               |
 | `sourceUrl`  | string   | no       | yes       | online transcription/facsimile the text was derived from     |
 | `sourceDesc` | string   | no       | yes       | prose note on the text's provenance and editorial choices    |
 
 Notes:
 
+- The **work stub** (`index.mit`) is the exception to the schema: it carries `title`, `breadcrumb`, `canonical`, and optionally `published`, and nothing else (no text, no `children`). `canonical` must name an edition that exists. The `yes\*` rows above (`imported`, `published`) are required on editions and part files, not on stubs.
 - A text is "imported" when its content is present in the corpus (directly or via its descendants) — i.e. when a site can usefully link to it rather than merely list it. A partially-transcribed work sets `imported = true` at the root and `imported = false` on the missing sections (or vice versa).
 - `published` on a section records that the section entered the work in a particular year — e.g. an essay added to a later edition of the *Essays*.
-- `copytext` belongs on reading texts (and their sections, where sections derive from different copytexts). Dated editions are their own copytext, so the key is meaningless there.
-- Edition ordering (previous/next) is **derived** from the dated edition file names, not stored. If an edge case ever needs manual ordering, the optional keys `previousEdition` / `nextEdition` (full document IDs) are reserved as overrides.
+- `copytext` belongs on curated reading texts (the retained `main.mit`, and sections that derive from different copytexts). A dated edition is its own copytext, so the key is meaningless — and disallowed — there.
 
 ### Block metadata
 
