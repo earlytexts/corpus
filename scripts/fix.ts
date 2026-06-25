@@ -4,7 +4,7 @@
  */
 
 import { format } from "@earlytexts/markit";
-import { corpusRoot } from "../tests/lib.ts";
+import { corpusRoot } from "./lib.ts";
 
 let changed = 0;
 let total = 0;
@@ -25,6 +25,6 @@ const walk = async (dir: string): Promise<void> => {
   }
 };
 
-await walk(`${corpusRoot}/authors`);
-await walk(`${corpusRoot}/works`);
+await walk(`${corpusRoot}/data/authors`);
+await walk(`${corpusRoot}/data/works`);
 console.log(`formatted ${changed} of ${total} files`);
