@@ -90,7 +90,7 @@ Notes:
 - The **work stub** (`index.mit`) is the exception to the schema: it carries `title`, `breadcrumb`, `authors`, `canonical`, and optionally `published`, and nothing else (no text). `authors` is required (the work's authorship is identity), and `canonical` must name an edition that exists. The `yes\*` rows above (`imported`, `published`) are required on editions, not on stubs.
 - A text is "imported" when its content is present in the corpus (directly or via its descendants) — i.e. when a site can usefully link to it rather than merely list it. A partially-transcribed work sets `imported = true` at the root and `imported = false` on the missing sections (or vice versa).
 - `published` on a section records that the section entered the work in a particular year — e.g. an essay added to a later edition of the *Essays*.
-- `copytext` belongs on curated reading texts (the retained `main.mit`, and sections that derive from different copytexts). A dated edition is its own copytext, so the key is meaningless — and disallowed — there.
+- `copytext` belongs on curated reading texts (and sections that derive from different copytexts). A dated edition is its own copytext, so the key is meaningless — and disallowed — there.
 - `standalone` governs index listing only. A work borrowed into a collection (its editions spliced in as borrowed children, e.g. the parts of *Essays and Treatises*) is also a directory of its own, so it lists independently by default. Set `standalone = false` on its stub to keep it out of the indexes while leaving it reachable through the collection(s) that borrow it. It does not affect search, retrieval, or the collection itself.
 
 ### Block metadata
@@ -114,4 +114,4 @@ deno task fix     # apply the Markit formatter to every file in place
 deno task check   # typecheck + lint + fmt for the test code itself
 ```
 
-The suite is honest rather than green: files with known editorial problems (chiefly Hume's essays and the History) fail the compile check until they are actually fixed. Suites other than the first skip files that don't compile, so fixing a compile error may surface new schema or layout findings in that file.
+The suite is honest rather than green: a file with editorial problems fails the compile check until it is actually fixed, rather than being papered over. Suites other than the first skip files that don't compile, so fixing a compile error may surface new schema or layout findings in that file.

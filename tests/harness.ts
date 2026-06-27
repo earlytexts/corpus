@@ -7,22 +7,10 @@
  */
 
 import type { CorpusFs } from "../src/types.ts";
+import { normalizePath } from "../src/paths.ts";
 
 /** The root every corpus path hangs off (an arbitrary absolute prefix). */
 export const CORPUS_ROOT = "/corpus";
-
-/**
- * Collapse a path's empty and "." segments. Every path reaching this in-memory
- * FS descends from the absolute corpus root, so the result is always absolute.
- */
-const normalizePath = (path: string): string => {
-  const out: string[] = [];
-  for (const part of path.split("/")) {
-    if (part === "" || part === ".") continue;
-    out.push(part);
-  }
-  return "/" + out.join("/");
-};
 
 /** A `CorpusFs` over a (possibly mutable) map of normalised path → file text. */
 export const memoryCorpus = (files: Record<string, string>): CorpusFs => ({

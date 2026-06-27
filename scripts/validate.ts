@@ -6,7 +6,6 @@
 import { format } from "@earlytexts/markit";
 import {
   allTexts,
-  borrowedChild,
   type CorpusFile,
   corpusRoot,
   expectedId,
@@ -14,7 +13,6 @@ import {
   isDated,
   loadCorpus,
   report,
-  YEAR,
 } from "./lib.ts";
 import {
   authorRequired,
@@ -24,6 +22,13 @@ import {
   checkKeys,
   textSchema,
 } from "../src/schema.ts";
+import {
+  borrowedRef,
+  resolveEdition,
+  resolveVariant,
+  YEAR,
+} from "../src/paths.ts";
+import { denoCorpusFs } from "../src/fs.ts";
 
 const files = await loadCorpus();
 const authorFiles = files.filter((f) => f.path.startsWith("authors/"));
@@ -96,7 +101,7 @@ Deno.test("texts match the text schema", () => {
       const parent = ancestors[ancestors.length - 1];
       // A borrowed-child placeholder (`## <Hume.EHU.1750>`) carries no metadata
       // of its own; the edition it names is validated as its own file.
-      if (borrowedChild(headingSegment(text.id, parent?.id)) !== undefined) {
+      if (borrowedRef(headingSegment(text.id, parent?.id)) !== undefined) {
         continue;
       }
       const where = `${path} (${text.id})`;
@@ -154,9 +159,11 @@ Deno.test("work stubs name a canonical edition that exists", async () => {
     const canonical = metadata.canonical;
     if (typeof canonical !== "string") continue; // schema test reports the type
     const dir = path.slice(0, path.lastIndexOf("/"));
-    const resolves = await fileExists(`${dir}/${canonical}.mit`) ||
-      await fileExists(`${dir}/${canonical}/index.mit`);
-    if (!resolves) {
+    const resolves = await resolveVariant(
+      denoCorpusFs,
+      `${corpusRoot}/data/${dir}/${canonical}`,
+    );
+    if (resolves === undefined) {
       violations.push(
         `${path}: canonical "${canonical}" has no edition in ${dir}`,
       );
@@ -240,7 +247,7 @@ Deno.test("section headings are bare segments", () => {
       const segment = headingSegment(text.id, parent.id);
       // A borrowed-child placeholder's segment is a bracketed dotted edition ID
       // (`<Hume.EHU.1750>`) — the dots are expected; resolution is checked below.
-      if (borrowedChild(segment) !== undefined) continue;
+      if (borrowedRef(segment) !== undefined) continue;
       if (segment.includes(".")) {
         violations.push(
           `${path}: heading "${segment}" should be a bare segment (no dots)`,
@@ -251,52 +258,17 @@ Deno.test("section headings are bare segments", () => {
   fail(violations);
 });
 
-/** Case-insensitive file existence, resolving "." and "..". Paths are corpus
- * paths like "works/astell/llg/1.mit", relative to the data directory. */
-const fileExists = async (path: string): Promise<boolean> => {
-  const parts: string[] = [];
-  for (const part of path.split("/")) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") parts.pop();
-    else parts.push(part);
-  }
-  let current = `${corpusRoot}/data`;
-  for (const part of parts) {
-    let matched: string | undefined;
-    try {
-      for await (const entry of Deno.readDir(current)) {
-        if (entry.name.toLowerCase() === part.toLowerCase()) {
-          matched = entry.name;
-          break;
-        }
-      }
-    } catch {
-      return false;
-    }
-    if (matched === undefined) return false;
-    current = `${current}/${matched}`;
-  }
-  try {
-    return (await Deno.stat(current)).isFile;
-  } catch {
-    return false;
-  }
-};
+const worksDir = `${corpusRoot}/data/works`;
 
 Deno.test("borrowed-child references resolve to an edition", async () => {
   const violations: string[] = [];
   for (const { path, doc } of compiled(workFiles)) {
     for (const { text, ancestors } of allTexts(doc)) {
       const parent = ancestors[ancestors.length - 1];
-      const ref = borrowedChild(headingSegment(text.id, parent?.id));
+      const ref = borrowedRef(headingSegment(text.id, parent?.id));
       if (ref === undefined) continue;
       // <Author.Work.Edition> → data/works/<author>/<work>/<edition>{.mit,/index.mit}.
-      const [author, work, ...rest] = ref.split(".");
-      const base = `works/${author}/${work}/${rest.join(".")}`;
-      const resolves = rest.length > 0 &&
-        (await fileExists(`${base}.mit`) ||
-          await fileExists(`${base}/index.mit`));
-      if (!resolves) {
+      if (await resolveEdition(denoCorpusFs, worksDir, ref) === undefined) {
         violations.push(
           `${path} (${text.id}): unresolvable borrowed child "${ref}"`,
         );

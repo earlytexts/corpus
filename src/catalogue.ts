@@ -10,8 +10,7 @@
  *    stub: the work's edition-independent identity (title, breadcrumb,
  *    published) plus a `canonical` key naming the default edition. The texts
  *    are year-named editions — sibling entries whose names look like years
- *    (`1757.mit`, `1742a.mit`, or directories `1758/index.mit`). A `main.mit`
- *    sibling (the retained old reading text) is kept but never exposed.
+ *    (`1757.mit`, `1742a.mit`, or directories `1758/index.mit`).
  *  - A document's children are its inline `##` sections, in file order. A
  *    section whose id is wrapped in angle brackets — e.g. `## <Hume.EHU.1750>`
  *    — is a borrowed child: a placeholder naming another edition by id, which
@@ -25,8 +24,14 @@
 
 import { compile, type MarkitDocument } from "@earlytexts/markit";
 import type { Author, Catalog, CorpusFs, Edition, Work } from "./types.ts";
-
-const EDITION_RE = /^\d{4}[a-z]?$/;
+import {
+  borrowedRef,
+  normalizePath,
+  resolveEdition,
+  resolveFile,
+  resolveVariant,
+  YEAR,
+} from "./paths.ts";
 
 const metaString = (doc: MarkitDocument, key: string): string | undefined => {
   const value = doc.metadata?.[key];
@@ -61,62 +66,6 @@ const metaAuthors = (doc: MarkitDocument): string[] | undefined => {
     return value.map((s) => String(s).toLowerCase());
   }
   if (typeof value === "string") return [value.toLowerCase()];
-  return undefined;
-};
-
-/**
- * Normalise an absolute path textually, collapsing empty and "." segments.
- * Every path here is built from the corpus dir (which buildCatalog absolutises
- * via realPath) and id segments, so it never contains a ".." and is always
- * absolute.
- */
-const normalizePath = (path: string): string => {
-  const out: string[] = [];
-  for (const part of path.split("/")) {
-    if (part === "" || part === ".") continue;
-    out.push(part);
-  }
-  return "/" + out.join("/");
-};
-
-/**
- * Resolve a path case-insensitively against the real file system, so that
- * references like "../NHR/1757" work on case-sensitive systems too.
- * Returns the actual path if found, otherwise undefined.
- */
-const findFile = async (
-  fs: CorpusFs,
-  path: string,
-): Promise<string | undefined> => {
-  try {
-    // realPath canonicalises letter case, so that "../NHR/1757" and
-    // "../nhr/1757" cache and attribute identically.
-    if ((await fs.stat(path))?.isFile) return await fs.realPath(path);
-  } catch {
-    // fall through to the case-insensitive walk
-  }
-  const parts = normalizePath(path).split("/").filter((p) => p !== "");
-  let current = ""; // paths here are always absolute (see normalizePath)
-  for (const part of parts) {
-    let matched: string | undefined;
-    try {
-      for (const entry of await fs.readDir(current === "" ? "/" : current)) {
-        if (entry.name.toLowerCase() === part.toLowerCase()) {
-          matched = entry.name;
-          break;
-        }
-      }
-    } catch {
-      return undefined;
-    }
-    if (matched === undefined) return undefined;
-    current = `${current}/${matched}`;
-  }
-  try {
-    if ((await fs.stat(current))?.isFile) return await fs.realPath(current);
-  } catch {
-    return undefined;
-  }
   return undefined;
 };
 
@@ -159,29 +108,6 @@ const loadDocument = async (
   return doc;
 };
 
-/** A borrowed-child placeholder's id ends with the bracketed edition id. */
-const BORROWED_RE = /<([^<>]+)>$/;
-
-/**
- * The corpus file for an edition named by a borrowed-child id `Author.Work.
- * Edition`: `data/works/<author>/<work>/<edition>.mit`, or its directory form
- * `<edition>/index.mit`. Returns undefined when the id has too few segments to
- * name an edition, or no such file exists. Resolution is case-insensitive (the
- * ids are title-cased, the directories lower-cased), so the id's own case
- * needn't match disk.
- */
-const editionFile = async (
-  id: string,
-  ctx: LoadContext,
-): Promise<string | undefined> => {
-  const parts = id.split(".");
-  if (parts.length < 3) return undefined;
-  const [author, work, ...rest] = parts;
-  const base = `${ctx.worksDir}/${author}/${work}/${rest.join(".")}`;
-  return (await findFile(ctx.fs, `${base}.mit`)) ??
-    (await findFile(ctx.fs, `${base}/index.mit`));
-};
-
 /**
  * Splice borrowed children into doc.children. A section whose id is wrapped in
  * angle brackets — `## <Hume.EHU.1750>` compiles to an id ending in
@@ -197,12 +123,12 @@ const resolveChildren = async (
 ): Promise<void> => {
   const resolved: MarkitDocument[] = [];
   for (const child of doc.children) {
-    const ref = BORROWED_RE.exec(child.id)?.[1];
+    const ref = borrowedRef(child.id);
     if (ref === undefined) {
       resolved.push(child); // an ordinary inline section
       continue;
     }
-    const file = await editionFile(ref, ctx);
+    const file = await resolveEdition(ctx.fs, ctx.worksDir, ref);
     const borrowed = file === undefined ? null : await loadDocument(file, ctx);
     if (borrowed !== null) {
       resolved.push(borrowed);
@@ -243,8 +169,7 @@ const makeEdition = (
  * Load one work. Every work is a directory `<author>/<work>/` whose
  * `index.mit` is a metadata-only stub (work identity + a `canonical` pointer);
  * the texts live in year-named editions (`1757.mit` or `1758/index.mit`). The
- * stub and the retained, unexposed reading text (`main.mit`) are never
- * editions — only year slugs are.
+ * stub is never an edition — only year slugs are.
  */
 const loadWork = async (
   authorSlug: string,
@@ -254,7 +179,7 @@ const loadWork = async (
 ): Promise<Work | undefined> => {
   if (!entry.isDirectory) return undefined;
   const dir = `${authorDir}/${entry.name}`;
-  const indexPath = await findFile(ctx.fs, `${dir}/index.mit`);
+  const indexPath = await resolveFile(ctx.fs, `${dir}/index.mit`);
   if (indexPath === undefined) return undefined; // not a work
   const slug = entry.name.toLowerCase();
   const stub = await loadDocument(indexPath, ctx);
@@ -276,15 +201,14 @@ const loadWork = async (
       : sub.isDirectory
       ? sub.name
       : undefined;
-    if (name !== undefined && EDITION_RE.test(name)) {
+    if (name !== undefined && YEAR.test(name)) {
       editionSlugs.push(name);
     }
   }
   editionSlugs.sort();
   const editions: Edition[] = [];
   for (const editionSlug of editionSlugs) {
-    const file = (await findFile(ctx.fs, `${dir}/${editionSlug}.mit`)) ??
-      (await findFile(ctx.fs, `${dir}/${editionSlug}/index.mit`));
+    const file = await resolveVariant(ctx.fs, `${dir}/${editionSlug}`);
     const doc = file === undefined ? null : await loadDocument(file, ctx);
     if (doc !== null) {
       editions.push(makeEdition(authorSlugs, slug, editionSlug, doc));

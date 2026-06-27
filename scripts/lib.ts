@@ -8,13 +8,12 @@ import {
   type MarkitDocument,
   type MarkitError,
 } from "@earlytexts/markit";
+import { YEAR } from "../src/paths.ts";
 
 export const corpusRoot = new URL("..", import.meta.url).pathname.replace(
   /\/$/,
   "",
 );
-
-export const YEAR = /^\d{4}[a-z]?$/;
 
 export type CorpusFile = {
   /** Path relative to the corpus root, e.g. "works/hume/thn.mit". */
@@ -70,14 +69,6 @@ export const headingSegment = (
   parentId !== undefined && id.startsWith(`${parentId}.`)
     ? id.slice(parentId.length + 1)
     : id;
-
-/**
- * The bracketed edition ID of a borrowed-child placeholder, e.g. the heading
- * `## <Hume.EHU.1750>` → "Hume.EHU.1750"; undefined for an ordinary section.
- * A borrowed child names another edition whose text is spliced in at that point.
- */
-export const borrowedChild = (segment: string): string | undefined =>
-  /^<([^<>]+)>$/.exec(segment)?.[1];
 
 /** Every text in a document, paired with its ancestors (root first). */
 export const allTexts = (
