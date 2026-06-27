@@ -16,6 +16,14 @@ import {
   report,
   YEAR,
 } from "./lib.ts";
+import {
+  authorRequired,
+  authorSchema,
+  authorSexValues,
+  blockSchema,
+  checkKeys,
+  textSchema,
+} from "../src/schema.ts";
 
 const files = await loadCorpus();
 const authorFiles = files.filter((f) => f.path.startsWith("authors/"));
@@ -30,38 +38,9 @@ const fail = (violations: string[]): void => {
   if (message !== undefined) throw new Error(message);
 };
 
-type ValueType = "string" | "number" | "boolean" | "string[]" | "number[]";
-
 /** Metadata viewed as plain entries (drops Markit's symbol-keyed ranges). */
 const meta = (value: unknown): Record<string, unknown> =>
   (value ?? {}) as Record<string, unknown>;
-
-const isScalar = (value: unknown, type: string): boolean =>
-  type === "string"
-    ? typeof value === "string"
-    : type === "number"
-    ? typeof value === "number"
-    : typeof value === "boolean";
-
-const typeMatches = (value: unknown, type: ValueType): boolean =>
-  type.endsWith("[]")
-    ? Array.isArray(value) &&
-      value.every((item) => isScalar(item, type.slice(0, -2)))
-    : isScalar(value, type);
-
-const checkKeys = (
-  metadata: Record<string, unknown>,
-  schema: Record<string, ValueType>,
-  where: string,
-  violations: string[],
-): void => {
-  for (const [key, value] of Object.entries(metadata)) {
-    if (!(key in schema)) violations.push(`${where}: unknown key "${key}"`);
-    else if (!typeMatches(value, schema[key])) {
-      violations.push(`${where}: "${key}" should be ${schema[key]}`);
-    }
-  }
-};
 
 Deno.test("every file compiles without errors", () => {
   fail(
@@ -80,27 +59,6 @@ Deno.test("every file is formatted canonically", () => {
   );
 });
 
-const authorRequired = [
-  "forename",
-  "surname",
-  "birth",
-  "death",
-  "published",
-  "nationality",
-  "sex",
-];
-
-const authorSchema: Record<string, ValueType> = {
-  title: "string",
-  forename: "string",
-  surname: "string",
-  birth: "number",
-  death: "number",
-  published: "number",
-  nationality: "string",
-  sex: "string",
-};
-
 Deno.test("author files match the author schema", () => {
   const violations: string[] = [];
   for (const { path, doc } of compiled(authorFiles)) {
@@ -110,8 +68,8 @@ Deno.test("author files match the author schema", () => {
       if (!(key in metadata)) violations.push(`${path}: missing "${key}"`);
     }
     if (
-      metadata.sex !== undefined && metadata.sex !== "Male" &&
-      metadata.sex !== "Female"
+      metadata.sex !== undefined &&
+      !authorSexValues.includes(metadata.sex as string)
     ) {
       violations.push(`${path}: "sex" must be "Male" or "Female"`);
     }
@@ -124,19 +82,6 @@ Deno.test("author files match the author schema", () => {
   }
   fail(violations);
 });
-
-const textSchema: Record<string, ValueType> = {
-  title: "string",
-  breadcrumb: "string",
-  authors: "string[]",
-  imported: "boolean",
-  published: "number[]",
-  copytext: "string[]",
-  canonical: "string",
-  standalone: "boolean",
-  sourceUrl: "string",
-  sourceDesc: "string",
-};
 
 /** A work stub: `index.mit` carrying a `canonical` pointer, metadata only. */
 const isStub = (path: string, doc: { metadata?: unknown }): boolean =>
@@ -219,13 +164,6 @@ Deno.test("work stubs name a canonical edition that exists", async () => {
   }
   fail(violations);
 });
-
-const blockSchema: Record<string, ValueType> = {
-  pages: "string",
-  speaker: "string",
-  subsection: "string",
-  authors: "string[]",
-};
 
 Deno.test("block metadata matches the block schema", () => {
   const violations: string[] = [];
