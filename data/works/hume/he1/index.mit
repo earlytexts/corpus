@@ -1,4 +1,4 @@
-# Hume.HE.1778.1
+# Hume.HE1
 
 [metadata]
 imported = true
@@ -7,3 +7,4 @@ breadcrumb = "Volume 1"
 authors = ["hume"]
 published = [1762]
 canonical = "1778"
+standalone = false

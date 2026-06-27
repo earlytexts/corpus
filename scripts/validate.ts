@@ -133,6 +133,7 @@ const textSchema: Record<string, ValueType> = {
   published: "number[]",
   copytext: "string[]",
   canonical: "string",
+  standalone: "boolean",
   sourceUrl: "string",
   sourceDesc: "string",
 };
@@ -185,6 +186,11 @@ Deno.test("texts match the text schema", () => {
       if ("canonical" in metadata && !stub) {
         violations.push(
           `${where}: "canonical" belongs only on a work's index.mit stub`,
+        );
+      }
+      if ("standalone" in metadata && !stub) {
+        violations.push(
+          `${where}: "standalone" belongs only on a work's index.mit stub`,
         );
       }
     }

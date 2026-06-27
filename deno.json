@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "test": "deno test --allow-read scripts/validate.ts",
+    "validate": "deno test --allow-read scripts/validate.ts",
     "fix": "deno run --allow-read --allow-write scripts/fix.ts",
     "check": "deno check scripts/ && deno lint scripts/ && deno fmt --check scripts/"
   },

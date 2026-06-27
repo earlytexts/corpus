@@ -26,7 +26,6 @@ sourceDesc = "The first two Books of Hume's [Treatise of Human Nature] were publ
 title = "_Advertisement_"
 breadcrumb = "Advertisement"
 published = [1739]
-copytext = ["1739"]
 
 {#title}
 ^1 ADVERTISEMENT.
@@ -40,7 +39,6 @@ _MY design in the present work is sufficiently explain'd in the _introduction_. 
 title = "Introduction"
 breadcrumb = "Introduction"
 published = [1739]
-copytext = ["1739"]
 
 {#title}
 ^1 _INTRODUCTION._
@@ -84,7 +82,6 @@ Mr. _Locke_, my Lord _Shaftsbury_, Dr. _Mandeville_, Mr. _Hutchinson_, Dr. _Butl
 title = "Book 1, Of the Understanding"
 breadcrumb = "Book 1"
 published = [1739]
-copytext = ["1739"]
 
 {#title}
 ^1 BOOK I.
@@ -2317,7 +2314,6 @@ Sect. I.
 title = "Book 2, Of the Passions"
 breadcrumb = "Book 2"
 published = [1739]
-copytext = ["1739"]
 
 {#title}
 ^1 BOOK II.
@@ -3940,7 +3936,6 @@ BUT methinks we have been not a little inattentive to run over so many different
 title = "_Advertisement_"
 breadcrumb = "Advertisement"
 published = [1740]
-copytext = ["1740"]
 
 {#title}
 ^1 ADVERTISEMENT.
@@ -3954,7 +3949,6 @@ _I THINK it proper to inform the public, that tho' this be a third volume of the
 title = "Book 3, Of Morals"
 breadcrumb = "Book 3"
 published = [1740]
-copytext = ["1740"]
 
 {#title}
 ^1 BOOK III.
@@ -5058,7 +5052,6 @@ THUS upon the whole I am hopeful, that nothing is wanting to an accurate proof o
 title = "Appendix"
 breadcrumb = "Appendix"
 published = [1740]
-copytext = ["1740"]
 
 {#title}
 ^1 APPENDIX.

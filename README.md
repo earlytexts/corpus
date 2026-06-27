@@ -67,7 +67,7 @@ Keys are camelCase. Values use Markit's TOML-style `key = value` syntax only (co
 
 One schema applies to every text, all the way down: document roots and sections take the same keys. The keys split into two groups:
 
-- **Identity keys** (`title`, `breadcrumb`, `canonical`) describe the text itself and are never inherited.
+- **Identity keys** (`title`, `breadcrumb`, `canonical`, `standalone`) describe the text itself and are never inherited.
 - **Cascading keys** (`authors`, `imported`, `published`, `copytext`, `sourceUrl`, `sourceDesc`) flow downward: a section without the key takes the nearest ancestor's value; setting it overrides the value for that text and its descendants. Don't set a cascading key on a section when the inherited value is already right.
 
 Inheritance operates within a file. Each file is valid on its own terms: required keys must be present on the document root, and present _or inherited_ on every section.
@@ -78,6 +78,7 @@ Inheritance operates within a file. Each file is valid on its own terms: require
 | `breadcrumb` | string   | yes      | no        | short title for navigation                                   |
 | `authors`    | string[] | yes      | yes       | author slugs; a section overrides with whoever wrote it      |
 | `canonical`  | string   | stub     | no        | **stub only**: slug of the work's default edition            |
+| `standalone` | boolean  | no       | no        | **stub only**: whether the work lists in indexes on its own (default `true`); set `false` for a subwork shown only within the collection that borrows it |
 | `imported`   | boolean  | yes\*    | yes       | whether the text itself is present, beyond its metadata      |
 | `published`  | number[] | yes\*    | yes       | years this text's content was first published                |
 | `copytext`   | string[] | no       | yes       | the edition(s) a curated text is constructed from            |
@@ -90,6 +91,7 @@ Notes:
 - A text is "imported" when its content is present in the corpus (directly or via its descendants) — i.e. when a site can usefully link to it rather than merely list it. A partially-transcribed work sets `imported = true` at the root and `imported = false` on the missing sections (or vice versa).
 - `published` on a section records that the section entered the work in a particular year — e.g. an essay added to a later edition of the *Essays*.
 - `copytext` belongs on curated reading texts (the retained `main.mit`, and sections that derive from different copytexts). A dated edition is its own copytext, so the key is meaningless — and disallowed — there.
+- `standalone` governs index listing only. A work borrowed into a collection (its editions spliced in as borrowed children, e.g. the parts of *Essays and Treatises*) is also a directory of its own, so it lists independently by default. Set `standalone = false` on its stub to keep it out of the indexes while leaving it reachable through the collection(s) that borrow it. It does not affect search, retrieval, or the collection itself.
 
 ### Block metadata
 

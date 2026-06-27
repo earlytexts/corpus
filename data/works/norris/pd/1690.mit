@@ -22,7 +22,6 @@ imported = false
 title = "Volume 1 [Christian Blessedness]"
 breadcrumb = "Volume 1"
 published = [1690]
-copytext = ["1690"]
 
 ## 2
 
@@ -31,7 +30,6 @@ imported = false
 title = "Volume 2"
 breadcrumb = "Volume 2"
 published = [1691]
-copytext = ["1691"]
 
 ## 3
 
@@ -39,7 +37,6 @@ copytext = ["1691"]
 title = "Volume 3"
 breadcrumb = "Volume 3"
 published = [1693]
-copytext = ["1693"]
 
 {#title}
 ^4 PRACTICAL
@@ -334,4 +331,3 @@ imported = false
 title = "Volume 4"
 breadcrumb = "Volume 4"
 published = [1698]
-copytext = ["1698"]
