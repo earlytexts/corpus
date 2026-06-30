@@ -10,7 +10,6 @@ import {
   corpusRoot,
   expectedId,
   headingSegment,
-  isDated,
   loadCorpus,
   report,
 } from "./lib.ts";
@@ -95,7 +94,6 @@ const isStub = (path: string, doc: { metadata?: unknown }): boolean =>
 Deno.test("texts match the text schema", () => {
   const violations: string[] = [];
   for (const { path, doc } of compiled(workFiles)) {
-    const dated = isDated(path);
     const stub = isStub(path, doc);
     for (const { text, ancestors } of allTexts(doc)) {
       const parent = ancestors[ancestors.length - 1];
@@ -128,11 +126,6 @@ Deno.test("texts match the text schema", () => {
       } else if (!("authors" in metadata)) {
         violations.push(`${where}: missing "authors"`);
       }
-      if (dated && "copytext" in metadata) {
-        violations.push(
-          `${where}: "copytext" is for reading texts; dated editions are their own copytext`,
-        );
-      }
       if ("canonical" in metadata && !stub) {
         violations.push(
           `${where}: "canonical" belongs only on a work's index.mit stub`,
@@ -141,6 +134,13 @@ Deno.test("texts match the text schema", () => {
       if ("standalone" in metadata && !stub) {
         violations.push(
           `${where}: "standalone" belongs only on a work's index.mit stub`,
+        );
+      }
+      // A work's first-publication year is derived from its editions, never set
+      // on the stub.
+      if ("published" in metadata && stub) {
+        violations.push(
+          `${where}: "published" is derived from editions, not set on the stub`,
         );
       }
     }
@@ -285,7 +285,22 @@ Deno.test("layout: lowercase names, index.mit in every directory", async () => {
     for await (const entry of Deno.readDir(`${corpusRoot}/${dir}`)) {
       names.add(entry.name);
       const stem = entry.name.replace(/\.mit$/, "");
-      if (!/^[a-z0-9]+$/.test(stem)) {
+      // A host directory (depth 0, directly under works/) may be a joint slug —
+      // author slugs joined with `-`, each of which must name a known author.
+      // Everything deeper is a single lowercase slug.
+      if (depth === 0 && entry.isDirectory && stem.includes("-")) {
+        for (const part of stem.split("-")) {
+          if (!/^[a-z0-9]+$/.test(part)) {
+            violations.push(
+              `${dir}/${entry.name}: name should be a lowercase slug`,
+            );
+          } else if (!authorSlugs.has(part)) {
+            violations.push(
+              `${dir}/${entry.name}: joint host names unknown author "${part}"`,
+            );
+          }
+        }
+      } else if (!/^[a-z0-9]+$/.test(stem)) {
         violations.push(
           `${dir}/${entry.name}: name should be a lowercase slug`,
         );

@@ -47,7 +47,6 @@ export const authorSchema: Record<string, ValueType> = {
   surname: "string",
   birth: "number",
   death: "number",
-  published: "number",
   nationality: "string",
   sex: "string",
 };
@@ -57,7 +56,6 @@ export const authorRequired = [
   "surname",
   "birth",
   "death",
-  "published",
   "nationality",
   "sex",
 ];
@@ -71,7 +69,6 @@ export const textSchema: Record<string, ValueType> = {
   authors: "string[]",
   imported: "boolean",
   published: "number[]",
-  copytext: "string[]",
   canonical: "string",
   standalone: "boolean",
   sourceUrl: "string",

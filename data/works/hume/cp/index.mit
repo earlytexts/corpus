@@ -4,5 +4,5 @@
 title = "Of the Coalition of Parties"
 breadcrumb = "Of the Coalition of Parties"
 authors = ["hume"]
-published = [1758]
 canonical = "1777"
+standalone = false

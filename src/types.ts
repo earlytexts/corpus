@@ -35,7 +35,9 @@ export type Author = {
   title?: string; // honorific, e.g. "Lord Kames"
   birth?: number;
   death?: number;
-  published?: number; // year of first publication; used for ordering
+  /** Earliest `firstPublished` across the author's works (derived); undefined
+   * if they have none. Authors are ordered by it. */
+  firstPublished?: number;
   nationality?: string;
   sex?: string;
   works: Work[]; // ascending by first publication year
@@ -50,7 +52,6 @@ export type Edition = {
   breadcrumb: string;
   imported: boolean;
   published: number[];
-  copytext: string[];
   sourceUrl?: string;
   sourceDesc?: string;
   document: MarkitDocument;
@@ -58,16 +59,24 @@ export type Edition = {
 
 export type Work = {
   /**
-   * Author slugs, in title order. [0] is the host — the directory the work
-   * lives in and the primary author used for the artefact path and identity.
-   * A co-authored work is registered under every slug here (see buildCatalog).
+   * Author slugs, in title order — the people who wrote it. The work is
+   * registered under every slug here, so it lists on each author's page (see
+   * buildCatalog). For its identity/URL, see `hostSlug`.
    */
   authorSlugs: string[];
+  /**
+   * Identity slug: the directory the work lives in, used for its id, docKey, and
+   * URL. For a single-author work this equals authorSlugs[0]; for a co-authored
+   * work it is the joint slug (e.g. "astell-norris"), which is not itself an
+   * author.
+   */
+  hostSlug: string;
   slug: string;
   title: string;
   breadcrumb: string;
   imported: boolean;
-  published: number[];
+  /** Earliest publication year across all editions (derived, not stored). */
+  firstPublished: number;
   canonicalSlug: string; // slug of the canonical (default) edition
   /**
    * Whether the work appears as its own text in UI indexes. A work borrowed
@@ -106,7 +115,6 @@ export type CatalogueEdition = {
   breadcrumb: string;
   imported: boolean;
   published: number[];
-  copytext: string[];
   sourceUrl?: string;
   sourceDesc?: string;
   /** Document file key, under `dist/documents/<docKey>.json`. */
@@ -117,11 +125,13 @@ export type CatalogueEdition = {
 
 export type CatalogueWork = {
   authorSlugs: string[];
+  hostSlug: string;
   slug: string;
   title: string;
   breadcrumb: string;
   imported: boolean;
-  published: number[];
+  /** Earliest publication year across all editions (derived, not stored). */
+  firstPublished: number;
   canonicalSlug: string;
   standalone: boolean;
   dir: string; // relative to the corpus root
@@ -135,10 +145,10 @@ export type CatalogueAuthor = {
   title?: string;
   birth?: number;
   death?: number;
-  published?: number;
+  firstPublished?: number;
   nationality?: string;
   sex?: string;
-  /** Work keys (`<hostAuthor>/<work>`), in order; resolved against `works`. */
+  /** Work keys (`<hostSlug>/<work>`), in order; resolved against `works`. */
   works: string[];
 };
 

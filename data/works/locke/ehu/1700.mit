@@ -5,7 +5,7 @@ imported = true
 title = "An Essay Concerning Humane Understanding"
 breadcrumb = "Essay Concerning Humane Understanding"
 authors = ["locke"]
-published = [1689]
+published = [1700]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A48874.0001.001?view=toc"
 sourceDesc = "Locke's [Essay] was first published in December 1689, but with a publication year of 1690 on the title page. The copytext for this version is the 4th edition of 1700, which is the last edition to be printed in Locke's lifetime, and contains several changes and additions. The text is derived from a transcription of the first edition from EEBO-TCP. Several changes are being made to this source, to bring the text in line with the 1700 edition."
 

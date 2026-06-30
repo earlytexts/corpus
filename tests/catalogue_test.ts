@@ -26,14 +26,17 @@ const warningsFor = async (
 const has = (warnings: string[], fragment: string): boolean =>
   warnings.some((w) => w.includes(fragment));
 
+/** Build a corpus and return the in-memory catalog. */
+const catalogFor = async (files: Record<string, string>) =>
+  (await buildCatalog(memoryCorpus(files), CORPUS_ROOT)).catalog;
+
 /** A minimal valid author + work, so a build always has something to scan. */
 const base = () =>
   corpus()
-    .author("a", { forename: "Ann", surname: "Aa", published: 1700 })
+    .author("a", { forename: "Ann", surname: "Aa" })
     .work("a", "w", {
       title: "W",
       breadcrumb: "W",
-      published: [1700],
       canonical: "1700",
     })
     .edition(
@@ -119,12 +122,52 @@ Deno.test("catalog: an angle-bracket child resolves a directory-form edition", a
   assert(!has(warnings, "unresolved child"), warnings.join("; "));
 });
 
+Deno.test("catalog: a co-authored work lives under a joint host and lists under each author", async () => {
+  // The work lives in a joint host directory ("a-b"); its hostSlug is that joint
+  // slug, but its authorSlugs are the two real authors. It appears under both
+  // authors' pages, and the joint slug is not itself an author.
+  const files = base()
+    .author("b", { forename: "Ben", surname: "Bb" })
+    .work("a-b", "joint", {
+      title: "Joint",
+      breadcrumb: "Joint",
+      authors: ["a", "b"],
+      canonical: "1700",
+    })
+    .edition("a-b", "joint", "1700", {
+      imported: true,
+      title: "Joint",
+      breadcrumb: "Joint",
+      authors: ["a", "b"],
+      published: [1700],
+    }, '## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nJoint text.')
+    .build();
+  const catalog = await catalogFor(files);
+
+  const joint = catalog.byAuthor.get("a")?.works.find((w) =>
+    w.slug === "joint"
+  );
+  assert(joint !== undefined, "work should list under author a");
+  assert(joint.hostSlug === "a-b", `hostSlug was "${joint?.hostSlug}"`);
+  assert(
+    joint.authorSlugs.join(",") === "a,b",
+    `authorSlugs were "${joint?.authorSlugs.join(",")}"`,
+  );
+  // The same object lists under the other author too.
+  assert(
+    catalog.byAuthor.get("b")?.works.includes(joint),
+    "work should list under author b",
+  );
+  // The joint slug is not an author.
+  assert(!catalog.byAuthor.has("a-b"), "joint slug should not be an author");
+});
+
 Deno.test("catalog: a circular child reference is reported and broken", async () => {
   // Two editions of the same work borrow each other via angle-bracket children.
   const files = base()
     .file(
       "data/works/a/loop/index.mit",
-      '# a.loop\n\n[metadata]\ntitle = "Loop"\nbreadcrumb = "Loop"\npublished = [1700]\ncanonical = "1700"\n',
+      '# a.loop\n\n[metadata]\ntitle = "Loop"\nbreadcrumb = "Loop"\ncanonical = "1700"\n',
     )
     .file(
       "data/works/a/loop/1700.mit",
@@ -174,7 +217,7 @@ Deno.test("catalog: a work with no editions is reported and dropped", async () =
   const files = base()
     .file(
       "data/works/a/empty/index.mit",
-      '# a.empty\n\n[metadata]\ntitle = "Empty"\nbreadcrumb = "Empty"\npublished = [1700]\ncanonical = "1700"\n',
+      '# a.empty\n\n[metadata]\ntitle = "Empty"\nbreadcrumb = "Empty"\ncanonical = "1700"\n',
     )
     .build();
   const warnings = await warningsFor(files);
@@ -195,11 +238,10 @@ Deno.test("catalog: a year directory without an index is skipped as an edition",
 
 Deno.test("catalog: a declared canonical that is not an edition is reported", async () => {
   const files = corpus()
-    .author("a", { forename: "Ann", surname: "Aa", published: 1700 })
+    .author("a", { forename: "Ann", surname: "Aa" })
     .work("a", "w", {
       title: "W",
       breadcrumb: "W",
-      published: [1700],
       canonical: "9999", // no such edition
     })
     .edition("a", "w", "1700", {
@@ -229,7 +271,6 @@ Deno.test("catalog: a corpus with no authors directory is reported", async () =>
     .work("ghost", "w", {
       title: "W",
       breadcrumb: "W",
-      published: [1700],
       canonical: "1700",
     })
     .edition("ghost", "w", "1700", {
@@ -255,11 +296,10 @@ Deno.test("catalog: an unreadable but listed file degrades to a null document", 
   // loader guards against): an author file and a work's index. The author
   // degrades to a slug-only author; the work, whose stub reads as null, drops.
   const files = base()
-    .author("b", { forename: "Ben", surname: "Bb", published: 1710 })
+    .author("b", { forename: "Ben", surname: "Bb" })
     .work("b", "x", {
       title: "X",
       breadcrumb: "X",
-      published: [1710],
       canonical: "1710",
     })
     .edition("b", "x", "1710", {

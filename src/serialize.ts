@@ -25,7 +25,7 @@ import type {
 
 /** The document key (and `documents/<docKey>.json` path) for an edition. */
 export const docKeyOf = (work: Work, edition: Edition): string =>
-  `${work.authorSlugs[0]}/${work.slug}/${edition.slug}`;
+  `${work.hostSlug}/${work.slug}/${edition.slug}`;
 
 /** A path made relative to the (real-path'd) corpus root. */
 const relative = (absolute: string, root: string): string =>
@@ -97,7 +97,6 @@ export const serializeCatalogue = (
       breadcrumb: edition.breadcrumb,
       imported: edition.imported,
       published: edition.published,
-      copytext: edition.copytext,
       ...(edition.sourceUrl !== undefined
         ? { sourceUrl: edition.sourceUrl }
         : {}),
@@ -112,16 +111,17 @@ export const serializeCatalogue = (
   seenWorks.clear();
   for (const author of catalog.authors) {
     for (const work of author.works) {
-      const key = `${work.authorSlugs[0]}/${work.slug}`;
+      const key = `${work.hostSlug}/${work.slug}`;
       if (seenWorks.has(work)) continue;
       seenWorks.add(work);
       works[key] = {
         authorSlugs: work.authorSlugs,
+        hostSlug: work.hostSlug,
         slug: work.slug,
         title: work.title,
         breadcrumb: work.breadcrumb,
         imported: work.imported,
-        published: work.published,
+        firstPublished: work.firstPublished,
         canonicalSlug: work.canonicalSlug,
         standalone: work.standalone,
         dir: relative(work.dir, root),
@@ -139,12 +139,14 @@ export const serializeCatalogue = (
     ...(author.title !== undefined ? { title: author.title } : {}),
     ...(author.birth !== undefined ? { birth: author.birth } : {}),
     ...(author.death !== undefined ? { death: author.death } : {}),
-    ...(author.published !== undefined ? { published: author.published } : {}),
+    ...(author.firstPublished !== undefined
+      ? { firstPublished: author.firstPublished }
+      : {}),
     ...(author.nationality !== undefined
       ? { nationality: author.nationality }
       : {}),
     ...(author.sex !== undefined ? { sex: author.sex } : {}),
-    works: author.works.map((work) => `${work.authorSlugs[0]}/${work.slug}`),
+    works: author.works.map((work) => `${work.hostSlug}/${work.slug}`),
   }));
 
   return { catalogue: { authors, works, warnings }, documents };

@@ -7,8 +7,8 @@
  * Corpus layout (see ../README.md):
  *  - `data/authors/<author>.mit` holds an author's metadata (no text).
  *  - `data/works/<author>/<work>/` is a work. Its `index.mit` is a metadata-only
- *    stub: the work's edition-independent identity (title, breadcrumb,
- *    published) plus a `canonical` key naming the default edition. The texts
+ *    stub: the work's edition-independent identity (title, breadcrumb) plus a
+ *    `canonical` key naming the default edition. The texts
  *    are year-named editions — sibling entries whose names look like years
  *    (`1757.mit`, `1742a.mit`, or directories `1758/index.mit`).
  *  - A document's children are its inline `##` sections, in file order. A
@@ -17,9 +17,9 @@
  *    is loaded recursively and spliced in at that point. Inline and borrowed
  *    children mix freely, letting composite works (collections like ETSS, FD,
  *    HE) interleave their own sections with text shared from other works.
- *  - Cascading metadata (imported, published, copytext, sourceUrl,
- *    sourceDesc) flows down the composed tree: a section without the key
- *    takes the nearest ancestor's value.
+ *  - Cascading metadata (imported, published, sourceUrl, sourceDesc) flows
+ *    down the composed tree: a section without the key takes the nearest
+ *    ancestor's value.
  */
 
 import { compile, type MarkitDocument } from "@earlytexts/markit";
@@ -159,7 +159,6 @@ const makeEdition = (
   published: metaArray(document, "published").map(Number).filter((n) =>
     !Number.isNaN(n)
   ),
-  copytext: metaArray(document, "copytext").map(String),
   sourceUrl: metaString(document, "sourceUrl"),
   sourceDesc: metaString(document, "sourceDesc"),
   document,
@@ -172,27 +171,27 @@ const makeEdition = (
  * stub is never an edition — only year slugs are.
  */
 const loadWork = async (
-  authorSlug: string,
+  hostSlug: string,
   entry: Deno.DirEntry,
-  authorDir: string,
+  hostDir: string,
   ctx: LoadContext,
 ): Promise<Work | undefined> => {
   if (!entry.isDirectory) return undefined;
-  const dir = `${authorDir}/${entry.name}`;
+  const dir = `${hostDir}/${entry.name}`;
   const indexPath = await resolveFile(ctx.fs, `${dir}/index.mit`);
   if (indexPath === undefined) return undefined; // not a work
   const slug = entry.name.toLowerCase();
   const stub = await loadDocument(indexPath, ctx);
   if (stub === null) return undefined;
 
-  // The work's authors: the stub's `authors`, with the host (directory) author
-  // first so authorSlugs[0] is always the primary used for the artefact path.
-  // A work with no declared authors (test fixtures) is the directory author's.
+  // The work's authors (the people who wrote it), from the stub's `authors`. A
+  // joint host directory ("astell-norris") is not itself an author: its declared
+  // authors are authoritative, falling back to the directory's `-`-joined parts.
+  // A single-author host directory names the author, listed first.
   const declaredAuthors = metaAuthors(stub) ?? [];
-  const authorSlugs = [
-    authorSlug,
-    ...declaredAuthors.filter((s) => s !== authorSlug),
-  ];
+  const authorSlugs = hostSlug.includes("-")
+    ? (declaredAuthors.length > 0 ? declaredAuthors : hostSlug.split("-"))
+    : [hostSlug, ...declaredAuthors.filter((s) => s !== hostSlug)];
 
   const editionSlugs: string[] = [];
   for (const sub of await ctx.fs.readDir(dir)) {
@@ -215,7 +214,7 @@ const loadWork = async (
     }
   }
   if (editions.length === 0) {
-    ctx.warnings.push(`data/works/${authorSlug}/${slug}: no editions`);
+    ctx.warnings.push(`data/works/${hostSlug}/${slug}: no editions`);
     return undefined;
   }
 
@@ -225,21 +224,22 @@ const loadWork = async (
     editions[editions.length - 1];
   if (declared !== undefined && canonical.slug !== declared) {
     ctx.warnings.push(
-      `data/works/${authorSlug}/${slug}: canonical "${declared}" is not an edition`,
+      `data/works/${hostSlug}/${slug}: canonical "${declared}" is not an edition`,
     );
   }
 
   const title = metaString(stub, "title") ?? stub.id;
-  const published = metaArray(stub, "published").map(Number).filter((n) =>
-    !Number.isNaN(n)
-  );
+  // A work's first-publication year is derived, not stored: the earliest year
+  // across all its editions (stub editions for pre-corpus printings included).
+  const firstPublished = Math.min(...editions.flatMap((e) => e.published));
   return {
     authorSlugs,
+    hostSlug,
     slug,
     title,
     breadcrumb: metaString(stub, "breadcrumb") ?? title,
     imported: canonical.imported,
-    published: published.length > 0 ? published : canonical.published,
+    firstPublished,
     canonicalSlug: canonical.slug,
     // Works list independently unless the stub opts out (collection-only subworks).
     standalone: metaBoolean(stub, "standalone") ?? true,
@@ -255,7 +255,6 @@ const makeAuthor = (slug: string, doc: MarkitDocument | null): Author => ({
   title: doc === null ? undefined : metaString(doc, "title"),
   birth: doc === null ? undefined : metaNumber(doc, "birth"),
   death: doc === null ? undefined : metaNumber(doc, "death"),
-  published: doc === null ? undefined : metaNumber(doc, "published"),
   nationality: doc === null ? undefined : metaString(doc, "nationality"),
   sex: doc === null ? undefined : metaString(doc, "sex"),
   works: [],
@@ -289,57 +288,51 @@ export const buildCatalog = async (
     ctx.warnings.push(`no authors directory in ${dataDir}`);
   }
 
-  // Load every work under its host directory, collecting them so co-authored
-  // works can be registered under their other authors in a second pass.
+  // Load every work under its host directory. A host directory names either one
+  // author (the usual case) or, when its slug is joined with `-`, several — the
+  // joint host is not itself an author.
   const loaded: Work[] = [];
   for (const entry of await fs.readDir(`${dataDir}/works`)) {
     if (!entry.isDirectory) continue;
-    const authorSlug = entry.name.toLowerCase();
-    let author = byAuthor.get(authorSlug);
-    if (author === undefined) {
-      ctx.warnings.push(
-        `data/works/${entry.name} has no data/authors/${entry.name}.mit`,
-      );
-      author = makeAuthor(authorSlug, null);
-      byAuthor.set(authorSlug, author);
-    }
-    const authorDir = `${dataDir}/works/${entry.name}`;
-    for (const sub of await fs.readDir(authorDir)) {
-      const work = await loadWork(authorSlug, sub, authorDir, ctx);
-      if (work !== undefined) {
-        author.works.push(work);
-        loaded.push(work);
-      }
+    const hostSlug = entry.name.toLowerCase();
+    const hostDir = `${dataDir}/works/${entry.name}`;
+    for (const sub of await fs.readDir(hostDir)) {
+      const work = await loadWork(hostSlug, sub, hostDir, ctx);
+      if (work !== undefined) loaded.push(work);
     }
   }
 
-  // A co-authored work lives once on disk (under its host author) but appears in
-  // the catalog under every author it names, so both authors' pages list it. The
-  // host (authorSlugs[0]) already holds it from the load above; add the rest.
+  // Register every work under each of its authors, so a co-authored work lives
+  // once on disk (under its joint host) but lists on every author's page. All
+  // the authors share the one work object (and so its single hostSlug identity).
   for (const work of loaded) {
-    for (const slug of work.authorSlugs.slice(1)) {
-      let coAuthor = byAuthor.get(slug);
-      if (coAuthor === undefined) {
+    for (const slug of work.authorSlugs) {
+      let author = byAuthor.get(slug);
+      if (author === undefined) {
         ctx.warnings.push(
-          `data/works/${work.authorSlugs[0]}/${work.slug} names co-author ` +
-            `"${slug}" with no data/authors/${slug}.mit`,
+          `data/works/${work.hostSlug}/${work.slug} has no data/authors/${slug}.mit`,
         );
-        coAuthor = makeAuthor(slug, null);
-        byAuthor.set(slug, coAuthor);
+        author = makeAuthor(slug, null);
+        byAuthor.set(slug, author);
       }
-      if (!coAuthor.works.includes(work)) coAuthor.works.push(work);
+      if (!author.works.includes(work)) author.works.push(work);
     }
   }
 
   for (const author of byAuthor.values()) {
     author.works.sort((a, b) =>
-      (a.published[0] ?? Infinity) - (b.published[0] ?? Infinity) ||
+      a.firstPublished - b.firstPublished ||
       a.slug.localeCompare(b.slug)
     );
+    // An author's first-publication year is derived: the earliest across their
+    // works (undefined when they have none).
+    author.firstPublished = author.works.length > 0
+      ? Math.min(...author.works.map((w) => w.firstPublished))
+      : undefined;
   }
 
   const authors = [...byAuthor.values()].sort((a, b) =>
-    (a.published ?? Infinity) - (b.published ?? Infinity) ||
+    (a.firstPublished ?? Infinity) - (b.firstPublished ?? Infinity) ||
     a.surname.localeCompare(b.surname)
   );
 
