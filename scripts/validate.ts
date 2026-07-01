@@ -300,7 +300,7 @@ Deno.test("layout: lowercase names, index.mit in every directory", async () => {
             );
           }
         }
-      } else if (!/^[a-z0-9]+$/.test(stem)) {
+      } else if (!YEAR.test(stem) && !/^[a-z0-9]+$/.test(stem)) {
         violations.push(
           `${dir}/${entry.name}: name should be a lowercase slug`,
         );

@@ -7,8 +7,11 @@
 
 import type { CorpusFs } from "./types.ts";
 
-/** A year-named edition slug: four digits with an optional letter (`1742a`). */
-export const YEAR = /^\d{4}[a-z]?$/;
+/**
+ * A year-named edition slug: four digits with an optional letter (`1742a`),
+ * optionally a span to a later year, abbreviated or full (`1739-40`, `1739-1740`).
+ */
+export const YEAR = /^\d{4}(-\d{2,4})?[a-z]?$/;
 
 /**
  * The bracketed edition id of a borrowed-child placeholder, e.g.
