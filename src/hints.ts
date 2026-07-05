@@ -204,9 +204,10 @@ export const buildHints = (
   // its everyday words — the phrase as a whole is still distinctive.
   const pruneSingletons = (lexicon: PhraseLexicon): void => {
     for (const [head, seqs] of lexicon) {
-      const kept = seqs.filter((seq) =>
-        seq.length > 1 ||
-        (unmarkedLower.get(seq[0]!) ?? 0) <= STRONG_UNMARKED_FLOOR
+      const kept = seqs.filter(
+        (seq) =>
+          seq.length > 1 ||
+          (unmarkedLower.get(seq[0]!) ?? 0) <= STRONG_UNMARKED_FLOOR,
       );
       if (kept.length === 0) lexicon.delete(head);
       else lexicon.set(head, kept);
@@ -227,8 +228,8 @@ export const buildHints = (
     const lexicon = lexiconFor(code);
     for (const [word, marked] of counts) {
       const u = unmarked.get(word) ?? 0;
-      const strong = u <= STRONG_UNMARKED_FLOOR ||
-        u <= marked * STRONG_MARKED_RATIO;
+      const strong =
+        u <= STRONG_UNMARKED_FLOOR || u <= marked * STRONG_MARKED_RATIO;
       (strong ? lexicon.strong : lexicon.weak).add(word);
     }
   }
@@ -294,8 +295,9 @@ const walkInline = (elements: InlineElement[], sink: HintSink): void => {
       if (el.lang !== undefined) sink.language(el.lang, inlineText(el.content));
     } else if (el.type === "person") sink.person(inlineText(el.content));
     else if (el.type === "citation") sink.citation(inlineText(el.content));
-    else if (el.type === "place" || el.type === "org") { /* proper names */ }
-    else if ("content" in el && Array.isArray(el.content)) {
+    else if (el.type === "place" || el.type === "org") {
+      /* proper names */
+    } else if ("content" in el && Array.isArray(el.content)) {
       walkInline(el.content, sink);
     }
   }
@@ -308,7 +310,9 @@ const inlineRuns = (element: BlockElement): InlineElement[][] => {
   }
   if (element.type === "paragraph") return [element.content];
   if (element.type === "blockquote") {
-    return element.content.map((paragraph) => paragraph.content);
+    return element.content.flatMap((child) =>
+      child.type === "paragraph" ? [child.content] : [],
+    );
   }
   if (element.type === "list") return listRuns(element);
   if (element.type === "table") {
@@ -328,14 +332,16 @@ const listRuns = (list: List): InlineElement[][] =>
 
 /** The plain text of an inline run (spaces for breaks, markup unwrapped). */
 const inlineText = (elements: InlineElement[]): string =>
-  elements.map((el) => {
-    if (el.type === "plainText") return el.content;
-    if (el.type === "lineBreak" || el.type === "nbSpace") return " ";
-    if (el.type === "emSpace") return " ";
-    return "content" in el && Array.isArray(el.content)
-      ? inlineText(el.content)
-      : "";
-  }).join("");
+  elements
+    .map((el) => {
+      if (el.type === "plainText") return el.content;
+      if (el.type === "lineBreak" || el.type === "nbSpace") return " ";
+      if (el.type === "emSpace") return " ";
+      return "content" in el && Array.isArray(el.content)
+        ? inlineText(el.content)
+        : "";
+    })
+    .join("");
 
 /* ------------------------------ scanSource ----------------------------- */
 
@@ -526,11 +532,13 @@ const sliceRange = (
   toLine: number,
   toCol: number,
 ): string =>
-  fromLine === toLine ? (lines[fromLine] ?? "").slice(fromCol, toCol) : [
-    (lines[fromLine] ?? "").slice(fromCol),
-    ...lines.slice(fromLine + 1, toLine),
-    (lines[toLine] ?? "").slice(0, toCol),
-  ].join("\n");
+  fromLine === toLine
+    ? (lines[fromLine] ?? "").slice(fromCol, toCol)
+    : [
+        (lines[fromLine] ?? "").slice(fromCol),
+        ...lines.slice(fromLine + 1, toLine),
+        (lines[toLine] ?? "").slice(0, toCol),
+      ].join("\n");
 
 /**
  * Widen a single-line suggestion to take in the inline formatting markup that
@@ -566,8 +574,11 @@ const expandOverMarkup = (
     }
     // A balanced pair tightly wrapping the whole match ("_Machiavel_").
     if (
-      a > 0 && b < line.length && line[a - 1] === line[b] &&
-      FORMAT_DELIMS.has(line[a - 1]!) && !oddInside(line[a - 1]!)
+      a > 0 &&
+      b < line.length &&
+      line[a - 1] === line[b] &&
+      FORMAT_DELIMS.has(line[a - 1]!) &&
+      !oddInside(line[a - 1]!)
     ) {
       a--;
       b++;
@@ -586,29 +597,37 @@ const countChar = (text: string, ch: string): number => {
 };
 
 const byPosition = (a: MarkupSuggestion, b: MarkupSuggestion): number =>
-  a.startLine - b.startLine || a.startColumn - b.startColumn ||
-  a.endLine - b.endLine || a.endColumn - b.endColumn ||
-  a.type.localeCompare(b.type) || (a.lang ?? "").localeCompare(b.lang ?? "");
+  a.startLine - b.startLine ||
+  a.startColumn - b.startColumn ||
+  a.endLine - b.endLine ||
+  a.endColumn - b.endColumn ||
+  a.type.localeCompare(b.type) ||
+  (a.lang ?? "").localeCompare(b.lang ?? "");
 
 /** Drop a suggestion contained in another of the same type and language —
  * exact repeats (Greek matched by script and by lexicon at once) and partial
  * ones (a cue-phrase run inside a locator match) both collapse to one. */
 const prune = (list: MarkupSuggestion[]): MarkupSuggestion[] =>
-  list.filter((s, i) =>
-    !list.some((t, j) => {
-      if (i === j || t.type !== s.type || (t.lang ?? "") !== (s.lang ?? "")) {
-        return false;
-      }
-      const startsBefore = t.startLine < s.startLine ||
-        (t.startLine === s.startLine && t.startColumn <= s.startColumn);
-      const endsAfter = t.endLine > s.endLine ||
-        (t.endLine === s.endLine && t.endColumn >= s.endColumn);
-      if (!startsBefore || !endsAfter) return false;
-      const equal = t.startLine === s.startLine &&
-        t.startColumn === s.startColumn && t.endLine === s.endLine &&
-        t.endColumn === s.endColumn;
-      return !equal || j < i; // equal ranges: keep the first
-    })
+  list.filter(
+    (s, i) =>
+      !list.some((t, j) => {
+        if (i === j || t.type !== s.type || (t.lang ?? "") !== (s.lang ?? "")) {
+          return false;
+        }
+        const startsBefore =
+          t.startLine < s.startLine ||
+          (t.startLine === s.startLine && t.startColumn <= s.startColumn);
+        const endsAfter =
+          t.endLine > s.endLine ||
+          (t.endLine === s.endLine && t.endColumn >= s.endColumn);
+        if (!startsBefore || !endsAfter) return false;
+        const equal =
+          t.startLine === s.startLine &&
+          t.startColumn === s.startColumn &&
+          t.endLine === s.endLine &&
+          t.endColumn === s.endColumn;
+        return !equal || j < i; // equal ranges: keep the first
+      }),
   );
 
 /* --------------------------- source tokenizer -------------------------- */
@@ -935,7 +954,8 @@ const addPhrase = (lexicon: PhraseLexicon, text: string): void => {
   const list = lexicon.get(head) ?? [];
   if (
     list.some((s) => s.length === seq.length && s.every((w, i) => w === seq[i]))
-  ) return;
+  )
+    return;
   list.push(seq);
   list.sort((a, b) => b.length - a.length);
   lexicon.set(head, list);

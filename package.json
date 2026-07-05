@@ -10,7 +10,22 @@
     "./fs": "./src/fs.ts",
     "./harness": "./tests/harness.ts"
   },
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "fix": "node scripts/fix.ts",
+    "test": "vitest run tests/catalogue.test.ts tests/hints.test.ts",
+    "validate": "vitest run tests/validate.test.ts",
+    "check": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
   "dependencies": {
-    "@earlytexts/markit": "^3.2.2"
+    "@earlytexts/markit": "^3.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.1",
+    "prettier": "^3.4.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

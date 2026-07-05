@@ -6,7 +6,7 @@
  * matching rule is pinned down independently of the classifier.
  */
 
-import { assert, assertEquals } from "@std/assert";
+import { expect, test } from "vitest";
 import { compile } from "@earlytexts/markit";
 import { buildCatalogue } from "../src/catalogue.ts";
 import {
@@ -18,6 +18,14 @@ import {
   scanSource,
 } from "../src/hints.ts";
 import { corpus, CORPUS_ROOT, memoryCorpus } from "./harness.ts";
+
+/** @std/assert-style shims over vitest's expect, so the cases read unchanged. */
+const assert: (cond: unknown, msg?: string) => asserts cond = (cond, msg) => {
+  expect(cond, msg).toBeTruthy();
+};
+const assertEquals = <T>(actual: T, expected: T): void => {
+  expect(actual).toEqual(expected);
+};
 
 /* ------------------------------ buildHints ----------------------------- */
 
@@ -49,12 +57,12 @@ const fixture = () =>
         "",
         "{#1}",
         "Stories point by point and point by point and point again: in the " +
-        "road, in the mist, in the way, in the dark, in the end.",
+          "road, in the mist, in the way, in the dark, in the end.",
         "",
         "{#2}",
         "He wrote $la:quod erat in foro$ and $la:in foro conscienti{ae}$ and " +
-        "$fr:J'aime le monde$ and $sundry generique$ text. [p:Mr. Cicero] " +
-        "said so; compare [Pro Sexto] and [Point].",
+          "$fr:J'aime le monde$ and $sundry generique$ text. [p:Mr. Cicero] " +
+          "said so; compare [Pro Sexto] and [Point].",
       ].join("\n"),
     )
     .work("locke", "essay", {
@@ -62,12 +70,18 @@ const fixture = () =>
       breadcrumb: "Essay",
       canonical: "1690",
     })
-    .edition("locke", "essay", "1690", {
-      imported: false,
-      title: "Essay",
-      breadcrumb: "Essay",
-      published: [1690],
-    }, "{#1}\nNothing remarkable there.");
+    .edition(
+      "locke",
+      "essay",
+      "1690",
+      {
+        imported: false,
+        title: "Essay",
+        breadcrumb: "Essay",
+        published: [1690],
+      },
+      "{#1}\nNothing remarkable there.",
+    );
 
 const fixtureHints = async (
   overrides?: Parameters<typeof buildHints>[1],
@@ -83,11 +97,11 @@ const hasPhrase = (
   lexicon: Map<string, string[][]>,
   ...words: string[]
 ): boolean =>
-  (lexicon.get(words[0]) ?? []).some((seq) =>
-    seq.length === words.length && seq.every((w, i) => w === words[i])
+  (lexicon.get(words[0]) ?? []).some(
+    (seq) => seq.length === words.length && seq.every((w, i) => w === words[i]),
   );
 
-Deno.test("hints: language lexicons are mined from coded spans only", async () => {
+test("hints: language lexicons are mined from coded spans only", async () => {
   const hints = await fixtureHints();
   assertEquals([...hints.languages.keys()].sort(), ["fr", "la"]);
   const la = hints.languages.get("la")!;
@@ -100,7 +114,7 @@ Deno.test("hints: language lexicons are mined from coded spans only", async () =
   assert(!la.strong.has("generique") && !la.weak.has("generique"));
 });
 
-Deno.test("hints: lexicon words are folded (escapes, ligatures, case)", async () => {
+test("hints: lexicon words are folded (escapes, ligatures, case)", async () => {
   const hints = await fixtureHints();
   const la = hints.languages.get("la")!;
   assert(la.strong.has("conscientiae")); // from conscienti{ae}
@@ -109,7 +123,7 @@ Deno.test("hints: lexicon words are folded (escapes, ligatures, case)", async ()
   assert(fr.strong.has("monde"));
 });
 
-Deno.test("hints: people come from person spans and author metadata", async () => {
+test("hints: people come from person spans and author metadata", async () => {
   const hints = await fixtureHints();
   assert(hasPhrase(hints.people, "mr", "cicero")); // [p:Mr. Cicero]
   assert(hasPhrase(hints.people, "david", "hume")); // author seeds
@@ -118,14 +132,14 @@ Deno.test("hints: people come from person spans and author metadata", async () =
   assert(hasPhrase(hints.people, "locke"));
 });
 
-Deno.test("hints: citations come from citation spans and work titles", async () => {
+test("hints: citations come from citation spans and work titles", async () => {
   const hints = await fixtureHints();
   assert(hasPhrase(hints.citations, "pro", "sexto")); // [Pro Sexto]
   assert(hasPhrase(hints.citations, "an", "enquiry")); // work titles
   assert(hasPhrase(hints.citations, "essay"));
 });
 
-Deno.test("hints: a single-word phrase that is an everyday word is dropped", async () => {
+test("hints: a single-word phrase that is an everyday word is dropped", async () => {
   const hints = await fixtureHints();
   // [Point] is marked as a citation, but "point" is ordinary lowercase text
   // five times over — matching it at every capitalised occurrence would be
@@ -134,7 +148,7 @@ Deno.test("hints: a single-word phrase that is an everyday word is dropped", asy
   assert(hasPhrase(hints.citations, "an", "enquiry"));
 });
 
-Deno.test("hints: overrides force classification and add unseen words", async () => {
+test("hints: overrides force classification and add unseen words", async () => {
   const hints = await fixtureHints({
     la: { weak: ["quod"], strong: ["in"], ignore: ["erat"] },
     it: { strong: ["perche"] },
@@ -146,7 +160,7 @@ Deno.test("hints: overrides force classification and add unseen words", async ()
   assert(hints.languages.get("it")!.strong.has("perche"));
 });
 
-Deno.test("hints: foldWord folds case, marks, ligatures, and apostrophes", () => {
+test("hints: foldWord folds case, marks, ligatures, and apostrophes", () => {
   assertEquals(foldWord("Cædem"), "caedem");
   assertEquals(foldWord("cœur"), "coeur");
   assertEquals(foldWord("J’AIME"), "j'aime");
@@ -168,10 +182,15 @@ const emptyHints = (partial?: Partial<Hints>): Hints => ({
 /** A Latin lexicon for the cluster-rule tests. */
 const laHints = (): Hints =>
   emptyHints({
-    languages: new Map([["la", {
-      strong: new Set(["foro", "quod", "caedem", "vis"]),
-      weak: new Set(["in", "humano", "erat", "me"]),
-    }]]),
+    languages: new Map([
+      [
+        "la",
+        {
+          strong: new Set(["foro", "quod", "caedem", "vis"]),
+          weak: new Set(["in", "humano", "erat", "me"]),
+        },
+      ],
+    ]),
   });
 
 /** Compile `source` and scan it. */
@@ -187,35 +206,33 @@ const scanBody = (body: string, hints: Hints): MarkupSuggestion[] =>
 const brief = (s: MarkupSuggestion): string =>
   `${s.type}${s.lang === undefined ? "" : `:${s.lang}`} ${s.text}`;
 
-Deno.test("scan: a weak-word cluster anchored by a strong word matches", () => {
-  const suggestions = scan(
-    "# T\n\n{#1}\nSay in foro humano now.\n",
-    laHints(),
-  );
-  assertEquals(suggestions, [{
-    type: "language",
-    lang: "la",
-    text: "in foro humano",
-    startLine: 3,
-    startColumn: 4,
-    endLine: 3,
-    endColumn: 18,
-  }]);
+test("scan: a weak-word cluster anchored by a strong word matches", () => {
+  const suggestions = scan("# T\n\n{#1}\nSay in foro humano now.\n", laHints());
+  assertEquals(suggestions, [
+    {
+      type: "language",
+      lang: "la",
+      text: "in foro humano",
+      startLine: 3,
+      startColumn: 4,
+      endLine: 3,
+      endColumn: 18,
+    },
+  ]);
 });
 
-Deno.test("scan: weak words match only inside a cluster", () => {
+test("scan: weak words match only inside a cluster", () => {
   assertEquals(scanBody("Say in me now.", laHints()), []);
 });
 
-Deno.test("scan: a lone strong word matches only when long enough", () => {
+test("scan: a lone strong word matches only when long enough", () => {
   assertEquals(scanBody("Just vis here.", laHints()), []); // 3 letters
-  assertEquals(
-    scanBody("The word quod stands.", laHints()).map(brief),
-    ["language:la quod"],
-  );
+  assertEquals(scanBody("The word quod stands.", laHints()).map(brief), [
+    "language:la quod",
+  ]);
 });
 
-Deno.test("scan: text already inside markup is not re-suggested", () => {
+test("scan: text already inside markup is not re-suggested", () => {
   assertEquals(
     scanBody("He wrote $la:in foro humano$ already.", laHints()),
     [],
@@ -224,62 +241,60 @@ Deno.test("scan: text already inside markup is not re-suggested", () => {
   assertEquals(scanBody("Compare [quod in foro].", laHints()), []);
 });
 
-Deno.test("scan: metadata and block tags are not scanned", () => {
-  const source = '# T\n\n[metadata]\ntitle = "quod erat in foro"\n\n' +
+test("scan: metadata and block tags are not scanned", () => {
+  const source =
+    '# T\n\n[metadata]\ntitle = "quod erat in foro"\n\n' +
     '{#1, speaker="Quod Foro"}\nEnglish only here.\n';
   assertEquals(scan(source, laHints()), []);
 });
 
-Deno.test("scan: character-mode spans fold into their words", () => {
-  assertEquals(
-    scanBody("Then c{ae}dem happened.", laHints()).map(brief),
-    ["language:la c{ae}dem"],
-  );
+test("scan: character-mode spans fold into their words", () => {
+  assertEquals(scanBody("Then c{ae}dem happened.", laHints()).map(brief), [
+    "language:la c{ae}dem",
+  ]);
 });
 
-Deno.test("scan: page breaks and editorial marks are word-transparent", () => {
-  assertEquals(
-    scanBody("So fo//12//ro humano falls.", laHints()).map(brief),
-    ["language:la fo//12//ro humano"],
-  );
-  assertEquals(
-    scanBody("So for[+o+] humano falls.", laHints()).map(brief),
-    ["language:la for[+o+] humano"],
-  );
-  assertEquals(
-    scanBody("So foro[-rum-] humano falls.", laHints()).map(brief),
-    ["language:la foro[-rum-] humano"],
-  );
+test("scan: page breaks and editorial marks are word-transparent", () => {
+  assertEquals(scanBody("So fo//12//ro humano falls.", laHints()).map(brief), [
+    "language:la fo//12//ro humano",
+  ]);
+  assertEquals(scanBody("So for[+o+] humano falls.", laHints()).map(brief), [
+    "language:la for[+o+] humano",
+  ]);
+  assertEquals(scanBody("So foro[-rum-] humano falls.", laHints()).map(brief), [
+    "language:la foro[-rum-] humano",
+  ]);
 });
 
-Deno.test("scan: raw-element tags are masked but their content is scanned", () => {
+test("scan: raw-element tags are masked but their content is scanned", () => {
   assertEquals(
     scanBody(
       'It reads <<hi rend="italic">>quod foro<</hi>> plainly.',
       laHints(),
-    )
-      .map(brief),
+    ).map(brief),
     ["language:la quod foro"],
   );
 });
 
-Deno.test("scan: a cluster can span source lines within a block", () => {
+test("scan: a cluster can span source lines within a block", () => {
   const suggestions = scan(
     "# T\n\n{#1}\nquod erat\nin foro semper.\n",
     laHints(),
   );
-  assertEquals(suggestions, [{
-    type: "language",
-    lang: "la",
-    text: "quod erat\nin foro",
-    startLine: 3,
-    startColumn: 0,
-    endLine: 4,
-    endColumn: 7,
-  }]);
+  assertEquals(suggestions, [
+    {
+      type: "language",
+      lang: "la",
+      text: "quod erat\nin foro",
+      startLine: 3,
+      startColumn: 0,
+      endLine: 4,
+      endColumn: 7,
+    },
+  ]);
 });
 
-Deno.test("scan: person phrases require a capital and take in their wrappers", () => {
+test("scan: person phrases require a capital and take in their wrappers", () => {
   const hints = emptyHints({
     people: phraseLexicon(["John Locke", "Hume", "Mr. Hobbes"]),
   });
@@ -290,20 +305,19 @@ Deno.test("scan: person phrases require a capital and take in their wrappers", (
     ["person John Locke", "person *Hume*"],
   );
   assertEquals(scanBody("written by john locke.", hints), []);
-  assertEquals(
-    scanBody("Says Mr. *Hobbes* here.", hints).map(brief),
-    ["person Mr. *Hobbes*"],
-  );
+  assertEquals(scanBody("Says Mr. *Hobbes* here.", hints).map(brief), [
+    "person Mr. *Hobbes*",
+  ]);
 });
 
-Deno.test("scan: a match widens over the inline markup it sits in", () => {
+test("scan: a match widens over the inline markup it sits in", () => {
   const people = emptyHints({
     people: phraseLexicon(["Machiavel", "Mr. Pope"]),
   });
   // Whole-word italics are hugged; a trailing small-caps closer is absorbed.
   assertEquals(
-    scanBody("Then _Machiavel_ and Mr. *Pope* wrote.", people).map((s) =>
-      s.text
+    scanBody("Then _Machiavel_ and Mr. *Pope* wrote.", people).map(
+      (s) => s.text,
     ),
     ["_Machiavel_", "Mr. *Pope*"],
   );
@@ -320,7 +334,7 @@ Deno.test("scan: a match widens over the inline markup it sits in", () => {
   );
 });
 
-Deno.test("scan: the longest name at a position wins", () => {
+test("scan: the longest name at a position wins", () => {
   const hints = emptyHints({
     people: phraseLexicon(["Caesar", "Julius Caesar"]),
   });
@@ -334,48 +348,53 @@ Deno.test("scan: the longest name at a position wins", () => {
   );
 });
 
-Deno.test("scan: citation phrases and locator patterns match unmasked text", () => {
+test("scan: citation phrases and locator patterns match unmasked text", () => {
   const hints = emptyHints({ citations: phraseLexicon(["Alciphron"]) });
   assertEquals(
-    scanBody("Compare [Alciphron] with Alciphron and Sect. IV. here.", hints)
-      .map(brief),
+    scanBody(
+      "Compare [Alciphron] with Alciphron and Sect. IV. here.",
+      hints,
+    ).map(brief),
     ["citation Alciphron", "citation Sect. IV."],
   );
   assertEquals(scanBody("Noted [Sect. IV.] once.", hints), []);
 });
 
-Deno.test("scan: a cue phrase suggests the capitalised run after it", () => {
+test("scan: a cue phrase suggests the capitalised run after it", () => {
   assertEquals(
     scanBody("See Locke Essay for details.", emptyHints()).map(brief),
     ["citation Locke Essay"],
   );
 });
 
-Deno.test("scan: Greek script and Greek mode are matched outright", () => {
+test("scan: Greek script and Greek mode are matched outright", () => {
   assertEquals(
     scanBody("Ἐν ἀρχῇ ἦν ὁ λόγος. Then English.", emptyHints()).map(brief),
     ["language:grc Ἐν ἀρχῇ ἦν ὁ λόγος"],
   );
-  assertEquals(
-    scanBody("Then {{logos}} appears.", emptyHints()).map(brief),
-    ["language:grc {{logos}}"],
-  );
+  assertEquals(scanBody("Then {{logos}} appears.", emptyHints()).map(brief), [
+    "language:grc {{logos}}",
+  ]);
 });
 
-Deno.test("scan: script and lexicon agreement yields one suggestion", () => {
+test("scan: script and lexicon agreement yields one suggestion", () => {
   const hints = emptyHints({
-    languages: new Map([["grc", {
-      strong: new Set(["λογος"]),
-      weak: new Set<string>(),
-    }]]),
+    languages: new Map([
+      [
+        "grc",
+        {
+          strong: new Set(["λογος"]),
+          weak: new Set<string>(),
+        },
+      ],
+    ]),
   });
-  assertEquals(
-    scanBody("A λόγος appears.", hints).map(brief),
-    ["language:grc λόγος"],
-  );
+  assertEquals(scanBody("A λόγος appears.", hints).map(brief), [
+    "language:grc λόγος",
+  ]);
 });
 
-Deno.test("scan: citations are not suggested in title blocks", () => {
+test("scan: citations are not suggested in title blocks", () => {
   const hints = emptyHints({
     people: phraseLexicon(["Hume"]),
     citations: phraseLexicon(["Of Morals"]),
@@ -388,22 +407,26 @@ Deno.test("scan: citations are not suggested in title blocks", () => {
   ]);
 });
 
-Deno.test("scan: contained duplicates collapse to the longest", () => {
+test("scan: contained duplicates collapse to the longest", () => {
   // The cue phrase yields "Section I" and the locator pattern "Section I.";
   // the contained one is dropped.
-  assertEquals(
-    scanBody("See Section I. now.", emptyHints()).map(brief),
-    ["citation Section I."],
-  );
+  assertEquals(scanBody("See Section I. now.", emptyHints()).map(brief), [
+    "citation Section I.",
+  ]);
 });
 
-Deno.test("scan: suggestions are sorted by source position", () => {
+test("scan: suggestions are sorted by source position", () => {
   const hints = emptyHints({
     people: phraseLexicon(["Hume"]),
-    languages: new Map([["la", {
-      strong: new Set(["quod"]),
-      weak: new Set<string>(),
-    }]]),
+    languages: new Map([
+      [
+        "la",
+        {
+          strong: new Set(["quod"]),
+          weak: new Set<string>(),
+        },
+      ],
+    ]),
   });
   const suggestions = scanBody("First quod holds; then Hume writes.", hints);
   assertEquals(suggestions.map(brief), ["language:la quod", "person Hume"]);

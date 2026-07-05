@@ -80,7 +80,7 @@ export const loadCatalogue = async (
       ...(node.metadata !== undefined ? { metadata: node.metadata } : {}),
       blocks: node.blocks,
       children: node.children.map((child) =>
-        isRef(child) ? compose(child.__ref) : build(child)
+        isRef(child) ? compose(child.__ref) : build(child),
       ),
     }) as MarkitDocument;
   const compose = (docKey: string): MarkitDocument => {
@@ -131,7 +131,7 @@ export const loadCatalogue = async (
 export const distReader = (fs: CorpusFs): CatalogueReader => {
   const readJson = async <T>(path: string): Promise<T | null> => {
     const text = await fs.readFile(path);
-    return text === null ? null : JSON.parse(text) as T;
+    return text === null ? null : (JSON.parse(text) as T);
   };
   return {
     readCatalogue: (corpusDir) =>

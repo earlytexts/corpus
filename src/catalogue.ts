@@ -107,9 +107,9 @@ export const buildCatalogue = async (
   }
 
   for (const author of byAuthor.values()) {
-    author.works.sort((a, b) =>
-      a.firstPublished - b.firstPublished ||
-      a.slug.localeCompare(b.slug)
+    author.works.sort(
+      (a, b) =>
+        a.firstPublished - b.firstPublished || a.slug.localeCompare(b.slug),
     );
     // An author's first-publication year is derived: the earliest across their
     // works (left unset when they have none).
@@ -120,9 +120,10 @@ export const buildCatalogue = async (
     }
   }
 
-  const authors = [...byAuthor.values()].sort((a, b) =>
-    (a.firstPublished ?? Infinity) - (b.firstPublished ?? Infinity) ||
-    a.surname.localeCompare(b.surname)
+  const authors = [...byAuthor.values()].sort(
+    (a, b) =>
+      (a.firstPublished ?? Infinity) - (b.firstPublished ?? Infinity) ||
+      a.surname.localeCompare(b.surname),
   );
 
   return {
@@ -157,16 +158,19 @@ const loadWork = async (
   // A single-author host directory names the author, listed first.
   const declaredAuthors = metaAuthors(stub) ?? [];
   const authorSlugs = hostSlug.includes("-")
-    ? (declaredAuthors.length > 0 ? declaredAuthors : hostSlug.split("-"))
+    ? declaredAuthors.length > 0
+      ? declaredAuthors
+      : hostSlug.split("-")
     : [hostSlug, ...declaredAuthors.filter((s) => s !== hostSlug)];
 
   const editionSlugs: string[] = [];
   for (const sub of await ctx.fs.readDir(dir)) {
-    const name = sub.isFile && sub.name.endsWith(".mit")
-      ? sub.name.slice(0, -4)
-      : sub.isDirectory
-      ? sub.name
-      : undefined;
+    const name =
+      sub.isFile && sub.name.endsWith(".mit")
+        ? sub.name.slice(0, -4)
+        : sub.isDirectory
+          ? sub.name
+          : undefined;
     if (name !== undefined && YEAR.test(name)) {
       editionSlugs.push(name);
     }
@@ -187,8 +191,8 @@ const loadWork = async (
 
   // Canonical edition: the stub's `canonical` key, else the latest edition.
   const declared = metaString(stub, "canonical")?.toLowerCase();
-  const canonical = editions.find((e) => e.slug === declared) ??
-    editions[editions.length - 1];
+  const canonical =
+    editions.find((e) => e.slug === declared) ?? editions[editions.length - 1];
   if (declared !== undefined && canonical.slug !== declared) {
     ctx.warnings.push(
       `data/works/${hostSlug}/${slug}: canonical "${declared}" is not an edition`,
@@ -230,14 +234,16 @@ const makeEdition = (
     workSlug,
     slug,
     title: metaString(document, "title") ?? document.id,
-    breadcrumb: metaString(document, "breadcrumb") ??
-      metaString(document, "title") ?? document.id,
+    breadcrumb:
+      metaString(document, "breadcrumb") ??
+      metaString(document, "title") ??
+      document.id,
     // Texts are assumed present unless the corpus says otherwise; only files
     // with broken metadata lack the key entirely.
     imported: metaBoolean(document, "imported") ?? true,
-    published: metaArray(document, "published").map(Number).filter((n) =>
-      !Number.isNaN(n)
-    ),
+    published: metaArray(document, "published")
+      .map(Number)
+      .filter((n) => !Number.isNaN(n)),
     // Optional keys are set only when present, so an edition spreads into its
     // serialised form without undefined-valued properties.
     ...(sourceUrl !== undefined ? { sourceUrl } : {}),
@@ -254,8 +260,8 @@ const makeAuthor = (slug: string, doc: MarkitDocument | null): Author => {
   const sex = doc === null ? undefined : metaString(doc, "sex");
   return {
     slug,
-    forename: doc === null ? "" : metaString(doc, "forename") ?? "",
-    surname: doc === null ? slug : metaString(doc, "surname") ?? slug,
+    forename: doc === null ? "" : (metaString(doc, "forename") ?? ""),
+    surname: doc === null ? slug : (metaString(doc, "surname") ?? slug),
     // As in makeEdition: no undefined-valued properties, so authors spread
     // cleanly into their serialised form.
     ...(title !== undefined ? { title } : {}),

@@ -59,11 +59,13 @@ const tomlValue = (value: Scalar | Scalar[]): string =>
   Array.isArray(value)
     ? `[${value.map(tomlValue).join(", ")}]`
     : typeof value === "string"
-    ? JSON.stringify(value)
-    : String(value);
+      ? JSON.stringify(value)
+      : String(value);
 
 const toml = (meta: Meta): string =>
-  Object.entries(meta).map(([k, v]) => `${k} = ${tomlValue(v)}`).join("\n");
+  Object.entries(meta)
+    .map(([k, v]) => `${k} = ${tomlValue(v)}`)
+    .join("\n");
 
 const doc = (heading: string, meta: Meta, body = ""): string =>
   `${heading}\n\n[metadata]\n${toml(meta)}\n${body ? `\n${body}\n` : ""}`;

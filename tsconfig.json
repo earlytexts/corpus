@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": ["node"],
+
+    // Node runs the .ts sources directly (native type stripping); tsc only
+    // typechecks. Imports use explicit .ts extensions, matching how the
+    // Compositor bundles these same sources.
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true
+  },
+  "include": ["src", "scripts", "tests"]
+}

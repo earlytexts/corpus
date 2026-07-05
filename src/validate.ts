@@ -79,7 +79,7 @@ export const validateCorpus = async (
   ctx: RuleContext,
 ): Promise<Violation[]> => {
   const violations: Violation[] = [];
-  for (const rule of rules) violations.push(...await rule.check(ctx));
+  for (const rule of rules) violations.push(...(await rule.check(ctx)));
   return violations;
 };
 
@@ -97,17 +97,19 @@ export const rules: Rule[] = [
           endLine: e.endLine,
           endColumn: e.endColumn,
           severity: e.severity,
-        }))
+        })),
       ),
   },
   {
     name: "every file is formatted canonically",
     check: ({ files }) =>
-      files.filter(({ text }) => format(text) !== text).map(({ path }) => ({
-        rule: "every file is formatted canonically",
-        path,
-        message: "differs from formatter output (run `deno task fix`)",
-      })),
+      files
+        .filter(({ text }) => format(text) !== text)
+        .map(({ path }) => ({
+          rule: "every file is formatted canonically",
+          path,
+          message: "differs from formatter output (run `npm run fix`)",
+        })),
   },
   {
     name: "author files match the author schema",
@@ -173,8 +175,8 @@ export const rules: Rule[] = [
           // on the stub too (own value, not inherited — a stub has no ancestor).
           if (!stub) {
             for (const key of ["imported", "published", "authors"]) {
-              const inherited = [...ancestors, text].some((t) =>
-                key in meta(t.metadata)
+              const inherited = [...ancestors, text].some(
+                (t) => key in meta(t.metadata),
               );
               if (!inherited) push(`missing "${key}" (not inherited either)`);
             }
@@ -242,9 +244,10 @@ export const rules: Rule[] = [
         for (const { text } of allTexts(doc)) {
           for (const block of text.blocks) {
             if (block.metadata === undefined) continue;
-            for (
-              const message of keyViolations(meta(block.metadata), blockSchema)
-            ) {
+            for (const message of keyViolations(
+              meta(block.metadata),
+              blockSchema,
+            )) {
               violations.push({
                 rule,
                 path,
@@ -301,8 +304,9 @@ export const rules: Rule[] = [
     name: "root IDs match file paths",
     check: ({ files }) =>
       compiled(files)
-        .filter(({ path, doc }) =>
-          doc.id.toLowerCase() !== expectedId(path).toLowerCase()
+        .filter(
+          ({ path, doc }) =>
+            doc.id.toLowerCase() !== expectedId(path).toLowerCase(),
         )
         .map(({ path, doc }) => ({
           rule: "root IDs match file paths",
@@ -329,8 +333,7 @@ export const rules: Rule[] = [
             violations.push({
               rule,
               path,
-              message:
-                `heading "${segment}" should be a bare segment (no dots)`,
+              message: `heading "${segment}" should be a bare segment (no dots)`,
               line: lineOf(text),
             });
           }
@@ -352,7 +355,7 @@ export const rules: Rule[] = [
           // <Author.Work.Edition> →
           // data/works/<author>/<work>/<edition>{.mit,/index.mit}.
           if (
-            await resolveEdition(fs, `${root}/data/works`, ref) === undefined
+            (await resolveEdition(fs, `${root}/data/works`, ref)) === undefined
           ) {
             violations.push({
               rule,
@@ -517,7 +520,7 @@ const compiled = (list: CorpusFile[]): CorpusFile[] =>
 const authorSlugs = (files: CorpusFile[]): Set<string> =>
   new Set(
     authorFiles(files).map((f) =>
-      f.path.slice("authors/".length, -".mit".length)
+      f.path.slice("authors/".length, -".mit".length),
     ),
   );
 

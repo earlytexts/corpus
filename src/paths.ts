@@ -67,7 +67,7 @@ export const resolveVariant = async (
   base: string,
 ): Promise<string | undefined> =>
   (await resolveFile(fs, `${base}.mit`)) ??
-    (await resolveFile(fs, `${base}/index.mit`));
+  (await resolveFile(fs, `${base}/index.mit`));
 
 /**
  * Resolve a path case-insensitively against the file system, so references like
@@ -85,7 +85,9 @@ export const resolveFile = async (
   } catch {
     // fall through to the case-insensitive walk
   }
-  const parts = normalizePath(path).split("/").filter((p) => p !== "");
+  const parts = normalizePath(path)
+    .split("/")
+    .filter((p) => p !== "");
   let current = ""; // paths here are always absolute (see normalizePath)
   for (const part of parts) {
     let matched: string | undefined;

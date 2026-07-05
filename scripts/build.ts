@@ -1,9 +1,10 @@
 /**
  * Build the compiled catalogue the computer consumes: scan and compile the
  * corpus, compose borrowed children, and write the result to `dist/` (see
- * src/dist.ts for the layout). Run with: deno task build. The output is
- * gitignored; the computer reads it via CORPUS_DIR (dev) or after running
- * this build (prod).
+ * src/dist.ts for the layout). Run with: npm run build. The output is
+ * gitignored; the computer reads it via CORPUS_DIR (dev), and in prod builds
+ * it under Deno via its own wrapper (computer/scripts/build-corpus.ts), which
+ * reuses these same runtime-neutral build functions.
  */
 
 import { buildCatalogue } from "../src/catalogue.ts";
