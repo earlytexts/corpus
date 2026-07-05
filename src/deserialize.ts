@@ -1,10 +1,10 @@
 /**
- * Load the compiled `dist/` output back into the in-memory `Catalogue` — the
+ * Load the compiled `catalogue/` output back into the in-memory `Catalogue` — the
  * inverse of serialize.ts, kept beside it so the wire format is owned in one
  * place, both directions. The computer builds its artefacts from this; the
  * Compositor uses it as a startup cache while the real compile runs.
  *
- * Documents are read via the `CatalogueReader` port (`distReader` supplies the
+ * Documents are read via the `CatalogueReader` port (`catalogueReader` supplies the
  * CorpusFs-backed implementation; the computer's io adapter and the tests
  * bring their own). Composition splices each `{ __ref }` child as the single
  * shared parsed instance of the edition it names, recreating the object graph
@@ -50,7 +50,7 @@ export const loadCatalogue = async (
   const file = await reader.readCatalogue(corpusDir);
   if (file === null) {
     throw new Error(
-      `no compiled catalogue at ${corpusDir}/dist; run the corpus build`,
+      `no compiled catalogue at ${corpusDir}/catalogue; run the corpus build`,
     );
   }
 
@@ -62,7 +62,7 @@ export const loadCatalogue = async (
       const doc = await reader.readDocument(corpusDir, edition.docKey);
       if (doc === null) {
         throw new Error(
-          `missing document ${edition.docKey} in ${corpusDir}/dist; ` +
+          `missing document ${edition.docKey} in ${corpusDir}/catalogue; ` +
             `re-run the corpus build`,
         );
       }
@@ -127,17 +127,19 @@ export const loadCatalogue = async (
   };
 };
 
-/** A `CatalogueReader` over the `dist/` files, for CorpusFs-backed callers. */
-export const distReader = (fs: CorpusFs): CatalogueReader => {
+/** A `CatalogueReader` over the `catalogue/` files, for CorpusFs-backed callers. */
+export const catalogueReader = (fs: CorpusFs): CatalogueReader => {
   const readJson = async <T>(path: string): Promise<T | null> => {
     const text = await fs.readFile(path);
     return text === null ? null : (JSON.parse(text) as T);
   };
   return {
     readCatalogue: (corpusDir) =>
-      readJson<CatalogueFile>(`${corpusDir}/dist/catalogue.json`),
+      readJson<CatalogueFile>(`${corpusDir}/catalogue/catalogue.json`),
     readDocument: (corpusDir, docKey) =>
-      readJson<SerializedDoc>(`${corpusDir}/dist/documents/${docKey}.json`),
+      readJson<SerializedDoc>(
+        `${corpusDir}/catalogue/documents/${docKey}.json`,
+      ),
   };
 };
 

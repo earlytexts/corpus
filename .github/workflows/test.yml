@@ -25,6 +25,9 @@ jobs:
       - name: "Type check"
         run: "npm run check"
 
+      - name: "Build package"
+        run: "npm run build:pkg"
+
       - name: "Check formatting"
         run: "npm run format:check"
 

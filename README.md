@@ -105,7 +105,7 @@ Every `.mit` file must compile without errors and be formatted exactly as the Ma
 ## Validation
 
 ```sh
-npm run build        # compile the catalogue to dist/ (the computer's input)
+npm run build        # compile the catalogue to catalogue/ (the computer's input)
 npm run validate     # compile + formatting + schema + layout checks over the whole corpus
 npm test             # unit tests for the catalogue build (tests/)
 npm run fix          # apply the Markit formatter to every file in place
@@ -119,19 +119,19 @@ The rules themselves live in `src/validate.ts` as pure functions returning struc
 
 The code implements two pipelines over the data model above, plus the foundations they share. Everything in `src/` is runtime-neutral and pure: filesystem access goes through the `CorpusFs` port (`src/types.ts`), so any host — the Node scripts here, the Node-based Compositor, the computer's Deno build wrapper, an in-memory test corpus — brings its own binding. Modules read top-down: each file's entry points come first, with helpers below their callers.
 
-**The build pipeline** compiles the corpus into `dist/`, the boundary artefact every read-side consumer works from:
+**The build pipeline** compiles the corpus into `catalogue/`, the boundary artefact every read-side consumer works from:
 
 ```
-data/*.mit ──buildCatalogue──▶ Catalogue ──serializeCatalogue──▶ writeDist ──▶ dist/
- (source)    (catalogue.ts)   (in memory)     (serialize.ts)     (dist.ts)      │
-                                                                                ▼
-                              Catalogue ◀──────loadCatalogue───────── catalogue.json
-                             (in memory)       (deserialize.ts)     + documents/*.json
+data/*.mit ──buildCatalogue──▶ Catalogue ──serializeCatalogue──▶ writeCatalogue ──▶ catalogue/
+ (source)    (catalogue.ts)   (in memory)     (serialize.ts)  (catalogue-output.ts)    │
+                                                                                       ▼
+                              Catalogue ◀──────loadCatalogue───────────────── catalogue.json
+                             (in memory)       (deserialize.ts)              + documents/*.json
 ```
 
 - `catalogue.ts` — scans `data/`, compiles every file with `@earlytexts/markit`, resolves borrowed children, and derives the author/work/edition structure.
 - `serialize.ts` / `deserialize.ts` — the wire format, owned here in both directions. Documents are written _uncomposed_ (a borrowed child is a `{ __ref }` placeholder); `loadCatalogue` splices the single shared instance back in, recreating the object graph.
-- `dist.ts` — writes `dist/catalogue.json` plus one document file per edition, replacing the directory wholesale so stale files never linger.
+- `catalogue-output.ts` — writes `catalogue/catalogue.json` plus one document file per edition, replacing the directory wholesale so stale files never linger.
 
 **The validation pipeline** (`validate.ts`) enforces this document's rules: `loadCorpus` compiles every file standalone, and each `Rule` returns structured violations. The same rules drive `npm run validate` and the Compositor's editor diagnostics.
 
@@ -141,9 +141,9 @@ data/*.mit ──buildCatalogue──▶ Catalogue ──serializeCatalogue─�
 
 ## As a library
 
-The `package.json` exports the source (TypeScript, not compiled JS — consumers bundle it or run it directly under Deno):
+The `package.json` publishes **compiled JS + declarations** (built to `dist/` by `npm run build:pkg`, which runs [tsup](https://tsup.egoist.dev): bundled ESM + bundled `.d.ts`, one self-contained file per entry), so both a bundler and Deno's `node_modules` resolution can consume it directly — Deno refuses to strip types from `.ts` under `node_modules`, so shipping source would break the computer. The source in `src/` keeps explicit `.ts` import extensions (the computer's Deno build wrapper runs it directly, so the specifiers must name real `.ts` files); bundling the declarations means the shipped `.d.ts` carry no relative imports at all, so those `.ts` extensions never reach a consumer. The entry points:
 
-- `@earlytexts/corpus` (`src/index.ts`) — everything. The Compositor VSCode extension bundles this (esbuild) to run the catalogue build, validation, hints, and the `dist/` write in-process under Node.
-- `@earlytexts/corpus/wire` (`src/wire.ts`) — the wire contract only: the catalogue types, serialize/deserialize, `loadCatalogue`. This is all the computer's _application_ code imports (via its Deno import map, which deliberately maps only this subpath); its runtime reads `dist/` and never scans or compiles `.mit`. The one exception is a build-time bridge: because the corpus is Node-only and Deno Deploy can't run its Node build, the computer's `scripts/build-corpus.ts` imports the corpus's own build functions (`catalogue.ts`/`dist.ts`/`fs.ts`, by relative path) to produce `dist/` under Deno in prod — reusing the corpus's compiler rather than reimplementing it.
+- `@earlytexts/corpus` (`src/index.ts`) — everything. The Compositor VSCode extension bundles this to run the catalogue build, validation, hints, and the `catalogue/` write in-process under Node.
+- `@earlytexts/corpus/wire` (`src/wire.ts`) — the wire contract only: the catalogue types, serialize/deserialize, `loadCatalogue`. This is all the computer's _application_ code imports (via its Deno import map, which deliberately maps only this subpath); its runtime reads `catalogue/` and never scans or compiles `.mit`. The one exception is a build-time bridge: because the corpus is Node-only and Deno Deploy can't run its Node build, the computer's `scripts/build-corpus.ts` imports the corpus's own build functions (`catalogue.ts`/`catalogue-output.ts`/`fs.ts`, by relative path from the sibling checkout's `src/`) to produce `catalogue/` under Deno in prod — reusing the corpus's compiler rather than reimplementing it.
 - `@earlytexts/corpus/fs` (`src/fs.ts`) — the one disk-backed `CorpusFs` binding, on `node:fs` (which Deno provides natively), kept out of the main entry point so it stays platform-free.
 - `@earlytexts/corpus/harness` (`tests/harness.ts`) — the in-memory corpus builder the corpus's and the computer's tests share.

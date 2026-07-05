@@ -8,7 +8,7 @@
  *  - the in-memory `Catalogue` (with live `MarkitDocument`s) that
  *    `buildCatalogue` produces and `loadCatalogue` reconstructs; and
  *  - the serialised contract (`CatalogueFile`, `DocRefNode`) written to the
- *    gitignored `dist/` directory that the computer reads.
+ *    gitignored `catalogue/` directory that the computer reads.
  *
  * Each entity is its shared `…Meta` base plus the one field that differs
  * between the layers: a live document/object graph in memory, a key or
@@ -21,18 +21,18 @@ import type { MarkitDocument } from "@earlytexts/markit";
 /* --------------------------- the catalogue ---------------------------- */
 
 /** The in-memory catalogue: what `buildCatalogue` produces and
- * `loadCatalogue` reconstructs from `dist/`. */
+ * `loadCatalogue` reconstructs from `catalogue/`. */
 export type Catalogue = {
   authors: Author[]; // ascending by year of first publication
   byAuthor: Map<string, Author>;
   /** Source `.mit` path for every loaded edition: absolute when built from
    * source (buildCatalogue), relative to the corpus root when loaded from the
-   * compiled `dist/` (loadCatalogue). */
+   * compiled `catalogue/` (loadCatalogue). */
   sources: WeakMap<MarkitDocument, string>;
 };
 
 /**
- * The whole catalogue, serialised to `dist/catalogue.json`. Works are listed
+ * The whole catalogue, serialised to `catalogue/catalogue.json`. Works are listed
  * once and referenced by key from each author, so a co-authored work keeps a
  * single identity across the authors that list it.
  */
@@ -135,7 +135,7 @@ export type Edition = EditionMeta & {
 
 /** A serialised edition: its metadata plus pointers to its document file. */
 export type CatalogueEdition = EditionMeta & {
-  /** Document file key, under `dist/documents/<docKey>.json`. */
+  /** Document file key, under `catalogue/documents/<docKey>.json`. */
   docKey: string;
   /** Source `.mit` path, relative to the corpus root (for ownership checks). */
   source: string;
@@ -146,7 +146,7 @@ export type CatalogueEdition = EditionMeta & {
 /**
  * A serialised document node: a Markit document whose borrowed children are
  * `DocRefNode` placeholders. Written by serialize.ts (one file per edition,
- * under `dist/documents/<docKey>.json`), read back by deserialize.ts.
+ * under `catalogue/documents/<docKey>.json`), read back by deserialize.ts.
  */
 export type SerializedDoc = {
   id: string;
@@ -186,7 +186,7 @@ export interface CorpusFs {
   stat(path: string): Promise<{ isFile: boolean } | null>;
 }
 
-/** The additional capabilities `writeDist` needs. `mkdir` is recursive;
+/** The additional capabilities `writeCatalogue` needs. `mkdir` is recursive;
  * `remove` is recursive and ignores a missing path. */
 export interface CorpusFsWrite extends CorpusFs {
   writeFile(path: string, text: string): Promise<void>;

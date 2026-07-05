@@ -10,9 +10,9 @@
  * computer may import), then the foundations both build on.
  */
 
-// The catalogue build: scan data/, compile, compose, write dist/.
+// The catalogue build: scan data/, compile, compose, write catalogue/.
 export * from "./catalogue.ts";
-export * from "./dist.ts";
+export * from "./catalogue-output.ts";
 
 // Authoring support: validation rules and markup hints (the Compositor's
 // diagnostics and suggestions).

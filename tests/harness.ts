@@ -3,7 +3,7 @@
  * `.mit` text — no fixture files on disk. `corpus()` is a fluent builder for one;
  * `memoryCorpus` turns a file map into the `CorpusFs` the catalogue build walks.
  * Both the corpus's own tests and the computer's (which compile these maps into
- * `dist/`) import this harness, so the fixture format lives in one place.
+ * `catalogue/`) import this harness, so the fixture format lives in one place.
  */
 
 import type { CorpusFs } from "../src/types.ts";
