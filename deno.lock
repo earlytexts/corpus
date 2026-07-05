@@ -26,6 +26,11 @@
     "dependencies": [
       "jsr:@std/assert@1",
       "npm:@earlytexts/markit@^3.2.2"
-    ]
+    ],
+    "packageJson": {
+      "dependencies": [
+        "npm:@earlytexts/markit@^3.2.2"
+      ]
+    }
   }
 }

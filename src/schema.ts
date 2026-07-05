@@ -25,19 +25,20 @@ export const typeMatches = (value: unknown, type: ValueType): boolean =>
       value.every((item) => isScalar(item, type.slice(0, -2)))
     : isScalar(value, type);
 
-/** Record every key that is unknown to, or mistyped against, `schema`. */
-export const checkKeys = (
+/** The ways `metadata` violates `schema`: one message per unknown or mistyped
+ * key, without any file/section locus (the caller knows where it is). */
+export const keyViolations = (
   metadata: Record<string, unknown>,
   schema: Record<string, ValueType>,
-  where: string,
-  violations: string[],
-): void => {
+): string[] => {
+  const violations: string[] = [];
   for (const [key, value] of Object.entries(metadata)) {
-    if (!(key in schema)) violations.push(`${where}: unknown key "${key}"`);
+    if (!(key in schema)) violations.push(`unknown key "${key}"`);
     else if (!typeMatches(value, schema[key])) {
-      violations.push(`${where}: "${key}" should be ${schema[key]}`);
+      violations.push(`"${key}" should be ${schema[key]}`);
     }
   }
+  return violations;
 };
 
 /** Author metadata (root of `data/authors/<author>.mit`). */

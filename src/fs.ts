@@ -1,30 +1,40 @@
 /**
- * The Deno-backed CorpusFs the build script passes to buildCatalog. Kept tiny
- * and separate so the catalogue logic stays free of direct filesystem calls
- * (and so tests can pass an in-memory equivalent).
+ * The disk-backed CorpusFs binding. Built on node:fs — which Deno provides
+ * natively — so this one binding serves the corpus's own Deno scripts and Node
+ * hosts (the Compositor extension) alike. Kept tiny and separate from index.ts
+ * so the catalogue logic stays free of direct filesystem calls (and so tests
+ * can pass an in-memory equivalent); package consumers import it as
+ * `@earlytexts/corpus/fs`.
  */
 
-import type { CorpusFs } from "./types.ts";
+import { promises as fs } from "node:fs";
+import type { CorpusFsWrite } from "./types.ts";
 
-export const denoCorpusFs: CorpusFs = {
+export const nodeCorpusFs: CorpusFsWrite = {
   readFile: async (path) => {
     try {
-      return await Deno.readTextFile(path);
+      return await fs.readFile(path, "utf8");
     } catch {
       return null;
     }
   },
-  readDir: async (path) => {
-    const out: Deno.DirEntry[] = [];
-    for await (const entry of Deno.readDir(path)) out.push(entry);
-    return out;
-  },
-  realPath: (path) => Deno.realPath(path),
+  readDir: async (path) =>
+    (await fs.readdir(path, { withFileTypes: true })).map((entry) => ({
+      name: entry.name,
+      isFile: entry.isFile(),
+      isDirectory: entry.isDirectory(),
+    })),
+  realPath: (path) => fs.realpath(path),
   stat: async (path) => {
     try {
-      return { isFile: (await Deno.stat(path)).isFile };
+      return { isFile: (await fs.stat(path)).isFile() };
     } catch {
       return null;
     }
   },
+  writeFile: (path, text) => fs.writeFile(path, text),
+  mkdir: async (path) => {
+    await fs.mkdir(path, { recursive: true });
+  },
+  remove: (path) => fs.rm(path, { recursive: true, force: true }),
 };

@@ -1,0 +1,16 @@
+{
+  "name": "@earlytexts/corpus",
+  "version": "0.3.0",
+  "description": "The Early Text Corpus: catalogue, schema, path, and validation logic, exported as runtime-neutral TypeScript source (consumers bundle it; see src/index.ts)",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./wire": "./src/wire.ts",
+    "./fs": "./src/fs.ts",
+    "./harness": "./tests/harness.ts"
+  },
+  "dependencies": {
+    "@earlytexts/markit": "^3.2.2"
+  }
+}

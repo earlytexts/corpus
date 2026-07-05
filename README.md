@@ -30,7 +30,7 @@ data/works/<author>/<work>/<year>.mit          a dated edition (year = 1748, 174
 
 Markit document IDs follow the dotted form `Author.Work` (the stub) or `Author.Work.Edition` (a dated edition), e.g. `Hume.EHU` and `Hume.EHU.1748`. The ID must match the file path case-insensitively: `data/works/hume/ehu/1748.mit` holds `# Hume.EHU.1748`, and the stub `data/works/hume/ehu/index.mit` holds `# Hume.EHU`. Section IDs extend the document ID with one segment per level of nesting (`Hume.THN.1.2.3`); a borrowed edition carries its own full ID in its root heading (`# Hume.EHU.1750`), and is named from the borrowing collection by that ID in angle brackets (`## <Hume.EHU.1750>`).
 
-A work may have **more than one author**. For works with a clear primary author (collections, edited volumes) the work lives under that author's directory and lists just them. For **genuinely co-authored works** — epistolary exchanges where each author contributes equally — the work lives under a **joint host directory** whose slug joins the authors' slugs with a hyphen (in alphabetical order), e.g. `astell-norris`, and its root `authors` lists every author. That joint slug is the work's single identity and URL — its ID is `Astell-Norris.LLG` and it is served at `/astell-norris/llg`. Each section (e.g. a letter) overrides `authors` with the slug of whoever wrote it. The work appears once on disk but is listed in the catalog under every author it names (and reached only through its joint URL, not under either author individually).
+A work may have **more than one author**. For works with a clear primary author (collections, edited volumes) the work lives under that author's directory and lists just them. For **genuinely co-authored works** — epistolary exchanges where each author contributes equally — the work lives under a **joint host directory** whose slug joins the authors' slugs with a hyphen (in alphabetical order), e.g. `astell-norris`, and its root `authors` lists every author. That joint slug is the work's single identity and URL — its ID is `Astell-Norris.LLG` and it is served at `/astell-norris/llg`. Each section (e.g. a letter) overrides `authors` with the slug of whoever wrote it. The work appears once on disk but is listed in the catalogue under every author it names (and reached only through its joint URL, not under either author individually).
 
 ## Borrowed children
 
@@ -50,15 +50,15 @@ Keys are camelCase. Values use Markit's TOML-style `key = value` syntax. Keys no
 
 ### Author (root of `data/authors/<author>.mit`)
 
-| Key           | Type   | Required | Notes                                       |
-| ------------- | ------ | -------- | ------------------------------------------- |
-| `forename`    | string | yes      |                                             |
-| `surname`     | string | yes      |                                             |
-| `title`       | string | no       | honorific, e.g. `"Lord Kames"`              |
-| `birth`       | number | yes      | year                                        |
-| `death`       | number | yes      | year                                        |
-| `nationality` | string | yes      | e.g. `"Scottish"`, `"English"`              |
-| `sex`         | string | yes      | `"Male"` or `"Female"`                      |
+| Key           | Type   | Required | Notes                          |
+| ------------- | ------ | -------- | ------------------------------ |
+| `forename`    | string | yes      |                                |
+| `surname`     | string | yes      |                                |
+| `title`       | string | no       | honorific, e.g. `"Lord Kames"` |
+| `birth`       | number | yes      | year                           |
+| `death`       | number | yes      | year                           |
+| `nationality` | string | yes      | e.g. `"Scottish"`, `"English"` |
+| `sex`         | string | yes      | `"Male"` or `"Female"`         |
 
 ### Texts (document roots and sections in `data/works/`)
 
@@ -69,17 +69,17 @@ One schema applies to every text, all the way down: document roots and sections 
 
 Inheritance operates within a file. Each file is valid on its own terms: required keys must be present on the document root, and present _or inherited_ on every section.
 
-| Key          | Type     | Required | Inherited | Notes                                                                        |
-| ------------ | -------- | -------- | --------- | ---------------------------------------------------------------------------- |
-| `title`      | string   | yes      | no        | full title; may contain Markit inline markup                                 |
-| `breadcrumb` | string   | yes      | no        | short title for navigation                                                   |
-| `authors`    | string[] | yes      | yes       | author slugs; a section overrides with whoever wrote it                      |
-| `canonical`  | string   | stub     | no        | **stub only**: slug of the work's default edition                            |
-| `standalone` | boolean  | no       | no        | **stub only**: whether the work lists in indexes on its own (default `true`) |
-| `imported`   | boolean  | yes\*    | yes       | whether the text itself is present, beyond its metadata                      |
+| Key          | Type     | Required | Inherited | Notes                                                                                                                                         |
+| ------------ | -------- | -------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`      | string   | yes      | no        | full title; may contain Markit inline markup                                                                                                  |
+| `breadcrumb` | string   | yes      | no        | short title for navigation                                                                                                                    |
+| `authors`    | string[] | yes      | yes       | author slugs; a section overrides with whoever wrote it                                                                                       |
+| `canonical`  | string   | stub     | no        | **stub only**: slug of the work's default edition                                                                                             |
+| `standalone` | boolean  | no       | no        | **stub only**: whether the work lists in indexes on its own (default `true`)                                                                  |
+| `imported`   | boolean  | yes\*    | yes       | whether the text itself is present, beyond its metadata                                                                                       |
 | `published`  | number[] | yes\*    | yes       | year(s) this edition was published — usually one, an array only for an edition printed over several years (e.g. a multi-volume first edition) |
-| `sourceUrl`  | string   | no       | yes       | online transcription/facsimile the text was derived from                     |
-| `sourceDesc` | string   | no       | yes       | prose note on the text's provenance and editorial choices                    |
+| `sourceUrl`  | string   | no       | yes       | online transcription/facsimile the text was derived from                                                                                      |
+| `sourceDesc` | string   | no       | yes       | prose note on the text's provenance and editorial choices                                                                                     |
 
 Notes:
 
@@ -105,7 +105,43 @@ Every `.mit` file must compile without errors and be formatted exactly as the Ma
 ## Validation
 
 ```sh
-deno task test    # compile + formatting + schema + layout checks over the whole corpus
-deno task fix     # apply the Markit formatter to every file in place
-deno task check   # typecheck + lint + fmt for the test code itself
+deno task validate  # compile + formatting + schema + layout checks over the whole corpus
+deno task test      # unit tests for the catalogue build (tests/)
+deno task fix       # apply the Markit formatter to every file in place
+deno task check     # typecheck + lint + fmt for the source and test code itself
 ```
+
+The rules themselves live in `src/validate.ts` as pure functions returning structured violations; `scripts/validate.ts` is a thin Deno test wrapper around them.
+
+## Architecture
+
+The code implements two pipelines over the data model above, plus the foundations they share. Everything in `src/` is runtime-neutral and pure: filesystem access goes through the `CorpusFs` port (`src/types.ts`), so any host — the Deno scripts here, the Node-based Compositor, an in-memory test corpus — brings its own binding. Modules read top-down: each file's entry points come first, with helpers below their callers.
+
+**The build pipeline** compiles the corpus into `dist/`, the boundary artefact every read-side consumer works from:
+
+```
+data/*.mit ──buildCatalogue──▶ Catalogue ──serializeCatalogue──▶ writeDist ──▶ dist/
+ (source)    (catalogue.ts)   (in memory)     (serialize.ts)     (dist.ts)      │
+                                                                                ▼
+                              Catalogue ◀──────loadCatalogue───────── catalogue.json
+                             (in memory)       (deserialize.ts)     + documents/*.json
+```
+
+- `catalogue.ts` — scans `data/`, compiles every file with `@earlytexts/markit`, resolves borrowed children, and derives the author/work/edition structure.
+- `serialize.ts` / `deserialize.ts` — the wire format, owned here in both directions. Documents are written _uncomposed_ (a borrowed child is a `{ __ref }` placeholder); `loadCatalogue` splices the single shared instance back in, recreating the object graph.
+- `dist.ts` — writes `dist/catalogue.json` plus one document file per edition, replacing the directory wholesale so stale files never linger.
+
+**The validation pipeline** (`validate.ts`) enforces this document's rules: `loadCorpus` compiles every file standalone, and each `Rule` returns structured violations. The same rules drive `deno task validate` and the Compositor's editor diagnostics.
+
+**Authoring support**: `hints.ts` mines lexicons from the corpus's existing markup and scans raw source for likely new markup (people, citations, language spans) — the Compositor's suggestion engine.
+
+**Foundations**: `types.ts` (the catalogue types — each entity is a shared metadata base plus the field that differs between the in-memory and serialised layers — and the `CorpusFs` ports), `schema.ts` (the metadata schema as data; the tables above are its prose form), and `paths.ts` (slug and resolution conventions).
+
+## As a library
+
+The `package.json` exports the source (TypeScript, not compiled JS — consumers bundle it or run it directly under Deno):
+
+- `@earlytexts/corpus` (`src/index.ts`) — everything. The Compositor VSCode extension bundles this (esbuild) to run the catalogue build, validation, hints, and the `dist/` write in-process under Node.
+- `@earlytexts/corpus/wire` (`src/wire.ts`) — the wire contract only: the catalogue types, serialize/deserialize, `loadCatalogue`. This is all the computer imports (via its Deno import map, which deliberately maps only this subpath), so the corpus/computer boundary — the computer reads `dist/`, never scans or compiles `.mit` — is enforced by the import graph.
+- `@earlytexts/corpus/fs` (`src/fs.ts`) — the one disk-backed `CorpusFs` binding, on `node:fs` (which Deno provides natively), kept out of the main entry point so it stays platform-free.
+- `@earlytexts/corpus/harness` (`tests/harness.ts`) — the in-memory corpus builder the corpus's and the computer's tests share.

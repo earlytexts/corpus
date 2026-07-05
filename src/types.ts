@@ -1,34 +1,51 @@
 /**
  * The catalogue's types. The corpus is the single source of truth for the shape
- * of the catalogue and the corpus metadata; the computer consumes the compiled
- * output (see serialize.ts) and mirrors only the wire types it needs.
+ * of the catalogue and the corpus metadata; the computer imports these types
+ * (via `@earlytexts/corpus/wire`) rather than mirroring them.
  *
- * Two layers live here:
- *  - the in-memory `Catalog` (with live `MarkitDocument`s) that `buildCatalog`
- *    produces, used by the build task before it serialises; and
+ * Two layers live here, sharing one set of metadata bases so they cannot
+ * drift apart:
+ *  - the in-memory `Catalogue` (with live `MarkitDocument`s) that
+ *    `buildCatalogue` produces and `loadCatalogue` reconstructs; and
  *  - the serialised contract (`CatalogueFile`, `DocRefNode`) written to the
  *    gitignored `dist/` directory that the computer reads.
+ *
+ * Each entity is its shared `…Meta` base plus the one field that differs
+ * between the layers: a live document/object graph in memory, a key or
+ * reference on the wire. The filesystem ports the build and write need are at
+ * the bottom.
  */
 
 import type { MarkitDocument } from "@earlytexts/markit";
 
+/* --------------------------- the catalogue ---------------------------- */
+
+/** The in-memory catalogue: what `buildCatalogue` produces and
+ * `loadCatalogue` reconstructs from `dist/`. */
+export type Catalogue = {
+  authors: Author[]; // ascending by year of first publication
+  byAuthor: Map<string, Author>;
+  /** Source `.mit` path for every loaded edition: absolute when built from
+   * source (buildCatalogue), relative to the corpus root when loaded from the
+   * compiled `dist/` (loadCatalogue). */
+  sources: WeakMap<MarkitDocument, string>;
+};
+
 /**
- * The filesystem capability the catalog scan needs. The corpus file set is
- * discovered by parsing (children references, case-insensitive lookups), so the
- * I/O cannot be hoisted ahead of the walk — it is injected as this port instead.
- * `readFile` and `stat` return null when the path is absent; `readDir` throws
- * (as Deno.readDir does) so a missing corpus directory surfaces.
+ * The whole catalogue, serialised to `dist/catalogue.json`. Works are listed
+ * once and referenced by key from each author, so a co-authored work keeps a
+ * single identity across the authors that list it.
  */
-export interface CorpusFs {
-  readFile(path: string): Promise<string | null>;
-  readDir(path: string): Promise<Deno.DirEntry[]>;
-  realPath(path: string): Promise<string>;
-  stat(path: string): Promise<{ isFile: boolean } | null>;
-}
+export type CatalogueFile = {
+  authors: CatalogueAuthor[];
+  works: Record<string, CatalogueWork>;
+  warnings: string[];
+};
 
-/* ------------------------- in-memory catalogue ------------------------ */
+/* ------------------------------- authors ------------------------------ */
 
-export type Author = {
+/** Author metadata, shared by the in-memory and serialised forms. */
+export type AuthorMeta = {
   slug: string;
   forename: string;
   surname: string;
@@ -40,28 +57,25 @@ export type Author = {
   firstPublished?: number;
   nationality?: string;
   sex?: string;
+};
+
+export type Author = AuthorMeta & {
   works: Work[]; // ascending by first publication year
 };
 
-export type Edition = {
-  /** Author slugs, in title order; [0] is the host (the directory it lives in). */
-  authorSlugs: string[];
-  workSlug: string;
-  slug: string; // a year slug, e.g. "1757", "1742a"
-  title: string;
-  breadcrumb: string;
-  imported: boolean;
-  published: number[];
-  sourceUrl?: string;
-  sourceDesc?: string;
-  document: MarkitDocument;
+export type CatalogueAuthor = AuthorMeta & {
+  /** Work keys (`<hostSlug>/<work>`), in order; resolved against `works`. */
+  works: string[];
 };
 
-export type Work = {
+/* -------------------------------- works ------------------------------- */
+
+/** Work metadata, shared by the in-memory and serialised forms. */
+export type WorkMeta = {
   /**
    * Author slugs, in title order — the people who wrote it. The work is
    * registered under every slug here, so it lists on each author's page (see
-   * buildCatalog). For its identity/URL, see `hostSlug`.
+   * buildCatalogue). For its identity/URL, see `hostSlug`.
    */
   authorSlugs: string[];
   /**
@@ -86,18 +100,60 @@ export type Work = {
    * leaving it reachable only through the collection(s) that borrow it.
    */
   standalone: boolean;
-  dir: string; // directory owning this work's files (relative to the corpus root)
+  /** Directory owning this work's files: absolute when built from source,
+   * relative to the corpus root when serialised (and so when loaded back). */
+  dir: string;
+};
+
+export type Work = WorkMeta & {
   editions: Edition[]; // dated editions, ascending by year
 };
 
-export type Catalog = {
-  authors: Author[]; // ascending by year of first publication
-  byAuthor: Map<string, Author>;
-  /** Source file path (relative to the corpus root) for every loaded edition. */
-  sources: WeakMap<MarkitDocument, string>;
+export type CatalogueWork = WorkMeta & {
+  editions: CatalogueEdition[];
 };
 
-/* --------------------------- serialised form -------------------------- */
+/* ------------------------------ editions ------------------------------ */
+
+/** Edition metadata, shared by the in-memory and serialised forms. */
+export type EditionMeta = {
+  /** Author slugs, in title order; [0] is the host (the directory it lives in). */
+  authorSlugs: string[];
+  workSlug: string;
+  slug: string; // a year slug, e.g. "1757", "1742a"
+  title: string;
+  breadcrumb: string;
+  imported: boolean;
+  published: number[];
+  sourceUrl?: string;
+  sourceDesc?: string;
+};
+
+export type Edition = EditionMeta & {
+  document: MarkitDocument;
+};
+
+/** A serialised edition: its metadata plus pointers to its document file. */
+export type CatalogueEdition = EditionMeta & {
+  /** Document file key, under `dist/documents/<docKey>.json`. */
+  docKey: string;
+  /** Source `.mit` path, relative to the corpus root (for ownership checks). */
+  source: string;
+};
+
+/* --------------------------- documents on disk ------------------------ */
+
+/**
+ * A serialised document node: a Markit document whose borrowed children are
+ * `DocRefNode` placeholders. Written by serialize.ts (one file per edition,
+ * under `dist/documents/<docKey>.json`), read back by deserialize.ts.
+ */
+export type SerializedDoc = {
+  id: string;
+  metadata?: MarkitDocument["metadata"];
+  blocks: MarkitDocument["blocks"];
+  children: (SerializedDoc | DocRefNode)[];
+};
 
 /**
  * A borrowed child in a serialised document: a placeholder naming another
@@ -106,59 +162,34 @@ export type Catalog = {
  */
 export type DocRefNode = { __ref: string };
 
-/** A serialised edition: its metadata plus pointers to its document file. */
-export type CatalogueEdition = {
-  authorSlugs: string[];
-  workSlug: string;
-  slug: string;
-  title: string;
-  breadcrumb: string;
-  imported: boolean;
-  published: number[];
-  sourceUrl?: string;
-  sourceDesc?: string;
-  /** Document file key, under `dist/documents/<docKey>.json`. */
-  docKey: string;
-  /** Source `.mit` path, relative to the corpus root (for ownership checks). */
-  source: string;
-};
+/* ---------------------------- filesystem ports ------------------------ */
 
-export type CatalogueWork = {
-  authorSlugs: string[];
-  hostSlug: string;
-  slug: string;
-  title: string;
-  breadcrumb: string;
-  imported: boolean;
-  /** Earliest publication year across all editions (derived, not stored). */
-  firstPublished: number;
-  canonicalSlug: string;
-  standalone: boolean;
-  dir: string; // relative to the corpus root
-  editions: CatalogueEdition[];
-};
-
-export type CatalogueAuthor = {
-  slug: string;
-  forename: string;
-  surname: string;
-  title?: string;
-  birth?: number;
-  death?: number;
-  firstPublished?: number;
-  nationality?: string;
-  sex?: string;
-  /** Work keys (`<hostSlug>/<work>`), in order; resolved against `works`. */
-  works: string[];
+/** A directory entry as the corpus walk sees it (Deno.DirEntry-compatible,
+ * but runtime-neutral so Node-based consumers can implement the port too). */
+export type DirEntry = {
+  name: string;
+  isFile: boolean;
+  isDirectory: boolean;
 };
 
 /**
- * The whole catalogue, serialised to `dist/catalogue.json`. Works are listed
- * once and referenced by key from each author, so a co-authored work keeps a
- * single identity across the authors that list it.
+ * The filesystem capability the catalogue scan needs. The corpus file set is
+ * discovered by parsing (children references, case-insensitive lookups), so the
+ * I/O cannot be hoisted ahead of the walk — it is injected as this port instead.
+ * `readFile` and `stat` return null when the path is absent; `readDir` throws
+ * (as Deno.readDir does) so a missing corpus directory surfaces.
  */
-export type CatalogueFile = {
-  authors: CatalogueAuthor[];
-  works: Record<string, CatalogueWork>;
-  warnings: string[];
-};
+export interface CorpusFs {
+  readFile(path: string): Promise<string | null>;
+  readDir(path: string): Promise<DirEntry[]>;
+  realPath(path: string): Promise<string>;
+  stat(path: string): Promise<{ isFile: boolean } | null>;
+}
+
+/** The additional capabilities `writeDist` needs. `mkdir` is recursive;
+ * `remove` is recursive and ignores a missing path. */
+export interface CorpusFsWrite extends CorpusFs {
+  writeFile(path: string, text: string): Promise<void>;
+  mkdir(path: string): Promise<void>;
+  remove(path: string): Promise<void>;
+}
