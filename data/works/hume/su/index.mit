@@ -5,4 +5,4 @@ title = "Of Suicide"
 breadcrumb = "Of Suicide"
 authors = ["hume"]
 canonical = "1755"
-standalone = true
+standalone = false
