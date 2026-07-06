@@ -2,14 +2,14 @@ import { defineConfig } from "tsup";
 
 // Build the publishable package: bundled ESM + bundled type declarations, one
 // self-contained file per entry point. Bundling the declarations is what lets
-// the source keep its `.ts` import extensions (the computer's Deno build wrapper
-// runs the source directly, so it must name real `.ts` files) while the shipped
+// the source keep its `.ts` import extensions (the corpus's own Node scripts run
+// the source directly, so it must name real `.ts` files) while the shipped
 // `.d.ts` carry no relative imports at all — nothing for a consumer to resolve.
 export default defineConfig({
   entry: {
     index: "src/index.ts",
     wire: "src/wire.ts",
-    fs: "src/fs.ts",
+    build: "src/build.ts",
     harness: "tests/harness.ts",
   },
   format: ["esm"],

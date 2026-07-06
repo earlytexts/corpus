@@ -1,10 +1,11 @@
 /**
  * The disk-backed CorpusFs binding. Built on node:fs — which Deno provides
  * natively — so this one binding serves the corpus's own Deno scripts and Node
- * hosts (the Compositor extension) alike. Kept tiny and separate from index.ts
- * so the catalogue logic stays free of direct filesystem calls (and so tests
- * can pass an in-memory equivalent); package consumers import it as
- * `@earlytexts/corpus/fs`.
+ * hosts (the Compositor extension) alike. Kept tiny and separate from the
+ * catalogue logic so that logic stays free of direct filesystem calls (and so
+ * tests can pass an in-memory equivalent); it ships as part of the `build`
+ * subpath (`@earlytexts/corpus/build`, which the computer's build wrapper
+ * imports) and is re-exported from the main entry point.
  */
 
 import { promises as fs } from "node:fs";

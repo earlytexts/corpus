@@ -1,18 +1,19 @@
 /**
  * Public entry point for consuming the corpus's logic as a library (the
- * Compositor VSCode extension bundles this). Runtime-neutral: everything takes
- * a `CorpusFs`, so callers bring their own filesystem binding. The disk-backed
- * binding (fs.ts, on node:fs) is a separate export — `@earlytexts/corpus/fs` —
- * so this entry point stays free of platform imports.
+ * Compositor VSCode extension bundles this). The full authoring surface — one
+ * door to everything the Compositor needs — so it re-exports the two focused
+ * subpaths (`build` and `wire`) that the computer imports in isolation, and
+ * adds the authoring-only rules on top.
  *
- * Ordered by altitude: the authoring pipeline first, then the wire contract
- * (also exported alone as `@earlytexts/corpus/wire`, which is all the
- * computer may import), then the foundations both build on.
+ * Ordered by altitude: the build surface first (also exported alone as
+ * `@earlytexts/corpus/build`), then authoring rules, then the wire contract
+ * (also `@earlytexts/corpus/wire`, all the computer's app code may import),
+ * then the foundations both build on.
  */
 
-// The catalogue build: scan data/, compile, compose, write catalogue/.
-export * from "./catalogue.ts";
-export * from "./catalogue-output.ts";
+// The build surface: scan data/, compile, compose, write catalogue/, plus the
+// disk-backed CorpusFs binding that drives it.
+export * from "./build.ts";
 
 // Authoring support: validation rules and markup hints (the Compositor's
 // diagnostics and suggestions).

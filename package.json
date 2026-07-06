@@ -1,6 +1,6 @@
 {
   "name": "@earlytexts/corpus",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "The Early Text Corpus: catalogue, schema, path, and validation logic, published as compiled JS + type declarations (see src/index.ts)",
   "license": "MIT",
   "type": "module",
@@ -19,9 +19,9 @@
       "types": "./dist/wire.d.ts",
       "default": "./dist/wire.js"
     },
-    "./fs": {
-      "types": "./dist/fs.d.ts",
-      "default": "./dist/fs.js"
+    "./build": {
+      "types": "./dist/build.d.ts",
+      "default": "./dist/build.js"
     },
     "./harness": {
       "types": "./dist/harness.d.ts",
