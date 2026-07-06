@@ -1,15 +1,15 @@
 {
   "name": "@earlytexts/corpus",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "The Early Text Corpus: catalogue, schema, path, and validation logic, published as compiled JS + type declarations (see src/index.ts)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/earlytexts/corpus"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": [
-    "dist",
-    "README.md"
-  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -28,6 +28,10 @@
       "default": "./dist/harness.js"
     }
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "node scripts/build.ts",
     "build:pkg": "tsup",
@@ -40,7 +44,7 @@
     "prepublishOnly": "npm run check && npm run build:pkg && npm test"
   },
   "dependencies": {
-    "@earlytexts/markit": "^3.4.1"
+    "@earlytexts/markit": "^3.4.2"
   },
   "devDependencies": {
     "@types/node": "^25.5.1",
