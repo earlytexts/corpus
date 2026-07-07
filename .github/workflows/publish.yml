@@ -16,7 +16,8 @@ jobs:
       id-token: "write" # OIDC authentication with JSR
 
     steps:
-      - uses: "actions/checkout@v6"
+      - name: "Clone repository"
+        uses: "actions/checkout@v6"
         with:
           ref: "${{ github.event.workflow_run.head_sha }}"
 
