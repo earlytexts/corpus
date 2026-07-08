@@ -12,19 +12,6 @@ export type ValueType =
   | "string[]"
   | "number[]";
 
-const isScalar = (value: unknown, type: string): boolean =>
-  type === "string"
-    ? typeof value === "string"
-    : type === "number"
-    ? typeof value === "number"
-    : typeof value === "boolean";
-
-export const typeMatches = (value: unknown, type: ValueType): boolean =>
-  type.endsWith("[]")
-    ? Array.isArray(value) &&
-      value.every((item) => isScalar(item, type.slice(0, -2)))
-    : isScalar(value, type);
-
 /** The ways `metadata` violates `schema`: one message per unknown or mistyped
  * key, without any file/section locus (the caller knows where it is). */
 export const keyViolations = (
@@ -40,6 +27,19 @@ export const keyViolations = (
   }
   return violations;
 };
+
+export const typeMatches = (value: unknown, type: ValueType): boolean =>
+  type.endsWith("[]")
+    ? Array.isArray(value) &&
+      value.every((item) => isScalar(item, type.slice(0, -2)))
+    : isScalar(value, type);
+
+const isScalar = (value: unknown, type: string): boolean =>
+  type === "string"
+    ? typeof value === "string"
+    : type === "number"
+    ? typeof value === "number"
+    : typeof value === "boolean";
 
 /** Author metadata (root of `data/authors/<author>.mit`). */
 export const authorSchema: Record<string, ValueType> = {
