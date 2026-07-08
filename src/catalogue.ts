@@ -158,19 +158,16 @@ const loadWork = async (
   // A single-author host directory names the author, listed first.
   const declaredAuthors = metaAuthors(stub) ?? [];
   const authorSlugs = hostSlug.includes("-")
-    ? declaredAuthors.length > 0
-      ? declaredAuthors
-      : hostSlug.split("-")
+    ? declaredAuthors.length > 0 ? declaredAuthors : hostSlug.split("-")
     : [hostSlug, ...declaredAuthors.filter((s) => s !== hostSlug)];
 
   const editionSlugs: string[] = [];
   for (const sub of await ctx.fs.readDir(dir)) {
-    const name =
-      sub.isFile && sub.name.endsWith(".mit")
-        ? sub.name.slice(0, -4)
-        : sub.isDirectory
-          ? sub.name
-          : undefined;
+    const name = sub.isFile && sub.name.endsWith(".mit")
+      ? sub.name.slice(0, -4)
+      : sub.isDirectory
+      ? sub.name
+      : undefined;
     if (name !== undefined && YEAR.test(name)) {
       editionSlugs.push(name);
     }
@@ -191,8 +188,8 @@ const loadWork = async (
 
   // Canonical edition: the stub's `canonical` key, else the latest edition.
   const declared = metaString(stub, "canonical")?.toLowerCase();
-  const canonical =
-    editions.find((e) => e.slug === declared) ?? editions[editions.length - 1];
+  const canonical = editions.find((e) => e.slug === declared) ??
+    editions[editions.length - 1];
   if (declared !== undefined && canonical.slug !== declared) {
     ctx.warnings.push(
       `data/works/${hostSlug}/${slug}: canonical "${declared}" is not an edition`,
@@ -234,8 +231,7 @@ const makeEdition = (
     workSlug,
     slug,
     title: metaString(document, "title") ?? document.id,
-    breadcrumb:
-      metaString(document, "breadcrumb") ??
+    breadcrumb: metaString(document, "breadcrumb") ??
       metaString(document, "title") ??
       document.id,
     // Texts are assumed present unless the corpus says otherwise; only files

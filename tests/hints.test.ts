@@ -6,7 +6,8 @@
  * matching rule is pinned down independently of the classifier.
  */
 
-import { expect, test } from "vitest";
+import { expect } from "@std/expect";
+import { test } from "@std/testing/bdd";
 import { compile } from "@earlytexts/markit";
 import { buildCatalogue } from "../src/catalogue.ts";
 import {
@@ -17,7 +18,7 @@ import {
   phraseLexicon,
   scanSource,
 } from "../src/hints.ts";
-import { corpus, CORPUS_ROOT, memoryCorpus } from "./harness.ts";
+import { corpus, CORPUS_ROOT, memoryCorpus } from "../src/harness.ts";
 
 /** @std/assert-style shims over vitest's expect, so the cases read unchanged. */
 const assert: (cond: unknown, msg?: string) => asserts cond = (cond, msg) => {
@@ -57,12 +58,12 @@ const fixture = () =>
         "",
         "{#1}",
         "Stories point by point and point by point and point again: in the " +
-          "road, in the mist, in the way, in the dark, in the end.",
+        "road, in the mist, in the way, in the dark, in the end.",
         "",
         "{#2}",
         "He wrote $la:quod erat in foro$ and $la:in foro conscienti{ae}$ and " +
-          "$fr:J'aime le monde$ and $sundry generique$ text. [p:Mr. Cicero] " +
-          "said so; compare [Pro Sexto] and [Point].",
+        "$fr:J'aime le monde$ and $sundry generique$ text. [p:Mr. Cicero] " +
+        "said so; compare [Pro Sexto] and [Point].",
       ].join("\n"),
     )
     .work("locke", "essay", {
@@ -242,8 +243,7 @@ test("scan: text already inside markup is not re-suggested", () => {
 });
 
 test("scan: metadata and block tags are not scanned", () => {
-  const source =
-    '# T\n\n[metadata]\ntitle = "quod erat in foro"\n\n' +
+  const source = '# T\n\n[metadata]\ntitle = "quod erat in foro"\n\n' +
     '{#1, speaker="Quod Foro"}\nEnglish only here.\n';
   assertEquals(scan(source, laHints()), []);
 });

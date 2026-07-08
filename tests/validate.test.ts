@@ -6,7 +6,7 @@
  * real corpus on disk. Run with: npm run validate.
  */
 
-import { test } from "vitest";
+import { test } from "@std/testing/bdd";
 import {
   loadCorpus,
   type RuleContext,

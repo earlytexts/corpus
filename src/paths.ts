@@ -67,7 +67,7 @@ export const resolveVariant = async (
   base: string,
 ): Promise<string | undefined> =>
   (await resolveFile(fs, `${base}.mit`)) ??
-  (await resolveFile(fs, `${base}/index.mit`));
+    (await resolveFile(fs, `${base}/index.mit`));
 
 /**
  * Resolve a path case-insensitively against the file system, so references like

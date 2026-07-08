@@ -2,12 +2,14 @@
  * Shared helpers for the corpus scripts: where the corpus root is, and how
  * violations are assembled into a failure message. The corpus-walking and
  * validation logic itself lives in ../src (runtime-neutral); these scripts are
- * its Node bindings.
+ * its disk bindings.
  */
 
 import { resolve } from "node:path";
 
-export const corpusRoot = resolve(import.meta.dirname, "..");
+// import.meta.dirname is only undefined for remote modules; these scripts are
+// always run from a local checkout.
+export const corpusRoot = resolve(import.meta.dirname!, "..");
 
 /** Assemble an assertion message from a list of violations, capped. */
 export const report = (violations: string[], cap = 50): string | undefined => {

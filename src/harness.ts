@@ -6,8 +6,8 @@
  * `catalogue/`) import this harness, so the fixture format lives in one place.
  */
 
-import type { CorpusFs } from "../src/types.ts";
-import { normalizePath } from "../src/paths.ts";
+import type { CorpusFs } from "./types.ts";
+import { normalizePath } from "./paths.ts";
 
 /** The root every corpus path hangs off (an arbitrary absolute prefix). */
 export const CORPUS_ROOT = "/corpus";
@@ -59,8 +59,8 @@ const tomlValue = (value: Scalar | Scalar[]): string =>
   Array.isArray(value)
     ? `[${value.map(tomlValue).join(", ")}]`
     : typeof value === "string"
-      ? JSON.stringify(value)
-      : String(value);
+    ? JSON.stringify(value)
+    : String(value);
 
 const toml = (meta: Meta): string =>
   Object.entries(meta)

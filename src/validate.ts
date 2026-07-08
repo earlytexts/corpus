@@ -97,7 +97,7 @@ export const rules: Rule[] = [
           endLine: e.endLine,
           endColumn: e.endColumn,
           severity: e.severity,
-        })),
+        }))
       ),
   },
   {
@@ -244,10 +244,12 @@ export const rules: Rule[] = [
         for (const { text } of allTexts(doc)) {
           for (const block of text.blocks) {
             if (block.metadata === undefined) continue;
-            for (const message of keyViolations(
-              meta(block.metadata),
-              blockSchema,
-            )) {
+            for (
+              const message of keyViolations(
+                meta(block.metadata),
+                blockSchema,
+              )
+            ) {
               violations.push({
                 rule,
                 path,
@@ -333,7 +335,8 @@ export const rules: Rule[] = [
             violations.push({
               rule,
               path,
-              message: `heading "${segment}" should be a bare segment (no dots)`,
+              message:
+                `heading "${segment}" should be a bare segment (no dots)`,
               line: lineOf(text),
             });
           }
@@ -520,7 +523,7 @@ const compiled = (list: CorpusFile[]): CorpusFile[] =>
 const authorSlugs = (files: CorpusFile[]): Set<string> =>
   new Set(
     authorFiles(files).map((f) =>
-      f.path.slice("authors/".length, -".mit".length),
+      f.path.slice("authors/".length, -".mit".length)
     ),
   );
 
