@@ -55,69 +55,69 @@ type Scalar = string | number | boolean;
 /** A `.mit` `[metadata]` block, as a record (arrays become inline TOML arrays). */
 export type Meta = Record<string, Scalar | Scalar[]>;
 
-const tomlValue = (value: Scalar | Scalar[]): string =>
-  Array.isArray(value)
-    ? `[${value.map(tomlValue).join(", ")}]`
-    : typeof value === "string"
-    ? JSON.stringify(value)
-    : String(value);
+/** A fluent builder for a corpus map: author/work/edition files under the root.
+ * A private shape — consumers only ever hold one via `corpus()`. */
+type CorpusBuilder = {
+  /** `data/authors/<slug>.mit`: the author's metadata (no text). */
+  author: (slug: string, meta: Meta) => CorpusBuilder;
+  /** `data/works/<author>/<work>/index.mit`: the work's edition-independent identity. */
+  work: (author: string, work: string, meta: Meta) => CorpusBuilder;
+  /** `data/works/<author>/<work>/<slug>.mit`: a year-named edition with its text. */
+  edition: (
+    author: string,
+    work: string,
+    slug: string,
+    meta: Meta,
+    body?: string,
+  ) => CorpusBuilder;
+  /** Escape hatch: write a raw file at a root-relative path. */
+  file: (relPath: string, content: string) => CorpusBuilder;
+  /** The corpus map (a fresh copy). */
+  build: () => Record<string, string>;
+};
+
+export const corpus = (): CorpusBuilder => {
+  const files: Record<string, string> = {};
+  const builder: CorpusBuilder = {
+    author: (slug, meta) => {
+      files[`${CORPUS_ROOT}/data/authors/${slug}.mit`] = doc(`# ${slug}`, meta);
+      return builder;
+    },
+    work: (author, work, meta) => {
+      files[`${CORPUS_ROOT}/data/works/${author}/${work}/index.mit`] = doc(
+        `# ${author}.${work}`,
+        meta,
+      );
+      return builder;
+    },
+    edition: (author, work, slug, meta, body = "") => {
+      files[`${CORPUS_ROOT}/data/works/${author}/${work}/${slug}.mit`] = doc(
+        `# ${author}.${work}.${slug}`,
+        meta,
+        body,
+      );
+      return builder;
+    },
+    file: (relPath, content) => {
+      files[`${CORPUS_ROOT}/${relPath}`] = content;
+      return builder;
+    },
+    build: () => ({ ...files }),
+  };
+  return builder;
+};
+
+const doc = (heading: string, meta: Meta, body = ""): string =>
+  `${heading}\n\n[metadata]\n${toml(meta)}\n${body ? `\n${body}\n` : ""}`;
 
 const toml = (meta: Meta): string =>
   Object.entries(meta)
     .map(([k, v]) => `${k} = ${tomlValue(v)}`)
     .join("\n");
 
-const doc = (heading: string, meta: Meta, body = ""): string =>
-  `${heading}\n\n[metadata]\n${toml(meta)}\n${body ? `\n${body}\n` : ""}`;
-
-/** A fluent builder for a corpus map: author/work/edition files under the root. */
-export class CorpusBuilder {
-  private files: Record<string, string> = {};
-
-  /** `data/authors/<slug>.mit`: the author's metadata (no text). */
-  author(slug: string, meta: Meta): this {
-    this.files[`${CORPUS_ROOT}/data/authors/${slug}.mit`] = doc(
-      `# ${slug}`,
-      meta,
-    );
-    return this;
-  }
-
-  /** `data/works/<author>/<work>/index.mit`: the work's edition-independent identity. */
-  work(author: string, work: string, meta: Meta): this {
-    this.files[`${CORPUS_ROOT}/data/works/${author}/${work}/index.mit`] = doc(
-      `# ${author}.${work}`,
-      meta,
-    );
-    return this;
-  }
-
-  /** `data/works/<author>/<work>/<slug>.mit`: a year-named edition with its text. */
-  edition(
-    author: string,
-    work: string,
-    slug: string,
-    meta: Meta,
-    body = "",
-  ): this {
-    this.files[`${CORPUS_ROOT}/data/works/${author}/${work}/${slug}.mit`] = doc(
-      `# ${author}.${work}.${slug}`,
-      meta,
-      body,
-    );
-    return this;
-  }
-
-  /** Escape hatch: write a raw file at a root-relative path. */
-  file(relPath: string, content: string): this {
-    this.files[`${CORPUS_ROOT}/${relPath}`] = content;
-    return this;
-  }
-
-  /** The corpus map (a fresh copy). */
-  build(): Record<string, string> {
-    return { ...this.files };
-  }
-}
-
-export const corpus = (): CorpusBuilder => new CorpusBuilder();
+const tomlValue = (value: Scalar | Scalar[]): string =>
+  Array.isArray(value)
+    ? `[${value.map(tomlValue).join(", ")}]`
+    : typeof value === "string"
+    ? JSON.stringify(value)
+    : String(value);
