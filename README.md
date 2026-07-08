@@ -105,19 +105,18 @@ Every `.mit` file must compile without errors and be formatted exactly as the Ma
 ## Validation
 
 ```sh
-npm run build        # compile the catalogue to catalogue/ (the computer's input)
-npm run validate     # compile + formatting + schema + layout checks over the whole corpus
-npm test             # unit tests for the catalogue build (tests/)
-npm run fix          # apply the Markit formatter to every file in place
-npm run check        # typecheck the source and test code (tsc)
-npm run format       # format the source and test code (prettier); format:check to verify
+deno task build      # compile the catalogue to catalogue/ (the computer's input)
+deno task validate   # compile + formatting + schema + layout checks over the whole corpus
+deno task test       # unit tests for the catalogue build (tests/)
+deno task fix        # apply the Markit formatter to every file in place
+deno task check      # typecheck, lint, and format-check the source and test code
 ```
 
-The rules themselves live in `src/validate.ts` as pure functions returning structured violations; `tests/validate.test.ts` is a thin vitest wrapper that runs each rule over the real corpus.
+The rules themselves live in `src/validate.ts` as pure functions returning structured violations; `tests/validate.test.ts` is a thin test wrapper that runs each rule over the real corpus.
 
 ## Architecture
 
-The code implements two pipelines over the data model above, plus the foundations they share. Everything in `src/` is runtime-neutral and pure: filesystem access goes through the `CorpusFs` port (`src/types.ts`), so any host — the Node scripts here, the Node-based Compositor, the computer's Deno build wrapper, an in-memory test corpus — brings its own binding. Modules read top-down: each file's entry points come first, with helpers below their callers.
+The code implements two pipelines over the data model above, plus the foundations they share. Everything in `src/` is runtime-neutral and pure: filesystem access goes through the `CorpusFs` port (`src/types.ts`), so any host — the Deno scripts here, the Node-based Compositor, the computer's Deno build wrapper, an in-memory test corpus — brings its own binding. Modules read top-down: each file's entry points come first, with helpers below their callers.
 
 **The build pipeline** compiles the corpus into `catalogue/`, the boundary artefact every read-side consumer works from:
 
@@ -133,7 +132,7 @@ data/*.mit ──buildCatalogue──▶ Catalogue ──serializeCatalogue─�
 - `serialize.ts` / `deserialize.ts` — the wire format, owned here in both directions. Documents are written _uncomposed_ (a borrowed child is a `{ __ref }` placeholder); `loadCatalogue` splices the single shared instance back in, recreating the object graph.
 - `catalogue-output.ts` — writes `catalogue/catalogue.json` plus one document file per edition, replacing the directory wholesale so stale files never linger.
 
-**The validation pipeline** (`validate.ts`) enforces this document's rules: `loadCorpus` compiles every file standalone, and each `Rule` returns structured violations. The same rules drive `npm run validate` and the Compositor's editor diagnostics.
+**The validation pipeline** (`validate.ts`) enforces this document's rules: `loadCorpus` compiles every file standalone, and each `Rule` returns structured violations. The same rules drive `deno task validate` and the Compositor's editor diagnostics.
 
 **Authoring support**: `hints.ts` mines lexicons from the corpus's existing markup and scans raw source for likely new markup (people, citations, language spans) — the Compositor's suggestion engine.
 
@@ -141,9 +140,9 @@ data/*.mit ──buildCatalogue──▶ Catalogue ──serializeCatalogue─�
 
 ## As a library
 
-The `package.json` publishes **compiled JS + declarations** (built to `dist/` by `npm run build:pkg`, which runs [tsup](https://tsup.egoist.dev): bundled ESM + bundled `.d.ts`, one self-contained file per entry), so both a bundler and Deno's `node_modules` resolution can consume it directly — Deno refuses to strip types from `.ts` under `node_modules`, so shipping source would break the computer. The source in `src/` keeps explicit `.ts` import extensions (the corpus's own Node scripts run it directly, so the specifiers must name real `.ts` files); bundling the declarations means the shipped `.d.ts` carry no relative imports at all, so those `.ts` extensions never reach a consumer. The entry points are role-based:
+The package is published to [JSR](https://jsr.io/@earlytexts/corpus) as unbundled TypeScript source; JSR generates the type declarations, and its npm compatibility layer (`npm.jsr.io`, package name `@jsr/earlytexts__corpus`) serves transpiled JS + `.d.ts` to Node consumers like the Compositor. Deno consumers (the computer) import `jsr:@earlytexts/corpus` directly. The entry points are role-based:
 
 - `@earlytexts/corpus` (`src/index.ts`) — everything: the whole authoring surface, re-exporting the `build` and `wire` subpaths below and adding the authoring-only rules (validation, hints, schema, paths) on top. The Compositor VSCode extension bundles this to run the catalogue build, validation, hints, and the `catalogue/` write in-process under Node.
 - `@earlytexts/corpus/wire` (`src/wire.ts`) — the wire contract only: the catalogue types, serialize/deserialize, `loadCatalogue`. This is all the computer's _application_ code imports (via its Deno import map, which maps only this and the `build` subpath, never the full entry); its runtime reads `catalogue/` and never scans or compiles `.mit`.
-- `@earlytexts/corpus/build` (`src/build.ts`) — the build surface: `buildCatalogue`/`writeCatalogue` plus the disk-backed `nodeCorpusFs` binding (on `node:fs`, which Deno provides natively). Because the corpus is Node-only and Deno Deploy can't run its Node build, the computer's `scripts/build-corpus.ts` imports this subpath to produce `catalogue/` under Deno in prod — reusing the corpus's compiler rather than reimplementing it, and the one build-time seam its build touches.
-- `@earlytexts/corpus/harness` (`tests/harness.ts`) — the in-memory corpus builder the corpus's and the computer's tests share.
+- `@earlytexts/corpus/build` (`src/build.ts`) — the build surface: `buildCatalogue`/`writeCatalogue` plus the disk-backed `nodeCorpusFs` binding (on `node:fs`, which Deno provides natively). The computer's `scripts/build-corpus.ts` imports this subpath to produce `catalogue/` in prod from the pinned package version — reusing the corpus's compiler rather than reimplementing it, and the one build-time seam its build touches — so the corpus checkout there stays pure data.
+- `@earlytexts/corpus/harness` (`src/harness.ts`) — the in-memory corpus builder the corpus's and the computer's tests share.

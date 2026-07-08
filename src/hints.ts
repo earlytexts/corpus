@@ -228,8 +228,8 @@ export const buildHints = (
     const lexicon = lexiconFor(code);
     for (const [word, marked] of counts) {
       const u = unmarked.get(word) ?? 0;
-      const strong =
-        u <= STRONG_UNMARKED_FLOOR || u <= marked * STRONG_MARKED_RATIO;
+      const strong = u <= STRONG_UNMARKED_FLOOR ||
+        u <= marked * STRONG_MARKED_RATIO;
       (strong ? lexicon.strong : lexicon.weak).add(word);
     }
   }
@@ -311,7 +311,7 @@ const inlineRuns = (element: BlockElement): InlineElement[][] => {
   if (element.type === "paragraph") return [element.content];
   if (element.type === "blockquote") {
     return element.content.flatMap((child) =>
-      child.type === "paragraph" ? [child.content] : [],
+      child.type === "paragraph" ? [child.content] : []
     );
   }
   if (element.type === "list") return listRuns(element);
@@ -532,13 +532,11 @@ const sliceRange = (
   toLine: number,
   toCol: number,
 ): string =>
-  fromLine === toLine
-    ? (lines[fromLine] ?? "").slice(fromCol, toCol)
-    : [
-        (lines[fromLine] ?? "").slice(fromCol),
-        ...lines.slice(fromLine + 1, toLine),
-        (lines[toLine] ?? "").slice(0, toCol),
-      ].join("\n");
+  fromLine === toLine ? (lines[fromLine] ?? "").slice(fromCol, toCol) : [
+    (lines[fromLine] ?? "").slice(fromCol),
+    ...lines.slice(fromLine + 1, toLine),
+    (lines[toLine] ?? "").slice(0, toCol),
+  ].join("\n");
 
 /**
  * Widen a single-line suggestion to take in the inline formatting markup that
@@ -614,15 +612,12 @@ const prune = (list: MarkupSuggestion[]): MarkupSuggestion[] =>
         if (i === j || t.type !== s.type || (t.lang ?? "") !== (s.lang ?? "")) {
           return false;
         }
-        const startsBefore =
-          t.startLine < s.startLine ||
+        const startsBefore = t.startLine < s.startLine ||
           (t.startLine === s.startLine && t.startColumn <= s.startColumn);
-        const endsAfter =
-          t.endLine > s.endLine ||
+        const endsAfter = t.endLine > s.endLine ||
           (t.endLine === s.endLine && t.endColumn >= s.endColumn);
         if (!startsBefore || !endsAfter) return false;
-        const equal =
-          t.startLine === s.startLine &&
+        const equal = t.startLine === s.startLine &&
           t.startColumn === s.startColumn &&
           t.endLine === s.endLine &&
           t.endColumn === s.endColumn;
@@ -954,8 +949,9 @@ const addPhrase = (lexicon: PhraseLexicon, text: string): void => {
   const list = lexicon.get(head) ?? [];
   if (
     list.some((s) => s.length === seq.length && s.every((w, i) => w === seq[i]))
-  )
+  ) {
     return;
+  }
   list.push(seq);
   list.sort((a, b) => b.length - a.length);
   lexicon.set(head, list);

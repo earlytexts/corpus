@@ -1,0 +1,34 @@
+{
+  "name": "@earlytexts/corpus",
+  "version": "0.6.0",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./wire": "./src/wire.ts",
+    "./build": "./src/build.ts",
+    "./harness": "./src/harness.ts"
+  },
+  "publish": {
+    "include": ["src/", "README.md", "LICENSE.md", "deno.json"]
+  },
+  "imports": {
+    "@earlytexts/markit": "jsr:@earlytexts/markit@^3.5.0",
+    "@std/expect": "jsr:@std/expect@^1.0.0",
+    "@std/testing": "jsr:@std/testing@^1.0.0"
+  },
+  "tasks": {
+    "build": "deno run --allow-read --allow-write scripts/build.ts",
+    "fix": "deno run --allow-read --allow-write scripts/fix.ts",
+    "test": "deno test tests/catalogue.test.ts tests/hints.test.ts",
+    "validate": "deno test --allow-read tests/validate.test.ts",
+    "check": "deno check src/ scripts/ tests/ && deno lint && deno fmt --check"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "verbatimModuleSyntax": true
+  },
+  "exclude": ["data/", "catalogue/", "node_modules/"],
+  "fmt": {
+    "exclude": ["*.md"]
+  }
+}

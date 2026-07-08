@@ -6,14 +6,18 @@
  */
 
 export type ValueType =
-  "string" | "number" | "boolean" | "string[]" | "number[]";
+  | "string"
+  | "number"
+  | "boolean"
+  | "string[]"
+  | "number[]";
 
 const isScalar = (value: unknown, type: string): boolean =>
   type === "string"
     ? typeof value === "string"
     : type === "number"
-      ? typeof value === "number"
-      : typeof value === "boolean";
+    ? typeof value === "number"
+    : typeof value === "boolean";
 
 export const typeMatches = (value: unknown, type: ValueType): boolean =>
   type.endsWith("[]")

@@ -80,7 +80,7 @@ export const loadCatalogue = async (
       ...(node.metadata !== undefined ? { metadata: node.metadata } : {}),
       blocks: node.blocks,
       children: node.children.map((child) =>
-        isRef(child) ? compose(child.__ref) : build(child),
+        isRef(child) ? compose(child.__ref) : build(child)
       ),
     }) as MarkitDocument;
   const compose = (docKey: string): MarkitDocument => {
