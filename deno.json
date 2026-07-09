@@ -12,7 +12,7 @@
     "include": ["src/", "README.md", "LICENSE.md", "deno.json"]
   },
   "imports": {
-    "@earlytexts/markit": "jsr:@earlytexts/markit@^3.5.0",
+    "@earlytexts/markit": "jsr:@earlytexts/markit@^3.6.1",
     "@std/expect": "jsr:@std/expect@^1.0.0",
     "@std/testing": "jsr:@std/testing@^1.0.0"
   },
