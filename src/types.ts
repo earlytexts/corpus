@@ -17,6 +17,7 @@
  */
 
 import type { MarkitDocument } from "@earlytexts/markit";
+import type { Dictionary } from "./dictionary.ts";
 
 /* --------------------------- the catalogue ---------------------------- */
 
@@ -29,6 +30,11 @@ export type Catalogue = {
    * source (buildCatalogue), relative to the corpus root when loaded from the
    * compiled `catalogue/` (loadCatalogue). */
   sources: WeakMap<MarkitDocument, string>;
+  /** The curated register of surface forms (see dictionary.ts). Serialised
+   * expanded — every spelling and lemma explicit — as its own file,
+   * `catalogue/dictionary.json`, keeping `catalogue.json` lean; empty when
+   * loading a catalogue compiled before the dictionary existed. */
+  dictionary: Dictionary;
 };
 
 /**

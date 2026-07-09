@@ -8,6 +8,7 @@
 
 import { test } from "@std/testing/bdd";
 import {
+  dictionaryCoverage,
   loadCorpus,
   type RuleContext,
   rules,
@@ -28,3 +29,10 @@ for (const rule of rules) {
     if (message !== undefined) throw new Error(message);
   });
 }
+
+// The coverage tier of the dictionary validation is a report, not a rule: it
+// never fails while the register is being backfilled (flipping it to a hard
+// error is the last step of the backfill — see ../README.md).
+test("dictionary coverage (report only)", async () => {
+  console.log((await dictionaryCoverage(ctx)).join("\n"));
+});

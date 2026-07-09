@@ -10,7 +10,8 @@ export type ValueType =
   | "number"
   | "boolean"
   | "string[]"
-  | "number[]";
+  | "number[]"
+  | "map"; // a [metadata.<key>] section whose values are all strings
 
 /** The ways `metadata` violates `schema`: one message per unknown or mistyped
  * key, without any file/section locus (the caller knows where it is). */
@@ -29,7 +30,10 @@ export const keyViolations = (
 };
 
 export const typeMatches = (value: unknown, type: ValueType): boolean =>
-  type.endsWith("[]")
+  type === "map"
+    ? typeof value === "object" && value !== null && !Array.isArray(value) &&
+      Object.values(value).every((item) => typeof item === "string")
+    : type.endsWith("[]")
     ? Array.isArray(value) &&
       value.every((item) => isScalar(item, type.slice(0, -2)))
     : isScalar(value, type);
@@ -74,6 +78,7 @@ export const textSchema: Record<string, ValueType> = {
   standalone: "boolean",
   sourceUrl: "string",
   sourceDesc: "string",
+  dictionary: "map",
 };
 
 /** Block-level metadata. */

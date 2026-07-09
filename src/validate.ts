@@ -19,6 +19,21 @@ import {
 } from "@earlytexts/markit";
 import type { CorpusFs } from "./types.ts";
 import {
+  accountTokens,
+  type Coverage,
+  coverageOf,
+  dictionaryViolations,
+  expandDictionary,
+  overridesOf,
+  overrideViolation,
+  parseDictionary,
+  readDictionaryShards,
+  shardDictionary,
+  shardOf,
+  wordMarkupViolation,
+} from "./dictionary.ts";
+import { scanBlock } from "./words.ts";
+import {
   authorRequired,
   authorSchema,
   authorSexValues,
@@ -188,6 +203,11 @@ export const rules: Rule[] = [
           }
           if ("standalone" in metadata && !stub) {
             push(`"standalone" belongs only on a work's index.mit stub`);
+          }
+          // A stub is metadata-only: it prints no tokens, so overrides would
+          // mean nothing there.
+          if ("dictionary" in metadata && stub) {
+            push(`"dictionary" does not belong on a work's index.mit stub`);
           }
           // A work's first-publication year is derived from its editions,
           // never set on the stub.
@@ -440,7 +460,172 @@ export const rules: Rule[] = [
       return violations;
     },
   },
+  {
+    // The structural tier of the dictionary validation (see ../README.md):
+    // shards parse, keys are folded words in the right shard in order,
+    // values are well-formed — and, when all of that holds, each shard is
+    // byte-for-byte canonical.
+    name: "dictionary shards are well-formed",
+    check: async ({ fs, root }) => {
+      const rule = "dictionary shards are well-formed";
+      const shards = await readDictionaryShards(fs, root);
+      const { dictionary, problems } = parseDictionary(shards);
+      const violations: Violation[] = problems.map((problem) => ({
+        rule,
+        path: `dictionary/${problem.shard}`,
+        ...(problem.key !== undefined ? { locus: `"${problem.key}"` } : {}),
+        message: problem.message,
+      }));
+      // The formatting comparison only means anything once the shards parse
+      // cleanly; skip it to avoid cascading noise.
+      if (violations.length > 0) return violations;
+      const canonical = shardDictionary(dictionary);
+      for (const [shard, text] of shards) {
+        const want = canonical.get(shard);
+        if (want === undefined) {
+          violations.push({
+            rule,
+            path: `dictionary/${shard}`,
+            message: "empty shard file (run `deno task fmt` to remove it)",
+          });
+        } else if (want !== text) {
+          violations.push({
+            rule,
+            path: `dictionary/${shard}`,
+            message: "not canonically formatted (run `deno task fmt`)",
+          });
+        }
+      }
+      return violations;
+    },
+  },
+  {
+    // The referential tier, within the register: closed under derivation —
+    // cross-references and lemmas resolve, expanded readings are distinct and
+    // selectable (see dictionary.ts, dictionaryViolations). Skipped while the
+    // shards themselves have problems — dropped entries would dangle
+    // spuriously.
+    name: "dictionary readings resolve within the register",
+    check: async ({ fs, root }) => {
+      const rule = "dictionary readings resolve within the register";
+      const { dictionary, problems } = parseDictionary(
+        await readDictionaryShards(fs, root),
+      );
+      if (problems.length > 0) return [];
+      return dictionaryViolations(dictionary).map(({ key, message }) => ({
+        rule,
+        path: `dictionary/${shardOf(key)}`,
+        locus: `"${key}"`,
+        message,
+      }));
+    },
+  },
+  {
+    // Still the referential tier: every `[w:surface=value]` in the texts
+    // obeys the dictionary (see dictionary.ts, wordMarkupViolation) — checked
+    // against the expanded readings, so inherited ambiguity counts.
+    name: "word markup selects a dictionary reading",
+    check: async ({ files, fs, root }) => {
+      const rule = "word markup selects a dictionary reading";
+      const dictionary = expandDictionary(
+        parseDictionary(await readDictionaryShards(fs, root)).dictionary,
+      );
+      const violations: Violation[] = [];
+      for (const { path, doc } of compiled(workFiles(files))) {
+        for (const { text } of allTexts(doc)) {
+          for (const block of text.blocks) {
+            for (const { element, tokens } of scanBlock(block).words) {
+              const message = wordMarkupViolation(element, tokens, dictionary);
+              if (message !== undefined) {
+                violations.push({
+                  rule,
+                  path,
+                  locus: `(${text.id})`,
+                  message,
+                  line: lineOf(block),
+                });
+              }
+            }
+          }
+        }
+      }
+      return violations;
+    },
+  },
+  {
+    // Still the referential tier: every `[metadata.dictionary]` override obeys
+    // the dictionary (see dictionary.ts, overrideViolation) — the same
+    // selection rule as `[w:]` markup, stated once per edition (or section)
+    // instead of per occurrence.
+    name: "dictionary overrides select a reading",
+    check: async ({ files, fs, root }) => {
+      const rule = "dictionary overrides select a reading";
+      const dictionary = expandDictionary(
+        parseDictionary(await readDictionaryShards(fs, root)).dictionary,
+      );
+      const violations: Violation[] = [];
+      for (const { path, doc } of compiled(workFiles(files))) {
+        for (const { text } of allTexts(doc)) {
+          const overrides = Object.entries(overridesOf(text.metadata));
+          if (overrides.length === 0) continue;
+          const map = text.metadata?.dictionary;
+          const line = (typeof map === "object" && !Array.isArray(map)
+            ? lineOf(map)
+            : undefined) ?? lineOf(text.metadata) ?? lineOf(text);
+          for (const [surface, value] of overrides) {
+            const message = overrideViolation(surface, value, dictionary);
+            if (message !== undefined) {
+              violations.push({
+                rule,
+                path,
+                locus: `(${text.id})`,
+                message,
+                line,
+              });
+            }
+          }
+        }
+      }
+      return violations;
+    },
+  },
 ];
+
+/**
+ * The coverage tier of the dictionary validation: how much of each work (and
+ * of the whole corpus) the accounting rule accounts for. A report, not a rule
+ * — it never fails while the register is being backfilled; flipping it to a
+ * hard error is the last step of the backfill.
+ */
+export const dictionaryCoverage = async (
+  ctx: RuleContext,
+): Promise<string[]> => {
+  const { dictionary } = parseDictionary(
+    await readDictionaryShards(ctx.fs, ctx.root),
+  );
+  const totals: Coverage = {
+    total: 0,
+    confirmed: 0,
+    unconfirmed: 0,
+    unaccounted: 0,
+  };
+  const byWork = new Map<string, Coverage>();
+  for (const { path, doc } of compiled(workFiles(ctx.files))) {
+    const coverage = coverageOf(accountTokens(doc, dictionary));
+    addCoverage(totals, coverage);
+    const work = path.split("/").slice(1, 3).join("/");
+    const existing = byWork.get(work);
+    if (existing === undefined) byWork.set(work, coverage);
+    else addCoverage(existing, coverage);
+  }
+  return [
+    `corpus: ${coverageLine(totals)}`,
+    ...[...byWork.entries()]
+      .filter(([, coverage]) => coverage.total > 0) // skip unimported stubs
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([work, coverage]) => `  ${work}: ${coverageLine(coverage)}`),
+  ];
+};
 
 /** Load and compile every .mit file under data/authors and data/works. Files
  * that vanish mid-walk are skipped (their absence is not a corpus violation). */
@@ -526,6 +711,22 @@ const authorSlugs = (files: CorpusFile[]): Set<string> =>
       f.path.slice("authors/".length, -".mit".length)
     ),
   );
+
+const addCoverage = (into: Coverage, from: Coverage): void => {
+  into.total += from.total;
+  into.confirmed += from.confirmed;
+  into.unconfirmed += from.unconfirmed;
+  into.unaccounted += from.unaccounted;
+};
+
+const coverageLine = (coverage: Coverage): string => {
+  if (coverage.total === 0) return "no tokens";
+  const pct = (n: number): string =>
+    `${((n / coverage.total) * 100).toFixed(1)}%`;
+  return `${pct(coverage.total - coverage.unaccounted)} of ${coverage.total} ` +
+    `tokens accounted (${pct(coverage.confirmed)} confirmed, ` +
+    `${pct(coverage.unconfirmed)} unconfirmed)`;
+};
 
 /** A work stub: `index.mit` carrying a `canonical` pointer, metadata only. */
 const isStub = (path: string, doc: { metadata?: unknown }): boolean =>

@@ -22,11 +22,13 @@ import type {
   SerializedDoc,
   Work,
 } from "./types.ts";
+import type { Dictionary } from "./dictionary.ts";
 
 /**
- * The reader the load needs: the compiled catalogue, and each edition's
- * document by key. Both return null when absent (a corpus that was never
- * built).
+ * The reader the load needs: the compiled catalogue, each edition's document
+ * by key, and the expanded dictionary. All return null when absent — for the
+ * catalogue that means a corpus that was never built; for the dictionary, one
+ * compiled before the dictionary existed (it loads as empty).
  */
 export interface CatalogueReader {
   readCatalogue(corpusDir: string): Promise<CatalogueFile | null>;
@@ -34,6 +36,7 @@ export interface CatalogueReader {
     corpusDir: string,
     docKey: string,
   ): Promise<SerializedDoc | null>;
+  readDictionary(corpusDir: string): Promise<Dictionary | null>;
 }
 
 /**
@@ -122,7 +125,12 @@ export const loadCatalogue = async (
   });
 
   return {
-    catalogue: { authors, byAuthor, sources },
+    catalogue: {
+      authors,
+      byAuthor,
+      sources,
+      dictionary: (await reader.readDictionary(corpusDir)) ?? {},
+    },
     warnings: file.warnings,
   };
 };
@@ -140,6 +148,8 @@ export const catalogueReader = (fs: CorpusFs): CatalogueReader => {
       readJson<SerializedDoc>(
         `${corpusDir}/catalogue/documents/${docKey}.json`,
       ),
+    readDictionary: (corpusDir) =>
+      readJson<Dictionary>(`${corpusDir}/catalogue/dictionary.json`),
   };
 };
 

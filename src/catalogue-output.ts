@@ -4,6 +4,7 @@
  *
  *   catalogue/catalogue.json              the structure + metadata (+ warnings)
  *   catalogue/documents/<docKey>.json     one (uncomposed) document per edition
+ *   catalogue/dictionary.json             the dictionary, expanded
  *
  * Runtime-neutral: the Deno build script (../scripts/build.ts) and the Node
  * Compositor both call this with a `CorpusFsWrite` binding. `catalogue/` is
@@ -18,7 +19,11 @@ export const writeCatalogue = async (
   root: string,
   catalogue: Catalogue,
   warnings: string[],
-): Promise<{ catalogue: CatalogueFile; documents: Map<string, string> }> => {
+): Promise<{
+  catalogue: CatalogueFile;
+  documents: Map<string, string>;
+  dictionary: string;
+}> => {
   const real = await fs.realPath(root);
   const serialized = serializeCatalogue(catalogue, warnings, real);
   const catalogueDir = `${real}/catalogue`;
@@ -27,6 +32,10 @@ export const writeCatalogue = async (
   await fs.writeFile(
     `${catalogueDir}/catalogue.json`,
     JSON.stringify(serialized.catalogue),
+  );
+  await fs.writeFile(
+    `${catalogueDir}/dictionary.json`,
+    serialized.dictionary,
   );
   for (const [docKey, json] of serialized.documents) {
     const path = `${catalogueDir}/documents/${docKey}.json`;

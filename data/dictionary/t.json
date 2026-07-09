@@ -1,0 +1,10 @@
+{
+  "'tis": "it is",
+  "'twas": "it was",
+  "'twould": "it would",
+  "than": null,
+  "the": null,
+  "them": "=they",
+  "then": [null, "than"],
+  "they": null
+}

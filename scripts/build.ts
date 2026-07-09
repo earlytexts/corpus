@@ -25,9 +25,11 @@ const elapsed = Math.round(performance.now() - t0);
 const authors = written.authors.length;
 const works = Object.keys(written.works).length;
 const editions = documents.size;
+const entries = Object.keys(catalogue.dictionary).length;
 console.log(
   `Built catalogue from ${corpusRoot} to ${corpusRoot}/catalogue in ${elapsed}ms\n` +
-    `  ${authors} authors, ${works} works, ${editions} editions`,
+    `  ${authors} authors, ${works} works, ${editions} editions, ` +
+    `${entries} dictionary entries`,
 );
 if (warnings.length > 0) {
   console.warn(`${warnings.length} corpus warnings:`);
