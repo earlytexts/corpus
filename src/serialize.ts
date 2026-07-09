@@ -30,13 +30,20 @@ import type {
 /**
  * Serialise a catalogue. `root` is the real-path'd corpus directory used to make
  * the `dir`/`source` paths relative (so they are portable across machines).
- * Returns the catalogue.json payload and a map of document key → JSON text.
+ * Returns the catalogue.json payload, a map of document key → JSON text, and
+ * the dictionary.json text — the dictionary already lives expanded in memory
+ * (explicit spelling + lemma per word per reading), so its wire form is a
+ * plain stringify and consumers never parse the entry micro-syntax.
  */
 export const serializeCatalogue = (
   catalogue: Catalogue,
   warnings: string[],
   root: string,
-): { catalogue: CatalogueFile; documents: Map<string, string> } => {
+): {
+  catalogue: CatalogueFile;
+  documents: Map<string, string>;
+  dictionary: string;
+} => {
   // Map every edition document to its key, so a borrowed child (which is another
   // edition's document instance) serialises as a ref rather than an inlined copy.
   const docKeys = new WeakMap<MarkitDocument, string>();
@@ -86,7 +93,11 @@ export const serializeCatalogue = (
     };
   });
 
-  return { catalogue: { authors, works, warnings }, documents };
+  return {
+    catalogue: { authors, works, warnings },
+    documents,
+    dictionary: JSON.stringify(catalogue.dictionary),
+  };
 };
 
 /** The document key (and `documents/<docKey>.json` path) for an edition. */

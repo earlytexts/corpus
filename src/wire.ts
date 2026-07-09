@@ -13,3 +13,29 @@
 export * from "./types.ts";
 export * from "./serialize.ts";
 export * from "./deserialize.ts";
+
+// Word identity — segmentation, folding, the roman-numeral class, the block
+// tokenizer — so the computer and Compositor share one definition of "a word".
+export * from "./words.ts";
+
+// The dictionary's wire types — the shape of `catalogue/dictionary.json` (the
+// register expanded: explicit spelling + lemma per word per reading) — plus
+// the read-side resolution functions: extracting a text's
+// `[metadata.dictionary]` overrides and resolving a token's reading by the
+// precedence chain (`[w:]` markup → edition override → the entry's default).
+// The authoring surface (the entry micro-syntax, shard files, the accounting
+// rule, the violation checks) is write-side and stays on the main entry point.
+export type {
+  Dictionary,
+  Entry,
+  Overrides,
+  Reading,
+  Word,
+} from "./dictionary.ts";
+export {
+  overridesOf,
+  readingLemma,
+  readingSpelling,
+  resolveReading,
+  selectReading,
+} from "./dictionary.ts";

@@ -35,6 +35,11 @@ import type {
   Work,
 } from "./types.ts";
 import {
+  expandDictionary,
+  parseDictionary,
+  readDictionaryShards,
+} from "./dictionary.ts";
+import {
   borrowedRef,
   normalizePath,
   resolveEdition,
@@ -126,8 +131,29 @@ export const buildCatalogue = async (
       a.surname.localeCompare(b.surname),
   );
 
+  // The dictionary compiles alongside the works. Like the rest of the build
+  // this degrades rather than throws: entries that cannot be kept are dropped
+  // with a warning (the strict report is validation's).
+  const { dictionary, problems } = parseDictionary(
+    await readDictionaryShards(fs, corpusDir),
+  );
+  for (const problem of problems) {
+    if (problem.dropped) {
+      ctx.warnings.push(
+        `data/dictionary/${problem.shard}` +
+          `${problem.key !== undefined ? ` "${problem.key}"` : ""}: ` +
+          `${problem.message} (dropped)`,
+      );
+    }
+  }
+
   return {
-    catalogue: { authors, byAuthor, sources: ctx.sources },
+    catalogue: {
+      authors,
+      byAuthor,
+      sources: ctx.sources,
+      dictionary: expandDictionary(dictionary),
+    },
     warnings: ctx.warnings,
   };
 };

@@ -20,6 +20,11 @@ export * from "./build.ts";
 // `deno task test`) and the Compositor's editor diagnostics.
 export * from "./validate.ts";
 
+// The dictionary: the curated register of surface forms — the entry
+// micro-syntax, the shard files, and the accounting rule. (Word identity —
+// words.ts — arrives via the wire contract below.)
+export * from "./dictionary.ts";
+
 // The wire contract: catalogue types, serialize/deserialize, loadCatalogue.
 export * from "./wire.ts";
 
