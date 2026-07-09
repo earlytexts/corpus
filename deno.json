@@ -1,6 +1,6 @@
 {
   "name": "@earlytexts/corpus",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
@@ -18,16 +18,17 @@
   },
   "tasks": {
     "build": "deno run --allow-read --allow-write scripts/build.ts",
-    "fix": "deno run --allow-read --allow-write scripts/fix.ts",
-    "test": "deno test tests/catalogue.test.ts tests/hints.test.ts",
-    "validate": "deno test --allow-read tests/validate.test.ts",
-    "check": "deno check src/ scripts/ tests/ && deno lint && deno fmt --check"
+    "test": "deno test --allow-read tests/",
+    "test:coverage": "deno test --allow-read --coverage=coverage tests/ && deno coverage coverage",
+    "check": "deno check src/ scripts/ tests/ && deno lint",
+    "fmt": "deno fmt && deno run --allow-read --allow-write scripts/fmt.ts",
+    "fmt:check": "deno fmt --check && deno run --allow-read scripts/fmt.ts --check"
   },
   "compilerOptions": {
     "strict": true,
     "verbatimModuleSyntax": true
   },
-  "exclude": ["data/", "catalogue/", "node_modules/"],
+  "exclude": ["data/", "catalogue/", "node_modules/", "coverage/"],
   "fmt": {
     "exclude": ["*.md"]
   }

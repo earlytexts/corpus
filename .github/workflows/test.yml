@@ -19,14 +19,14 @@ jobs:
         with:
           deno-version: "v2.x"
 
-      - name: "Type checking, linting, and format checking"
+      - name: "Type checking and linting"
         run: "deno task check"
 
-      - name: "Run tests"
-        run: "deno task test"
+      - name: "Format checking"
+        run: "deno task fmt:check"
 
-      - name: "Validate corpus"
-        run: "deno task validate"
+      - name: "Run tests (unit + corpus validation)"
+        run: "deno task test"
 
       - name: "Build catalogue"
         run: "deno task build"
