@@ -71,10 +71,17 @@ export const wordPattern = /['’]*[\p{L}\p{N}][\p{L}\p{N}'’]*/gu;
 export const words = (text: string): string[] =>
   [...text.matchAll(wordPattern)].map((match) => match[0]);
 
-/** Identity folding: what makes two printed tokens the same surface. This is
- * the only mechanical normalisation — everything else (u/v, ligatures, …) is
- * an ordinary dictionary entry. */
-export const fold = (text: string): string => text.toLowerCase();
+/** Identity folding: what makes two printed tokens the same surface. Lower-
+ * casing is the only mechanical normalisation — everything else (u/v,
+ * ligatures, …) is an ordinary dictionary entry — with one exception: the bare
+ * pronoun `I`. Case-folding exists to erase *positional* capitalisation (a
+ * sentence-initial `The` is the word `the`); `I` is the one English word whose
+ * capital is *lexical*, so there is no lower-case pronoun to fold it onto, and
+ * folding it would collide with the roman numeral `i`. Only the bare token is
+ * preserved; contractions (`I'll`) fold as usual and reach the pronoun through
+ * their reading. */
+export const fold = (text: string): string =>
+  text === "I" ? "I" : text.toLowerCase();
 
 /** Whether a string is exactly one word: a single token of letters and
  * apostrophes (no digits). Dictionary keys, spellings, and lemmas are words. */
@@ -83,10 +90,13 @@ export const isWord = (text: string): boolean =>
 
 /** Whether a token reads as a strict roman numeral (case-insensitive) — a
  * mechanical class of the accounting rule. Short numerals are also ordinary
- * words (`I`, `mix`), which is why accounting is "at least one of". */
+ * words (`I`, `mix`), which is why accounting is "at least one of". Lower-cases
+ * on its own rather than through `fold`, so a capital `I` (which `fold`
+ * preserves as the pronoun) is still recognised as the numeral. */
 export const isRomanNumeral = (token: string): boolean =>
   token !== "" &&
-  /^m{0,4}(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$/.test(fold(token));
+  /^m{0,4}(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$/
+    .test(token.toLowerCase());
 
 /**
  * Tokenize a compiled block: every token of its inline content (headings,

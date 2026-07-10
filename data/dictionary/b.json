@@ -1,5 +1,11 @@
 {
   "be": null,
   "bear": null,
-  "born": "=bear"
+  "been": "=be",
+  "before": null,
+  "being": "=be",
+  "born": "=bear",
+  "both": null,
+  "but": null,
+  "by": null
 }

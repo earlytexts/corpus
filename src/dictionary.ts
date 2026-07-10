@@ -710,7 +710,8 @@ const expansionViolations = (entry: Entry): string[] => {
 export const shardOf = (surface: string): string => {
   for (const char of surface) {
     if (!/\p{L}/u.test(char)) continue;
-    return char >= "a" && char <= "z" ? `${char}.json` : "other.json";
+    const lower = char.toLowerCase();
+    return lower >= "a" && lower <= "z" ? `${lower}.json` : "other.json";
   }
   return "other.json";
 };

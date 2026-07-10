@@ -81,7 +81,7 @@ Inheritance operates within a file. Each file is valid on its own terms: require
 | `published`  | number[] | yes\*    | yes       | year(s) this edition was published — usually one, an array only for an edition printed over several years (e.g. a multi-volume first edition) |
 | `sourceUrl`  | string   | no       | yes       | online transcription/facsimile the text was derived from                                                                                      |
 | `sourceDesc` | string   | no       | yes       | prose note on the text's provenance and editorial choices                                                                                     |
-| `dictionary` | map      | no       | yes       | `[metadata.dictionary]` section: per-surface default-reading overrides (see [Edition overrides](#edition-overrides-metadatadictionary))       |
+| `dictionary` | map      | no       | yes       | `[metadata.dictionary]` section: per-surface default-reading overrides (see [Edition overrides](DICTIONARY.md#edition-overrides-metadatadictionary))       |
 
 Notes:
 
@@ -102,81 +102,9 @@ Notes:
 
 ## The dictionary
 
-The dictionary (`data/dictionary/`) is the corpus's curated register of surface forms: every word as printed, lower-cased (the only mechanical normalisation). It aspires to be a **full register**, not an exception table, so that we can highlight unseen words in the texts as potential typographical errors. While still in development, coverage is reported rather than enforced.
+The dictionary (`data/dictionary/`) is the corpus's curated register of surface forms: every word as printed, lower-cased (the only mechanical normalisation). It aspires to be a **full register**, not an exception table, so that we can highlight unseen words in the texts as potential typographical errors. It records each surface's modern spelling and its **lemma** (citation form), and marks the ambiguous cases.
 
-### Entries and readings
-
-Every surface maps to one or more **readings**. More than one reading means the surface is **ambiguous**. Ambiguous surfaces are resolved to the first reading in the list by default (which should be the most common). Markit's `[w:surface=value]` markup can override the default reading for a particular occurrence.
-
-A reading is a sequence of **words**, each with a canonical **spelling** and a **lemma**. It is almost always just one word, but has to be a sequence to support contractions: `'tis` reads as "it is" (lemmas "it be").
-
-A **lemma** is a citation string, not a sense: `lie` (recline) and `lie` (falsehood) share the lemma "lie". Sense-level distinctions are explicitly out of scope for the dictionary.
-
-On disk, normalisation and lemmatisation are **factored**, so each editorial fact is stated exactly once. A bare value is a **cross-reference**: `"vertues": "virtues"` reads as "vertues: see *virtues*" — the lexicographer's convention for variant spellings. Lemmas are stated only on an entry for the modern word itself (`"virtues": "=virtue"`); a cross-referenced surface's lemmas are **derived** from its target's entry. Lemma ambiguity therefore inherits through a cross-reference (it is a property of the modern word), while spelling ambiguity does not (it is a property of the surface).
-
-Entries live in JSON shards keyed by the surface's first letter (ignoring non-letters), `other.json` for anything outside a–z. Keys are sorted, one entry per line; values use a micro-syntax mirroring the `[w:]` markup:
-
-```jsonc
-{
-  "the": null,                 // seen; modern; lemma = itself
-  "increases": "=increase",    // modern; lemma stated, on its one home
-  "vertue": "virtue",          // cross-reference: see "virtue"
-  "vertues": "virtues",        // cross-reference; lemma derives via "virtues"
-  "'tis": "it is",             // one surface, two words, each its own entry
-  "then": [null, "than"],      // spelling-ambiguous; default first
-  "lay": [null, "=lie"],       // one spelling, two lemmas (a modern word's fact)
-  "compleat": "?complete"      // machine-suggested, unconfirmed
-}
-```
-
-Grammar of a value (`null` is the doubly-identity reading: the surface is a modern word, spelled and lemmatised as itself — a reading that is just the surface's own spelling is always written `null`, never as a self-cross-reference):
-
-```
-entry    := value | "[" value ("," value)+ "]"    // array = ambiguous, ordered
-value    := null | string
-string   := "?"? reading                          // "?" alone = unconfirmed null
-reading  := "=" lemma                             // identity: a lemma statement
-          | spelling (" " spelling)*              // cross-reference (>1 = expansion)
-```
-
-The `?` prefix marks a machine-suggested, human-unconfirmed entry; confirming it is deleting the prefix. There is no escaping: spellings and lemmas must be words (letters and apostrophes), so `=`, space, `?`, and `]` can never collide with the syntax. The register is **closed under derivation**: every cross-referenced spelling must itself have an entry with an identity reading (so lemmas derive in a single step — no respelling chains — and a typo in a value dangles instead of passing silently), and every stated lemma an entry with a `null` reading (a lemma is a citation form). The accepted price is that the register includes modern targets (`virtue`, `be`) even where they are never printed. `deno task fmt` canonicalises the shards (sorting, shard placement, minimal values, whitespace); multi-word *keys* (`to morrow`) are deliberately unimplemented — each half is an ordinary seen word, and `[w:to morrow=tomorrow]` covers important occurrences.
-
-### The accounting rule
-
-> Every token in every text is accounted for by **at least one** of: a dictionary entry for its folded surface; enclosure in person (`[p:]`) / place (`[l:]`) / org (`[o:]`) / citation (`[…]`) / language (`$…$`) markup; or a mechanical class (contains digits, or reads as a strict roman numeral — note `I` is both a numeral and a pronoun, which is why accounting is "at least one of").
-
-The rule is one pure function (`accountTokens` in `src/dictionary.ts`, over the word identity defined in `src/words.ts`: letters plus internal/leading/trailing apostrophes, hyphens split, digit-bearing tokens are not words). It is simultaneously the corpus coverage validation and the Compositor's live squiggle engine. Recorded trade-off of the citation exemption: citation contents never normalise ("A Treatise of Humane Nature" won't match a search for "human nature") — accepted; do not "fix" it by adding citation words to the register. Name *normalisation* (Tully = Cicero) is entity resolution — out of scope.
-
-### `[w:surface=value]` markup
-
-Markit's word element disambiguates occurrences; the corpus defines its semantics:
-
-- **Single-token surface**: the entry for the folded surface must be ambiguous — 2+ **derived** readings, so ambiguity inherited through a cross-reference counts — and the value must select **exactly one** of them: it matches a reading whose full spelling string *or* full lemma string (words joined by single spaces) equals the value: `[w:then=than]`, `[w:lay=lie]`, `[w:borne=born]`. Markup on an unambiguous surface is a validation error, keeping the texts free of noise. Unmarked occurrences mean the first reading — which is therefore the one reading that need not be uniquely selectable (in `"lay": [null, "=lie"]` the string "lay" matches both readings; only `lie` is ever needed in markup).
-- **Multi-token surface** (the interim mechanism for `to morrow`): the value is a **cross-reference reading** — spellings only, same grammar as dictionary values: `[w:to morrow=tomorrow]`. No dictionary entry is required; the marked tokens are accounted for by the markup itself, and the value's lemmas derive from the register where its words are registered.
-
-### Edition overrides (`[metadata.dictionary]`)
-
-Orthographic conventions are properties of a *printing*, not of the language corpus-wide: in a 1650s edition `humane` ordinarily reads "human", in a 1750s edition it reads "humane". An edition whose conventions differ from the register's defaults states so once, in its metadata, instead of marking every occurrence:
-
-```
-[metadata.dictionary]
-humane = "human"
-then = "than"
-```
-
-Each pair overrides the **default reading** of an ambiguous surface for the text's unmarked occurrences. Values use the same selection grammar as `[w:]` markup — a reading's full spelling string or full lemma string, selecting exactly one of the entry's derived readings — and an override may only *select among* the register's readings, never introduce one: there is exactly one register. The full precedence chain for an occurrence is:
-
-> `[w:]` markup on the occurrence → the text's override for the surface → the entry's first reading
-
-implemented once as `resolveReading` (exported on `wire`, so the computer and the Compositor share it). The map cascades per surface (a section's map merges over its ancestors'), so a borrowed edition keeps its own conventions inside a collection. As with `[w:]` markup, an override on an unambiguous surface is a validation error. Selecting the entry's *current* default is legal — a **pin**, keeping the edition's meaning stable if the register's reading order is ever revised (possible only where the default is itself uniquely selectable). One markit constraint: metadata keys are `\w+`, so a surface containing an apostrophe or a non-ASCII letter cannot be overridden this way — per-occurrence `[w:]` markup covers such (rare) cases.
-
-### Validation tiers
-
-- **Structural** (error): shards parse; keys are folded words, in the right shard, sorted; values are well-formed; shards are byte-for-byte canonical.
-- **Referential** (error): the register is closed under derivation (above); an entry's derived readings are distinct and (beyond the default) uniquely selectable; every `[w:]` in the texts, and every `[metadata.dictionary]` override, obeys the semantics above.
-- **Coverage** (report only): per work and corpus-wide — % tokens accounted, split into confirmed / unconfirmed / unaccounted. Printed by `deno task test`; flipping it to a hard error is the last step of backfill.
-
-The compiled catalogue emits the dictionary **expanded** — explicit spelling and lemma per word per reading, plus `confirmed` — as `catalogue/dictionary.json`, so consumers never parse the micro-syntax. The computer derives its search levels from it; it has no linguistic heuristics of its own.
+See **[DICTIONARY.md](DICTIONARY.md)** for the full reference: the lemmatisation policy (what collapses onto a shared lemma and what stays apart), the on-disk micro-syntax, the accounting rule, `[w:]` markup and edition overrides, and the validation tiers.
 
 ## Formatting
 
