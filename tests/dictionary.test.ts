@@ -72,10 +72,16 @@ test("words: segmentation keeps apostrophes, splits hyphens, takes digit runs", 
   expect(words("… '' — !")).toEqual([]); // no letters or digits, no tokens
 });
 
-test("words: folding is Unicode lower-casing only", () => {
+test('words: folding lower-cases every surface but the pronoun "I"', () => {
   expect(fold("THE")).toBe("the");
   expect(fold("Œconomy")).toBe("œconomy");
   expect(fold("'Tis")).toBe("'tis");
+  // "I" is the one English word whose capital is lexical, not positional:
+  // there is no lower-case pronoun to fold it onto, and lower-casing it would
+  // collide with the roman numeral "i". So the bare token "I" is preserved.
+  expect(fold("I")).toBe("I");
+  expect(fold("i")).toBe("i"); // lower-case i is always the numeral
+  expect(fold("I'll")).toBe("i'll"); // the exception is the bare token only
 });
 
 test("words: a word is one letters-and-apostrophes token", () => {
@@ -93,7 +99,8 @@ test("words: a word is one letters-and-apostrophes token", () => {
 test("words: strict roman numerals", () => {
   expect(isRomanNumeral("MDCCXL")).toBe(true);
   expect(isRomanNumeral("xiv")).toBe(true);
-  expect(isRomanNumeral("I")).toBe(true);
+  expect(isRomanNumeral("i")).toBe(true);
+  expect(isRomanNumeral("I")).toBe(true); // detected independently of surface folding
   expect(isRomanNumeral("civil")).toBe(false);
   expect(isRomanNumeral("")).toBe(false);
   expect(isRomanNumeral("1739")).toBe(false);
@@ -186,7 +193,8 @@ const entry = (confirmed: boolean, ...readings: Entry["readings"]): Entry => ({
   confirmed,
 });
 
-/** The §3 examples of DICTIONARY.md, all real seed entries. */
+/** The worked examples from DICTIONARY.md's on-disk format, all real seed
+ * entries. */
 const examples: [string, unknown, RawEntry][] = [
   ["the", null, raw(true, id("the"))],
   ["increases", "=increase", raw(true, id("increase"))],
@@ -389,6 +397,7 @@ test("dictionary: keys shard by their first letter, ignoring non-letters", () =>
   expect(shardOf("the")).toBe("t.json");
   expect(shardOf("'tis")).toBe("t.json");
   expect(shardOf("'em")).toBe("e.json");
+  expect(shardOf("I")).toBe("i.json"); // the capitalised pronoun shards with the i-words
   expect(shardOf("œconomy")).toBe("other.json");
 });
 
@@ -410,10 +419,32 @@ test("dictionary: shardDictionary writes canonical, sorted, one-entry-per-line s
   );
 });
 
+test('dictionary: the pronoun "I" shards and sorts ahead of the i-words', () => {
+  const dictionary: RawDictionary = {
+    into: raw(true, id("into")),
+    I: raw(true, id("I")),
+    if: raw(true, id("if")),
+  };
+  expect(shardDictionary(dictionary)).toEqual(
+    new Map([[
+      "i.json",
+      '{\n  "I": null,\n  "if": null,\n  "into": null\n}\n',
+    ]]),
+  );
+});
+
 const shards = (files: Record<string, string>) =>
   new Map(
     Object.entries(files).map(([name, text]) => [name, text] as const),
   );
+
+test('dictionary: parseDictionary keeps the capital "I" key', () => {
+  const { dictionary, problems } = parseDictionary(shards({
+    "i.json": '{\n  "I": null,\n  "if": null\n}\n',
+  }));
+  expect(problems).toEqual([]);
+  expect(Object.keys(dictionary)).toEqual(["I", "if"]);
+});
 
 test("dictionary: parseDictionary reads good shards without complaint", () => {
   const { dictionary, problems } = parseDictionary(shards({

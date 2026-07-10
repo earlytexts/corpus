@@ -3,8 +3,22 @@
   "'twas": "it was",
   "'twould": "it would",
   "than": null,
+  "that": null,
   "the": null,
+  "their": "=they",
   "them": "=they",
+  "themselves": null,
   "then": [null, "than"],
-  "they": null
+  "there": null,
+  "therefore": null,
+  "these": "=this",
+  "they": null,
+  "thing": null,
+  "this": null,
+  "tho'": "though",
+  "those": "=that",
+  "though": null,
+  "time": null,
+  "to": null,
+  "two": null
 }

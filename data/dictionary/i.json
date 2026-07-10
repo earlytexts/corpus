@@ -1,6 +1,13 @@
 {
+  "I": null,
+  "idea": null,
+  "ideas": "=idea",
+  "if": null,
+  "in": null,
   "increase": null,
   "increases": "=increase",
+  "into": null,
   "is": "=be",
-  "it": null
+  "it": null,
+  "its": ["=it", "it is"]
 }
