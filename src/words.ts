@@ -10,7 +10,7 @@
  *
  * This module is exported on the `wire` subpath so the computer and the
  * Compositor share one definition of "a word"; everything editorial about a
- * word (readings, lemmas) lives in dictionary.ts. Search-time folding and
+ * word (readings, lemmas) lives in the dictionary/ modules. Search-time folding and
  * expansion remain the computer's own business.
  *
  * Segmentation is single-word: a non-breaking space is ordinary whitespace, no
@@ -113,7 +113,7 @@ export const fold = (text: string): string =>
  * surface, `a priori`, `to morrow`). Dictionary keys, spellings, and lemmas are
  * words. (A cross-reference *value* splits on its spaces first, so the
  * multi-word form is a single key/lemma, never a cross-reference target — see
- * dictionary.ts.) */
+ * dictionary/shards.ts.) */
 export const isWord = (text: string): boolean => wordRe.test(text);
 
 const wordAtom = String.raw`['’]*\p{L}(?:['’\p{L}]|\.(?=\p{L}))*`;

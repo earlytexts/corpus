@@ -6,7 +6,7 @@
     ".": "./src/index.ts",
     "./wire": "./src/wire.ts",
     "./build": "./src/build.ts",
-    "./harness": "./src/harness.ts"
+    "./test": "./src/test.ts"
   },
   "publish": {
     "include": ["src/", "README.md", "LICENSE.md", "deno.json"]

@@ -17,25 +17,31 @@ import {
   type MarkitError,
   startLine,
 } from "@earlytexts/markit";
-import type { CorpusFs } from "./types.ts";
+import type { CorpusFs } from "../ports.ts";
 import {
   accountTokens,
-  attestationViolations,
-  canonicalSpellingViolations,
   type Coverage,
   coverageOf,
+} from "../dictionary/account.ts";
+import {
+  attestationViolations,
+  canonicalSpellingViolations,
   dictionaryViolations,
   expandDictionary,
+  systematicAmbiguityViolations,
+} from "../dictionary/expand.ts";
+import {
   overridesOf,
   overrideViolation,
+  wordMarkupViolation,
+} from "../dictionary/resolve.ts";
+import {
   parseDictionary,
   readDictionaryShards,
   shardDictionary,
   shardOf,
-  systematicAmbiguityViolations,
-  wordMarkupViolation,
-} from "./dictionary.ts";
-import { scanBlock } from "./words.ts";
+} from "../dictionary/shards.ts";
+import { scanBlock } from "../words.ts";
 import {
   authorRequired,
   authorSchema,
@@ -50,7 +56,7 @@ import {
   resolveEdition,
   resolveVariant,
   YEAR,
-} from "./paths.ts";
+} from "../paths.ts";
 
 /** A corpus file, compiled standalone (borrowed children left unresolved). */
 export type CorpusFile = {
@@ -579,27 +585,24 @@ export const rules: Rule[] = [
   },
   {
     // The canonical-spelling rule (see ../DICTIONARY.md, Principles of
-    // Normalisation): when spellings are variants of one word, the canonical
-    // one — the modern spelling the others cross-reference — must be the most
-    // frequent in the corpus, ties broken alphabetically. A deterministic
-    // tie-break, so the choice is never agonised over and the test has a single
-    // right answer. Frequency is each folded surface's printed count, tallied
-    // the same way the coverage report walks the works. Skipped while the shards
-    // have structural problems.
-    name: "canonical spelling is the most frequent",
-    check: async ({ files, fs, root }) => {
-      const rule = "canonical spelling is the most frequent";
+    // Normalisation): within a normalisation class the canonical spelling must
+    // be the one an external authority endorses — a fixed, version-pinned modern
+    // reference word list (data/reference/words.txt, from SCOWL) — several
+    // matches or ties broken alphabetically, gaps pinned in
+    // canonical-exceptions.json. External and fixed, so the choice never drifts
+    // as the corpus grows. Skipped while the shards have structural problems or
+    // the reference list is absent (nothing to check against).
+    name: "canonical spelling matches the reference word list",
+    check: async ({ fs, root }) => {
+      const rule = "canonical spelling matches the reference word list";
       const { dictionary, problems } = parseDictionary(
         await readDictionaryShards(fs, root),
       );
       if (problems.length > 0) return [];
-      const frequency = new Map<string, number>();
-      for (const { doc } of compiled(workFiles(files))) {
-        for (const token of accountTokens(doc, dictionary)) {
-          frequency.set(token.folded, (frequency.get(token.folded) ?? 0) + 1);
-        }
-      }
-      return canonicalSpellingViolations(dictionary, frequency).map(
+      const wordlist = await loadReferenceWords(fs, root);
+      if (wordlist === null) return [];
+      const exceptions = await loadCanonicalExceptions(fs, root);
+      return canonicalSpellingViolations(dictionary, wordlist, exceptions).map(
         ({ key, message }) => ({
           rule,
           path: `dictionary/${shardOf(key)}`,
@@ -727,6 +730,33 @@ export const loadCorpus = async (
     }
   }
   return files.sort((a, b) => a.path.localeCompare(b.path));
+};
+
+/** The external reference word list (data/reference/words.txt): one lower-cased
+ * spelling per line. `null` when absent — the canonical-spelling rule then
+ * defers, since it has no authority to check against. */
+export const loadReferenceWords = async (
+  fs: CorpusFs,
+  root: string,
+): Promise<Set<string> | null> => {
+  const text = await fs.readFile(`${root}/data/reference/words.txt`);
+  if (text === null) return null;
+  return new Set(
+    text.split("\n").map((line) => line.trim().toLowerCase()).filter(Boolean),
+  );
+};
+
+/** The canonical-spelling exceptions (data/reference/canonical-exceptions.json):
+ * a JSON array of spellings pinned as their class's canonical, overriding the
+ * word list. Empty when the file is absent. */
+export const loadCanonicalExceptions = async (
+  fs: CorpusFs,
+  root: string,
+): Promise<Set<string>> => {
+  const text = await fs.readFile(
+    `${root}/data/reference/canonical-exceptions.json`,
+  );
+  return text === null ? new Set() : new Set(JSON.parse(text) as string[]);
 };
 
 /** Render a violation in the corpus's conventional one-line form:

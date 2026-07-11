@@ -12,12 +12,11 @@
  *
  * Each entity is its shared `…Meta` base plus the one field that differs
  * between the layers: a live document/object graph in memory, a key or
- * reference on the wire. The filesystem ports the build and write need are at
- * the bottom.
+ * reference on the wire. The filesystem ports these run on live in ../ports.ts.
  */
 
 import type { MarkitDocument } from "@earlytexts/markit";
-import type { Dictionary } from "./dictionary.ts";
+import type { Dictionary } from "../dictionary/types.ts";
 
 /* --------------------------- the catalogue ---------------------------- */
 
@@ -167,35 +166,3 @@ export type SerializedDoc = {
  * instance back in at this point, recreating the composed tree.
  */
 export type DocRefNode = { __ref: string };
-
-/* ---------------------------- filesystem ports ------------------------ */
-
-/** A directory entry as the corpus walk sees it (Deno.DirEntry-compatible,
- * but runtime-neutral so Node-based consumers can implement the port too). */
-export type DirEntry = {
-  name: string;
-  isFile: boolean;
-  isDirectory: boolean;
-};
-
-/**
- * The filesystem capability the catalogue scan needs. The corpus file set is
- * discovered by parsing (children references, case-insensitive lookups), so the
- * I/O cannot be hoisted ahead of the walk — it is injected as this port instead.
- * `readFile` and `stat` return null when the path is absent; `readDir` throws
- * (as Deno.readDir does) so a missing corpus directory surfaces.
- */
-export interface CorpusFs {
-  readFile(path: string): Promise<string | null>;
-  readDir(path: string): Promise<DirEntry[]>;
-  realPath(path: string): Promise<string>;
-  stat(path: string): Promise<{ isFile: boolean } | null>;
-}
-
-/** The additional capabilities `writeCatalogue` needs. `mkdir` is recursive;
- * `remove` is recursive and ignores a missing path. */
-export interface CorpusFsWrite extends CorpusFs {
-  writeFile(path: string, text: string): Promise<void>;
-  mkdir(path: string): Promise<void>;
-  remove(path: string): Promise<void>;
-}

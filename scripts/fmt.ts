@@ -15,7 +15,7 @@ import {
   parseDictionary,
   readDictionaryShards,
   shardDictionary,
-} from "../src/dictionary.ts";
+} from "../src/dictionary/shards.ts";
 import { nodeCorpusFs } from "../src/fs.ts";
 import { corpusRoot } from "./lib.ts";
 

@@ -11,7 +11,8 @@
  * replaced wholesale so a stale document file can never linger.
  */
 
-import type { Catalogue, CatalogueFile, CorpusFsWrite } from "./types.ts";
+import type { Catalogue, CatalogueFile } from "./types.ts";
+import type { CorpusFsWrite } from "../ports.ts";
 import { serializeCatalogue } from "./serialize.ts";
 
 export const writeCatalogue = async (

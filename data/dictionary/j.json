@@ -42,6 +42,7 @@
   "jurisdiction": null,
   "jurisdictions": "=jurisdiction",
   "jury": null,
+  "just": null,
   "justice": null,
   "justices": "=justice",
   "justification": null,

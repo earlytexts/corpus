@@ -26,19 +26,10 @@
  */
 
 import { compile, type MarkitDocument } from "@earlytexts/markit";
-import type {
-  Author,
-  Catalogue,
-  CorpusFs,
-  DirEntry,
-  Edition,
-  Work,
-} from "./types.ts";
-import {
-  expandDictionary,
-  parseDictionary,
-  readDictionaryShards,
-} from "./dictionary.ts";
+import type { Author, Catalogue, Edition, Work } from "./types.ts";
+import type { CorpusFs, DirEntry } from "../ports.ts";
+import { expandDictionary } from "../dictionary/expand.ts";
+import { parseDictionary, readDictionaryShards } from "../dictionary/shards.ts";
 import {
   borrowedRef,
   normalizePath,
@@ -46,7 +37,7 @@ import {
   resolveFile,
   resolveVariant,
   YEAR,
-} from "./paths.ts";
+} from "../paths.ts";
 
 export const buildCatalogue = async (
   fs: CorpusFs,

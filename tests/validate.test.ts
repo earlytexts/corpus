@@ -1,7 +1,7 @@
 /**
  * Corpus validation: every file must be valid Markit, formatted canonically,
  * and conform to the metadata schema and layout conventions in ../README.md.
- * The rules live in ../src/validate.ts (runtime-neutral, also consumed by the
+ * The rules live in ../src/validation/rules.ts (runtime-neutral, also consumed by the
  * Compositor extension); this suite runs each rule as a vitest test over the
  * real corpus on disk. Run with: npm run validate.
  */
@@ -13,7 +13,7 @@ import {
   type RuleContext,
   rules,
   violationText,
-} from "../src/validate.ts";
+} from "../src/validation/rules.ts";
 import { nodeCorpusFs } from "../src/fs.ts";
 import { corpusRoot, report } from "../scripts/lib.ts";
 

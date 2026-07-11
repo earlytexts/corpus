@@ -16,13 +16,13 @@ import type {
   Author,
   Catalogue,
   CatalogueFile,
-  CorpusFs,
   DocRefNode,
   Edition,
   SerializedDoc,
   Work,
 } from "./types.ts";
-import type { Dictionary } from "./dictionary.ts";
+import type { CorpusFs } from "../ports.ts";
+import type { Dictionary } from "../dictionary/types.ts";
 
 /**
  * The reader the load needs: the compiled catalogue, each edition's document

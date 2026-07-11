@@ -122,29 +122,32 @@ deno task fmt        # apply deno fmt, the Markit formatter to every .mit file,
 deno task check      # typecheck and lint the source and test code
 ```
 
-The rules themselves live in `src/validate.ts` as pure functions returning structured violations; `tests/validate.test.ts` is a thin test wrapper that runs each rule over the real corpus.
+The rules themselves live in `src/validation/rules.ts` as pure functions returning structured violations; `tests/validate.test.ts` is a thin test wrapper that runs each rule over the real corpus.
 
 ## Architecture
 
-The code implements two pipelines over the data model above, plus the foundations they share. Everything in `src/` is runtime-neutral and pure: filesystem access goes through the `CorpusFs` port (`src/types.ts`), so any host — the Deno scripts here, the Node-based Compositor, the computer's Deno build wrapper, an in-memory test corpus — brings its own binding. Modules read top-down: each file's entry points come first, with helpers below their callers.
+The code implements two pipelines over the data model above, plus the foundations they share. Everything in `src/` is runtime-neutral and pure: filesystem access goes through the `CorpusFs` port (`src/ports.ts`), so any host — the Deno scripts here, the Node-based Compositor, the computer's Deno build wrapper, an in-memory test corpus — brings its own binding. `src/` groups by concern: the four entry-point modules (`index`, `wire`, `build`, `test`) sit at the top and re-export the implementations beneath them in `catalogue/`, `dictionary/`, and `validation/`. Modules read top-down: each file's entry points come first, with helpers below their callers.
 
 **The build pipeline** compiles the corpus into `catalogue/`, the boundary artefact every read-side consumer works from:
 
 ```
 data/*.mit ──buildCatalogue──▶ Catalogue ──serializeCatalogue──▶ writeCatalogue ──▶ catalogue/
- (source)    (catalogue.ts)   (in memory)     (serialize.ts)  (catalogue-output.ts)    │
+ (source)  (catalogue/compile) (in memory) (catalogue/serialize)(catalogue/write)     │
                                                                                        ▼
                               Catalogue ◀──────loadCatalogue───────────────── catalogue.json
-                             (in memory)       (deserialize.ts)              + documents/*.json
+                             (in memory)   (catalogue/deserialize)           + documents/*.json
 ```
 
-- `catalogue.ts` — scans `data/`, compiles every file with `@earlytexts/markit`, resolves borrowed children, and derives the author/work/edition structure (plus the parsed dictionary).
-- `serialize.ts` / `deserialize.ts` — the wire format, owned here in both directions. Documents are written _uncomposed_ (a borrowed child is a `{ __ref }` placeholder); `loadCatalogue` splices the single shared instance back in, recreating the object graph.
-- `catalogue-output.ts` — writes `catalogue/catalogue.json` plus one document file per edition and the expanded `dictionary.json`, replacing the directory wholesale so stale files never linger.
+- `catalogue/compile.ts` — scans `data/`, compiles every file with `@earlytexts/markit`, resolves borrowed children, and derives the author/work/edition structure (plus the parsed dictionary).
+- `catalogue/serialize.ts` / `catalogue/deserialize.ts` — the wire format, owned here in both directions. Documents are written _uncomposed_ (a borrowed child is a `{ __ref }` placeholder); `loadCatalogue` splices the single shared instance back in, recreating the object graph.
+- `catalogue/write.ts` — writes `catalogue/catalogue.json` plus one document file per edition and the expanded `dictionary.json`, replacing the directory wholesale so stale files never linger.
+- `catalogue/types.ts` — the catalogue types: each entity is a shared metadata base plus the field that differs between the in-memory and serialised layers.
 
-**The validation pipeline** (`validate.ts`) enforces this document's rules: `loadCorpus` compiles every file standalone, and each `Rule` returns structured violations. The same rules drive corpus validation (part of `deno task test`) and the Compositor's editor diagnostics.
+**The validation pipeline** (`validation/rules.ts`) enforces this document's rules: `loadCorpus` compiles every file standalone, and each `Rule` returns structured violations. The same rules drive corpus validation (part of `deno task test`) and the Compositor's editor diagnostics. `validation/schema.ts` holds the metadata schema as data (the tables above are its prose form).
 
-**Foundations**: `types.ts` (the catalogue types — each entity is a shared metadata base plus the field that differs between the in-memory and serialised layers — and the `CorpusFs` ports), `schema.ts` (the metadata schema as data; the tables above are its prose form), `paths.ts` (slug and resolution conventions), `words.ts` (word identity: segmentation, folding, roman numerals, and the block tokenizer — exported on `wire` so every consumer shares one definition of "a word"), and `dictionary.ts` (the register: the entry micro-syntax, the shard files, and the accounting rule).
+**The dictionary** (`dictionary/`) is the register of surface forms, split by concern: `types.ts` (the expanded and authored shapes), `account.ts` (the accounting rule — coverage and the Compositor's squiggle engine), `resolve.ts` (the read-side: `[w:]`/override selection, re-exported on `wire`), `shards.ts` (the on-disk shard micro-syntax, both directions), and `expand.ts` (composing authored facts into the expanded dictionary, plus the register-level violations).
+
+**Foundations**: `ports.ts` (the `CorpusFs` filesystem ports), `fs.ts` (the disk-backed binding), `paths.ts` (slug and resolution conventions), and `words.ts` (word identity: segmentation, folding, roman numerals, and the block tokenizer — exported on `wire` so every consumer shares one definition of "a word").
 
 ## As a library
 
@@ -153,4 +156,4 @@ The package is published to [JSR](https://jsr.io/@earlytexts/corpus) as unbundle
 - `@earlytexts/corpus` (`src/index.ts`) — the authoring surface, re-exporting the `build` and `wire` subpaths below and adding validation, schema, and paths on top. The Compositor VSCode extension bundles this to run the catalogue build, validation, and the `catalogue/` write in-process under Node. (Read-side suggestion logic — the markup hints — lives in the Compositor, not here.)
 - `@earlytexts/corpus/wire` (`src/wire.ts`) — the wire contract only: the catalogue types, serialize/deserialize, `loadCatalogue`. This is all the computer's _application_ code imports (via its Deno import map, which maps only this and the `build` subpath, never the full entry); its runtime reads `catalogue/` and never scans or compiles `.mit`.
 - `@earlytexts/corpus/build` (`src/build.ts`) — the build surface: `buildCatalogue`/`writeCatalogue` plus the disk-backed `nodeCorpusFs` binding (on `node:fs`, which Deno provides natively). The computer's `scripts/build-corpus.ts` imports this subpath to produce `catalogue/` in prod from the pinned package version — reusing the corpus's compiler rather than reimplementing it, and the one build-time seam its build touches — so the corpus checkout there stays pure data.
-- `@earlytexts/corpus/harness` (`src/harness.ts`) — the in-memory corpus builder the corpus's and the computer's tests share.
+- `@earlytexts/corpus/test` (`src/test.ts`) — the in-memory corpus builder the corpus's and the computer's tests share.

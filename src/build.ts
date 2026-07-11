@@ -10,8 +10,8 @@
  */
 
 // The catalogue build: scan data/, compile, compose, write catalogue/.
-export * from "./catalogue.ts";
-export * from "./catalogue-output.ts";
+export * from "./catalogue/compile.ts";
+export * from "./catalogue/write.ts";
 
 // The disk-backed CorpusFs binding (node:fs, which Deno provides too) that the
 // build runs on.
