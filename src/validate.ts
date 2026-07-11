@@ -20,6 +20,8 @@ import {
 import type { CorpusFs } from "./types.ts";
 import {
   accountTokens,
+  attestationViolations,
+  canonicalSpellingViolations,
   type Coverage,
   coverageOf,
   dictionaryViolations,
@@ -30,6 +32,7 @@ import {
   readDictionaryShards,
   shardDictionary,
   shardOf,
+  systematicAmbiguityViolations,
   wordMarkupViolation,
 } from "./dictionary.ts";
 import { scanBlock } from "./words.ts";
@@ -521,6 +524,92 @@ export const rules: Rule[] = [
     },
   },
   {
+    // The corpus-attestation tier (see ../DICTIONARY.md): the register's
+    // orthography is drawn from the texts, so every surface and every
+    // cross-referenced spelling must occur in the corpus; only a lemma (a
+    // citation form) may be unprinted. The corpus vocabulary is every
+    // non-mechanical token, folded — built the same way the coverage report
+    // walks the works. Skipped while the shards have structural problems.
+    name: "dictionary surfaces occur in the corpus",
+    check: async ({ files, fs, root }) => {
+      const rule = "dictionary surfaces occur in the corpus";
+      const { dictionary, problems } = parseDictionary(
+        await readDictionaryShards(fs, root),
+      );
+      if (problems.length > 0) return [];
+      const corpus = new Set<string>();
+      for (const { doc } of compiled(workFiles(files))) {
+        for (const token of accountTokens(doc, dictionary)) {
+          if (token.status !== "mechanical") corpus.add(token.folded);
+        }
+      }
+      return attestationViolations(dictionary, corpus).map(
+        ({ key, message }) => ({
+          rule,
+          path: `dictionary/${shardOf(key)}`,
+          locus: `"${key}"`,
+          message,
+        }),
+      );
+    },
+  },
+  {
+    // The register's editorial invariant (see ../DICTIONARY.md): an inflected
+    // surface carries its own noun/adjective/verb reading iff the sibling form
+    // that only that independent word can produce is attested — the plural for
+    // an `-ing` noun, `-ness`/`-ly` for an `-ed` adjective, the verb
+    // inflections for a comparative. Keeps systematic ambiguity evidence-backed
+    // both ways, so it never drifts on either a spurious or a missing reading.
+    name: "systematic ambiguity is evidence-backed",
+    check: async ({ fs, root }) => {
+      const rule = "systematic ambiguity is evidence-backed";
+      const { dictionary, problems } = parseDictionary(
+        await readDictionaryShards(fs, root),
+      );
+      if (problems.length > 0) return [];
+      return systematicAmbiguityViolations(dictionary).map(
+        ({ key, message }) => ({
+          rule,
+          path: `dictionary/${shardOf(key)}`,
+          locus: `"${key}"`,
+          message,
+        }),
+      );
+    },
+  },
+  {
+    // The canonical-spelling rule (see ../DICTIONARY.md, Principles of
+    // Normalisation): when spellings are variants of one word, the canonical
+    // one — the modern spelling the others cross-reference — must be the most
+    // frequent in the corpus, ties broken alphabetically. A deterministic
+    // tie-break, so the choice is never agonised over and the test has a single
+    // right answer. Frequency is each folded surface's printed count, tallied
+    // the same way the coverage report walks the works. Skipped while the shards
+    // have structural problems.
+    name: "canonical spelling is the most frequent",
+    check: async ({ files, fs, root }) => {
+      const rule = "canonical spelling is the most frequent";
+      const { dictionary, problems } = parseDictionary(
+        await readDictionaryShards(fs, root),
+      );
+      if (problems.length > 0) return [];
+      const frequency = new Map<string, number>();
+      for (const { doc } of compiled(workFiles(files))) {
+        for (const token of accountTokens(doc, dictionary)) {
+          frequency.set(token.folded, (frequency.get(token.folded) ?? 0) + 1);
+        }
+      }
+      return canonicalSpellingViolations(dictionary, frequency).map(
+        ({ key, message }) => ({
+          rule,
+          path: `dictionary/${shardOf(key)}`,
+          locus: `"${key}"`,
+          message,
+        }),
+      );
+    },
+  },
+  {
     // Still the referential tier: every `[w:surface=value]` in the texts
     // obeys the dictionary (see dictionary.ts, wordMarkupViolation) — checked
     // against the expanded readings, so inherited ambiguity counts.
@@ -603,12 +692,7 @@ export const dictionaryCoverage = async (
   const { dictionary } = parseDictionary(
     await readDictionaryShards(ctx.fs, ctx.root),
   );
-  const totals: Coverage = {
-    total: 0,
-    confirmed: 0,
-    unconfirmed: 0,
-    unaccounted: 0,
-  };
+  const totals: Coverage = { total: 0, accounted: 0, unaccounted: 0 };
   const byWork = new Map<string, Coverage>();
   for (const { path, doc } of compiled(workFiles(ctx.files))) {
     const coverage = coverageOf(accountTokens(doc, dictionary));
@@ -714,18 +798,14 @@ const authorSlugs = (files: CorpusFile[]): Set<string> =>
 
 const addCoverage = (into: Coverage, from: Coverage): void => {
   into.total += from.total;
-  into.confirmed += from.confirmed;
-  into.unconfirmed += from.unconfirmed;
+  into.accounted += from.accounted;
   into.unaccounted += from.unaccounted;
 };
 
 const coverageLine = (coverage: Coverage): string => {
   if (coverage.total === 0) return "no tokens";
-  const pct = (n: number): string =>
-    `${((n / coverage.total) * 100).toFixed(1)}%`;
-  return `${pct(coverage.total - coverage.unaccounted)} of ${coverage.total} ` +
-    `tokens accounted (${pct(coverage.confirmed)} confirmed, ` +
-    `${pct(coverage.unconfirmed)} unconfirmed)`;
+  const pct = ((coverage.accounted / coverage.total) * 100).toFixed(1);
+  return `${pct}% of ${coverage.total} tokens accounted`;
 };
 
 /** A work stub: `index.mit` carrying a `canonical` pointer, metadata only. */
