@@ -1,309 +1,242 @@
 # The Dictionary
 
-The dictionary (`data/dictionary/`) is the corpus's curated register of **surface
-forms**: every word as it is printed, lower-cased ([almost](#the-one-exception-to-lower-casing-i)
-the only mechanical change we make). It aspires to be a **full register**, not a
-list of exceptions — every word we have ever seen eventually earns an entry, even
-plain modern words with nothing special to say — so that a word *without* an
-entry stands out as something unseen, and probably a typographical error. While
-the register is still being filled in, missing coverage is reported rather than
-treated as an error.
+The dictionary (`data/dictionary/`) is the corpus's curated register of **surface forms**: every word as it is printed (lower-cased). It exists both to _eliminate noise_ from search and statistics downstream, and to _identify typographical errors_ in the transcribed texts.
 
-The dictionary is editorial data, so it lives here in the corpus (the write
-side). The computer reads the compiled result and derives all its search
-behaviour from it, holding no spelling or grammar rules of its own; the
-Compositor provides the editing UI. This file is the complete reference for the
-dictionary: what it records, the policy behind those judgments, the on-disk
-format, and how it is validated.
+There are two kinds of noise, and the dictionary addresses both:
 
-## What the dictionary records
+1. **Spelling noise**: the same word printed in different ways, e.g. "virtue" / "vertue", "seemed" / "seem'd". The dictionary _normalises_ these to a single canonical spelling.
+2. **Grammatical noise**: the same word in different grammatical forms, e.g. "walk" / "walks" / "walked" / "walking". The dictionary _lemmatises_ these onto a single form, the headword you would look it up under in an ordinary dictionary.
 
-For every surface form, the dictionary answers up to four questions:
+Lemmatisation builds on top of normalisation, so the dictionary is a two-level register: every surface has a canonical spelling, and every canonical spelling has a lemma.
 
-1. Has it been **seen** before (is it accounted for)?
-2. What is its **modern spelling**, if that differs from how it is printed?
-3. What is its **lemma** — the headword you would look it up under (see below)?
-4. Is it **ambiguous** — could it be read in more than one way?
+## What's in Scope
 
-### Entries and readings
+The dictionary aspires to be a _complete register_ of every English dictionary surface form in the corpus, not a list of exceptions. This enables the compositor to treat a surface _without_ an entry as something unseen, and potentially a typographical error. While the register is still being filled in, however, missing coverage is reported rather than treated as an error.
 
-Every surface maps to one or more **readings**. More than one reading means the
-surface is **ambiguous**. An ambiguous surface is read as the *first* reading in
-the list by default (so list the most common one first); Markit's
-`[w:surface=value]` markup can override that default for a particular occurrence
-in a text.
+The dictionary does _not_ cover foreign text (`$...$` Markit markup), proper nouns (enclosed in `[p:]` / `[l:]` / `[o:]` markup), citations (`[…]` markup), or numerals (Roman or Arabic). Numerals are excluded mechanically.
 
-A reading is a sequence of **words**, each with a modern **spelling** and a
-**lemma**. It is almost always a single word, but it has to be a sequence so that
-contractions can expand: `'tis` reads as the two words "it is" (with lemmas "it"
-and "be").
+### The Accounting Rule
 
-### The one exception to lower-casing: "I"
+Another way of stating the above:
 
-Lower-casing every surface is what lets us treat a sentence-initial *The* and a
-mid-sentence *the* as the same word. That kind of capital is **positional** — an
-accident of where the word falls. *I* is the one English word whose capital is
-**lexical**: it is written *I* wherever it appears, and there is no lower-case
-pronoun for it to fold onto. So the bare token *I* is kept capital — it is its
-own entry, `"I"`, with the lemma **I**, and *me* / *my* / *mine* point to it.
+> Every token in every text is accounted for by **at least one** of: a dictionary entry for its folded surface; enclosure in person (`[p:]`) / place (`[l:]`) / org (`[o:]`) / citation (`[…]`) / language (`$…$`) markup; or a mechanical class (contains digits, or reads as a strict roman numeral).
 
-This also keeps it clear of the roman numeral: a lower-case *i* is always the
-numeral (accounted for mechanically, needing no entry), while a capital *I* may
-be either the pronoun or a numeral — which the accounting rule allows, since a
-token need only be accounted for in *one* way. Only the bare word is treated
-specially; contractions such as *I'll* lower-case as usual and reach the pronoun
-through their reading.
+The rule is one pure function (`accountTokens` in `src/dictionary.ts`, over the word identity defined above). It is simultaneously the corpus's coverage check and the compositor's live squiggle engine.
 
-## Lemmatisation policy
+## What Counts as a Word
 
-This is the heart of the dictionary's editorial judgment, so it is worth stating
-plainly.
+The unit the register is built from is the **token**, defined once in `src/words.ts` and shared by every consumer (the compositor, the computer). A token is a run of letters, digits, and apostrophes containing at least one letter or digit; leading, internal, and trailing apostrophes are all part of it (`'tis`, `o'clock`, `lookin'`). Two further characters _join_ what would otherwise be separate tokens — an **internal period** (`i.e`) and a **non-breaking space** (`a~priori`, `to~morrow`). **Hyphens, by contrast, split**: `self-love` is two tokens, `self` and `love`, so the register never holds a hyphenated key and each part must have its own entry. Every other character separates.
 
-### What a lemma is
+A token becomes a dictionary **surface** by _folding_ — lower-casing, with the sole exception of the bare pronoun "I" (see [Normalisation](#normalisation)). Two classes of token are then held out of the register mechanically, never expected to have an entry: any token containing a digit, and any token that reads as a strict roman numeral.
 
-A **lemma** is the headword you would look a word up under in an ordinary
-dictionary — its "citation form". *Walks*, *walked*, and *walking* are all forms
-of one word, and that word's lemma is **walk**. *Mice* has the lemma **mouse**.
-Giving many forms a shared lemma is what lets a reader search for "walk" and find
-every occurrence of "walked" as well.
+Roman-numeral exclusion is deliberately blunt, and it has one accepted cost: the occasional short word that also parses as a roman numeral (`mix`, say) is swallowed by the mechanical class, and therefore not shown as unseen in the compositor before it is entered into the dictionary. Once entered, however, it is counted as an instance of the word as normal, not as a roman numeral.
 
-Two clarifications before the policy proper:
+### Multi-Word Units and Abbreviations
 
-- **A lemma is a spelling, not a meaning.** *Lie* (to recline) and *lie* (an
-  untruth) happen to be spelled and inflected identically, so they share the one
-  lemma **lie**. We do not split a lemma by meaning, and we do not record what
-  part of speech a word is. This keeps the register simple and is a deliberate
-  limit, not an oversight.
-- **A lemma is not the same as a modern spelling.** The dictionary handles two
-  separate things. *Modernising the spelling* turns an old spelling of a word
-  into today's spelling of **the same form** (*vertue* → *virtue*). *Finding the
-  lemma* gathers all the grammatical forms of a word under one headword (*virtue*
-  and *virtues* → **virtue**). The two are recorded independently, and the next
-  section is only about the second.
+A handful of lexical items are printed with internal spacing or punctuation that would ordinarily split them. Three cases, resolved so that each such item can carry a single entry:
 
-### The governing principle
+- **Anglicised single-token words** — `etc`, `viz`, `via`, `alias` — need nothing special. The trailing period of `etc.` is ordinary punctuation, already stripped, so the token is just a word; include it as its own lemma where it earns a place. Which anglicised words to admit at all is an editorial judgement, not a mechanical rule.
+- **Fixed multi-word units** — Latin tags like `a priori` and `ab initio`, and archaic spellings like `to morrow` — are joined by the **non-breaking space** (`~` in Markit: `a~priori`). A `~`-joined run is one surface with one entry — an own lemma (`"a priori"`) or a cross-reference (`"to morrow": "tomorrow"`) — so the unit normalises, lemmatises, and counts like any other word, and the editor marks it once in the source rather than once per occurrence. (The `~` is also correct typography: the unit should not break across a line.)
+- **Internal-dot abbreviations** — `i.e`, `e.g`, and initialisms such as `N.B` — are joined by the **internal-period** rule: a period counts as part of the word when it falls between a letter/digit and a letter. So `i.e.` yields the surface `i.e` (the trailing period, followed by a space, drops), which is then a single surface with its own lemma.
 
-There is a standard, non-arbitrary line, and we follow it:
+The internal-period rule has a deliberate second effect. A period _without_ a following space — a missing sentence break, `end.The` — also joins into a single token, one that has no entry and so is flagged as a probable typographical error.
 
-> **Collapse the grammatical forms of one word onto a single lemma. Keep
-> genuinely different words apart, even when one is built out of another.**
+## Normalisation
 
-Put as a test you can apply by eye: *would an ordinary dictionary give this its
-own headword?* If it is just the same word wearing a different grammatical ending
-— a plural, a past tense, a comparison — it does **not** get its own headword, so
-it shares a lemma. If it is a new word made from another one — an adverb made
-from an adjective, a noun made from a verb — it **does** get its own headword, so
-it keeps its own lemma.
+Case normalisation is handled mechanically: every surface is folded to lower-case, with the sole exception of the pronoun "I" (left uppercase to distinguish it from the Roman numeral "i").
 
-Everything below follows from that one line.
+Spelling normalisation is handled by the dictionary: every surface has a canonical spelling, which may differ from how it is printed. For example, "vertue" and "virtue" are both printed in the corpus, but the dictionary normalises them to the canonical spelling "virtue".
 
-### What collapses onto a shared lemma
+Normalisation also handles contractions: "'tis" is normalised to "it is", "we'll" to "we will", and so on. Some surfaces therefore expand to multiple words.
 
-These are all "the same word in different grammatical clothes":
+### Principles of Normalisation
 
-- **Plurals onto singulars**: *virtues* → **virtue**, *men* → **man**,
-  *children* → **child**. Foreign plurals too, which this corpus sees often:
-  *data* → **datum**, *indices* → **index**.
-- **Verb forms onto the plain form**: *increases*, *increased*, *increasing* →
-  **increase**; *made* → **make**; *was*, *were*, *been*, *being* → **be**.
-- **Comparisons onto the plain adjective or adverb** — *including irregular ones*.
-  *Greater*, *greatest* → **great**; and, yes, **good** / *better* / *best*
-  collapse onto **good**, exactly as *big* / *bigger* / *biggest* would. (*Better*
-  and *best* can also be forms of *well*; that simply makes them ambiguous, which
-  the register handles — see below.)
-- **The different forms of a pronoun onto one headword**: *me*, *my*, *mine* →
-  **I**; *him*, *his* → **he**; *us*, *our* → **we**; *them*, *their* → **they**.
-- **Old grammatical forms** that a modern reader would recognise as the same
-  word: *hath* → **have**, *doth* → **do**. Note the earlier point — *hath* is
-  not *re-spelled* as *has* (they are different forms); its spelling stays *hath*,
-  and it is the *lemma* that gathers it with the rest of **have**.
+What counts as a variant spelling of the same word is presumed to be obvious and uncontroversial in almost every case. There are just two potential questions, decided here:
 
-### What stays apart, with its own lemma
+- Archaic spellings that are arguably distinct forms (e.g. "thou", "thy", "hath", "doth") _are_ normalised to their modern equivalents ("you", "your", "has", "does"). This is a debatable but pragmatic choice. For the most part, we are assuming scholars will not be interested in this variety; if they are, they can operate on the level of the surface without normalisation.
+- Sometimes it may be unclear _which_ of two spellings should be the canonical one (e.g. "enquiry" vs "inquiry", "surprise" vs "surprize"). It makes absolutely no difference downstream - what matters is simply the equivalence class. But to prevent any wasted time agonising over the decision, a simple mechanical rule is applied, and enforced by automated tests: the canonical spelling is whichever one occurs most frequently in the corpus. In the unlikely event of a tie, the alphabetically first spelling is canonical (so the rule is fully deterministic, and a test has a single right answer).
 
-These *look* related but are different words, so each keeps its own headword:
+(At some point, it might be considered preferable to weight the frequency counts chronologically, preferring the more modern spelling. But that is not the case for now.)
 
-- **Adverbs made from adjectives** (the "-ly" words): *quick* and *quickly* are
-  two words, two lemmas. Likewise *true* / *truly*.
-- **Reflexive pronouns**: *himself*, *herself*, *themselves* are their own
-  headwords — **not** forms of *he*, *she*, *they*. They are compounds (*him* +
-  *self*) and behave as distinct words, and a reader searching for "he" would be
-  surprised to be shown every "himself".
-- **Modal verbs and their historical pasts**: *can* / *could*, *will* / *would*,
-  *shall* / *should*, *may* / *might* are each kept as **separate** lemmas.
-  Although *could* began life as the past of *can*, the two now work as
-  independent words with their own meanings, and standard practice keeps them
-  apart. *(This is the one genuinely debatable line in the policy — a project
-  aiming purely at retrieval might choose to collapse them. We keep them apart;
-  if that is ever revisited, it must be revisited for the whole set at once.)*
-- **"Thou" and "you" are two different words**, not two forms of one — just as *I*
-  and *we* are different words. So *thou*, *thee*, *thy*, *thine* all share the
-  lemma **thou**, and *ye*, *you*, *your*, *yours* all share the lemma **you**,
-  but the two families stay separate. (This also preserves the old
-  familiar/formal distinction for anyone studying it, while still letting a search
-  for "you" gather its own forms.)
-- **Ordinals and cardinals**: *first* is not a form of *one*, *second* not a form
-  of *two*. Each keeps its own lemma.
-- **Periphrastic comparison**: *more* and *most* are ordinary words in their own
-  right (as in "more virtue"), each its own lemma — they are not forms of
-  anything.
+## Lemmatisation
 
-### Two consequences worth spelling out
+The basic aim of lemmatisation is straightforward, and easily conveyed by some examples:
 
-- **A word that shifts between noun and verb keeps one lemma.** Because a lemma is
-  a spelling and we do not record part of speech, *love* the noun and *love* the
-  verb are simply the one lemma **love**. This falls out of the policy for free
-  and is the behaviour we want.
-- **Words that are lexicalised keep their own lemma even if built from another.**
-  *People* is treated as its own headword, not as a plural of *person*;
-  *government* as its own word, not merely a form of *govern*. The dictionary test
-  above is the guide: if it has settled into a word in its own right, it gets its
-  own headword.
+- "walk" (lemma); "walks", "walked", "walking" (different forms)
+- "virtue" (lemma); "virtues" (different form)
+- "mouse" (lemma); "mice" (different form)
+- "good" (lemma); "better", "best" (different forms)
+- "I" (lemma); "me", "my", "mine" (different forms)
+- "you" (lemma); "your", "yours" (different forms)
 
-## The on-disk format
+But the devil is in the details: various complications and difficult cases arise, and the dictionary necessarily has to make judgements about all of these. The intention here is to document some clear principles that decide all these cases up front, and to choose deterministic principles wherever possible, so that they can be enforced programmatically.
 
-Normalisation (modern spelling) and lemmatisation are **factored** on disk, so
-each editorial fact is stated exactly once. A bare string value is a
-**cross-reference**: `"vertues": "virtues"` reads as "vertues: see *virtues*" —
-the lexicographer's convention for a variant spelling. A word's lemma is stated
-only on the entry for the modern word itself (`"virtues": "=virtue"`); a
-cross-referenced surface's lemma is then **derived** from its target's entry.
-Lemma ambiguity therefore *inherits* through a cross-reference (it is a fact about
-the modern word), while spelling ambiguity does *not* (it is a fact about the one
-surface).
+### Principles of Lemmatisation
 
-Entries live in JSON shards keyed by the surface's first letter (ignoring any
-leading non-letter), with `other.json` for anything outside a–z. Keys are sorted,
-one entry per line — diff- and merge-friendly. Values use a micro-syntax
-mirroring the `[w:]` markup:
+What collapses onto a shared lemma:
 
-```jsonc
-{
-  "the": null,                 // seen; modern; lemma = itself
-  "increases": "=increase",    // modern spelling; lemma stated here, its one home
-  "vertue": "virtue",          // cross-reference: see "virtue"
-  "vertues": "virtues",        // cross-reference; lemma derives via "virtues"
-  "'tis": "it is",             // one surface, two words, each its own entry
-  "then": [null, "than"],      // spelling-ambiguous; default first
-  "lay": [null, "=lie"],       // one spelling, two lemmas (a modern word's fact)
-  "compleat": "?complete"      // machine-suggested, unconfirmed
-}
-```
+- **Plurals onto singulars**:
+  - _virtues_ → **virtue**
+  - _men_ → **man**
+  - _children_ → **child**
+  - _data_ → **datum**
+  - _indices_ → **index**
+- **Verb forms onto the plain form**:
+  - _increases_, _increased_, _increasing_ → **increase**
+  - _makes_, _made_, _making_ → **make**
+  - _am_, _is_, _was_, _were_, _been_, _being_ → **be**
+- **Modals onto the plain form**:
+  - _can_, _could_ → **can**
+  - _will_, _would_ → **will**
+  - _shall_, _should_ → **shall**
+  - _may_, _might_ → **may**
+- **Comparisons onto the plain adjective or adverb** (_including irregular ones_):
+  - _great_, _greater_, _greatest_ → **great**
+  - _good_, _better_, _best_ → **good**
+- **The different forms of a pronoun onto one headword**:
+  - _me_, _my_, _mine_ → **I**
+  - _him_, _his_ → **he**
+  - _us_, _our_ → **we**
+  - _them_, _their_ → **they**
+- **Possessives (genitives) onto the base noun**:
+  - _king's_, _kings'_ → **king**
+  - _man's_, _men's_ → **man**
 
-`null` is the doubly-identity reading: the surface is a modern word, spelled and
-lemmatised as itself. A reading that is just the surface's own spelling is always
-written `null`, never as a self-cross-reference. Grammar of a value:
+  (The apostrophe is part of the token, so `king's` is a surface in its own right; it lemmatises to `king`. The bare possessive `its` is a special case — see [Ambiguity](#ambiguity).)
 
-```
-entry    := value | "[" value ("," value)+ "]"    // array = ambiguous, ordered
-value    := null | string
-string   := "?"? reading                          // "?" alone = unconfirmed null
-reading  := "=" lemma                             // identity: a lemma statement
-          | spelling (" " spelling)*              // cross-reference (>1 = expansion)
-```
+What stays apart, with its own lemma:
 
-The `?` prefix marks a machine-suggested, human-unconfirmed entry; confirming it
-means deleting the prefix. There is no escaping mechanism: spellings and lemmas
-must be words (letters and apostrophes), so `=`, space, `?`, and `]` can never
-collide with the syntax.
+- **Adverbs made from adjectives** (the "-ly" words): _quick_ and _quickly_ are two words, two lemmas. Likewise _true_ / _truly_.
+- **Reflexive pronouns**: _himself_, _herself_, _themselves_ are their own headwords — **not** forms of _he_, _she_, _they_. They are compounds (_him_ + _self_) and behave as distinct words, and a reader searching for "he" would be surprised to be shown every "himself".
+- **Ordinals and cardinals**: _first_ is not a form of _one_, _second_ not a form of _two_. Each keeps its own lemma.
+- **Periphrastic comparison**: _more_ and _most_ are ordinary words in their own right, each its own lemma — they are not forms of anything.
+- **Plurale tantum nouns**: _scissors_, _trousers_, _tidings_, _thanks_ are all plural-only words, and each keeps its own lemma. The singulars (_scissor_, _trouser_, _tiding_, _thank_) are either non-existent or belong to different lemmas (e.g. _thank_ the verb).
 
-The register is **closed under derivation**: every cross-referenced spelling must
-itself have an entry with an identity reading (so a lemma derives in a single step
-— no chains of respelling — and a typo in a value dangles instead of passing
-silently), and every stated lemma must have an entry with a `null` reading (a
-lemma is always a citation form). The accepted price is that the register
-includes modern targets (*virtue*, *be*) even where they are never printed.
-`deno task fmt` canonicalises the shards (sorting, shard placement, minimal
-values, whitespace). Multi-word *keys* (`to morrow`) are deliberately
-unimplemented — each half is an ordinary seen word, and `[w:to morrow=tomorrow]`
-covers the important occurrences.
+Two other notes worth stating explicitly:
 
-## The accounting rule
+- **A word that shifts between noun and verb keeps one lemma.** Because a lemma is a spelling and we do not record part of speech, _love_ the noun and _love_ the verb are the same lemma.
+- **Words that are lexicalised keep their own lemma even if built from another.** _People_ is treated as its own headword, not as a plural of _person_; _government_ as its own word, not merely a form of _govern_.
 
-> Every token in every text is accounted for by **at least one** of: a dictionary
-> entry for its folded surface; enclosure in person (`[p:]`) / place (`[l:]`) /
-> org (`[o:]`) / citation (`[…]`) / language (`$…$`) markup; or a mechanical class
-> (contains digits, or reads as a strict roman numeral — note `I` is both a
-> numeral and a pronoun, which is why accounting is "at least one of").
+## Ambiguity
 
-The rule is one pure function (`accountTokens` in `src/dictionary.ts`, over the
-word identity defined in `src/words.ts`: letters plus internal/leading/trailing
-apostrophes, hyphens split, digit-bearing tokens are not words). It is
-simultaneously the corpus's coverage check and the Compositor's live squiggle
-engine. Recorded trade-off of the citation exemption: citation contents never
-normalise ("A Treatise of Humane Nature" will not match a search for "human
-nature") — accepted; do not "fix" it by adding citation words to the register.
-Name *normalisation* (Tully = Cicero) is entity resolution, and out of scope.
+The first complication is that a surface may be ambiguous: it may correspond to more than one lemma. For example, "lay" is the present tense of "lay" and the past tense of "lie". The dictionary affords the ability to record this ambiguity: the mapping from surface to lemma is many-to-many, not many-to-one. It is a further question _when to record ambiguity_ - see below.
 
-## `[w:surface=value]` markup
+Ambiguity is limited to lemmatisation only: the ambiguity inherent in the lemma "lie" itself (to recline vs to tell an untruth) is not recorded.
 
-Markit's word element disambiguates individual occurrences; the corpus defines its
-semantics:
+Ambiguity is not confined to lemma pairs of the same shape. The bare `its`, for example, is ambiguous between the possessive (default, lemma **it**) and the apostrophe-less contraction of "it is" — so its entry carries two readings, `["=it", "it is"]`, with the possessive first. (`it's`, with the apostrophe, is an unambiguous contraction of "it is".)
 
-- **Single-token surface**: the entry for the folded surface must be ambiguous —
-  2+ **derived** readings, so ambiguity inherited through a cross-reference counts
-  — and the value must select **exactly one** of them: it matches a reading whose
-  full spelling string *or* full lemma string (words joined by single spaces)
-  equals the value: `[w:then=than]`, `[w:lay=lie]`, `[w:borne=born]`. Markup on an
-  unambiguous surface is a validation error, keeping the texts free of noise.
-  Unmarked occurrences mean the first reading — the one reading that therefore
-  need not be uniquely selectable (in `"lay": [null, "=lie"]` the string "lay"
-  matches both readings; only `lie` is ever needed in markup).
-- **Multi-token surface** (the interim mechanism for `to morrow`): the value is a
-  **cross-reference reading** — spellings only, same grammar as dictionary values:
-  `[w:to morrow=tomorrow]`. No dictionary entry is required; the marked tokens are
-  accounted for by the markup itself, and the value's lemmas derive from the
-  register where its words are registered.
+Downstream, an ambiguous surface is counted as an instance of the _first_ lemma in its dictionary entry by default. The dictionary _should_ therefore list the most common lemma first — but this is an advisory convention, not a checked invariant: the true reading distribution of an unmarked surface is not mechanically knowable, so no test enforces it.
 
-## Edition overrides (`[metadata.dictionary]`)
-
-Orthographic conventions are properties of a *printing*, not of the language
-corpus-wide: in a 1650s edition *humane* ordinarily reads "human", in a 1750s
-edition it reads "humane". An edition whose conventions differ from the register's
-defaults states so once, in its metadata, instead of marking every occurrence:
+The default for an edition (or section within an edition) can be overridden by `[metadata.dictionary]` markup in the edition's metadata:
 
 ```
 [metadata.dictionary]
-humane = "human"
-then = "than"
+lay = "lie"
 ```
 
-Each pair overrides the **default reading** of an ambiguous surface for the text's
-unmarked occurrences. Values use the same selection grammar as `[w:]` markup — a
-reading's full spelling string or full lemma string, selecting exactly one of the
-entry's derived readings — and an override may only *select among* the register's
-readings, never introduce one: there is exactly one register. The full precedence
-chain for an occurrence is:
+And the reading for an individual occurrence can be overridden by `[w:surface=value]` markup on that occurrence:
 
-> `[w:]` markup on the occurrence → the text's override for the surface → the
-> entry's first reading
+```
+She [w:lay=lie] down on the bed.
+```
 
-implemented once as `resolveReading` (exported on `wire`, so the computer and the
-Compositor share it). The map cascades per surface (a section's map merges over
-its ancestors'), so a borrowed edition keeps its own conventions inside a
-collection. As with `[w:]` markup, an override on an unambiguous surface is a
-validation error. Selecting the entry's *current* default is legal — a **pin**,
-keeping the edition's meaning stable if the register's reading order is ever
-revised. One markit constraint: metadata keys are `\w+`, so a surface containing
-an apostrophe or a non-ASCII letter cannot be overridden this way — per-occurrence
-`[w:]` markup covers such (rare) cases.
+An override may also select the entry's _own_ default reading. That is not a no-op but a **pin**: it fixes the edition's meaning against a future reordering of the register's readings, so an edition that has been checked stays correct even if the corpus-wide default later flips.
 
-## Validation tiers
+### Principles of Ambiguity
 
-- **Structural** (error): shards parse; keys are folded words, in the right shard,
-  sorted; values are well-formed; shards are byte-for-byte canonical.
-- **Referential** (error): the register is closed under derivation (above); an
-  entry's derived readings are distinct and (beyond the default) uniquely
-  selectable; every `[w:]` in the texts, and every `[metadata.dictionary]`
-  override, obeys the semantics above.
-- **Coverage** (report only): per work and corpus-wide — % tokens accounted, split
-  into confirmed / unconfirmed / unaccounted. Printed by `deno task test`;
-  flipping it to a hard error is the last step of backfill.
+When a surface is marked as ambiguous in the dictionary, that _creates_ potential markup labour for editors (to check that the default is the most common, and to mark up the exceptions). That work never _has_ to be done - without it, downstream tools will simply assume the default reading everywhere. But merely creating the possibility is something not to be done lightly.
 
-The compiled catalogue emits the dictionary **expanded** — explicit spelling and
-lemma per word per reading, plus `confirmed` — as `catalogue/dictionary.json`, so
-consumers never parse the micro-syntax. The computer derives its search levels
-from it; it has no linguistic heuristics of its own.
+This leads to the core principle of ambiguity in this corpus: **assume that a surface is unambiguous unless there is clear evidence to the contrary in the corpus itself**. More precisely:
 
-The rules themselves live in `src/dictionary.ts` and `src/validate.ts` as pure
-functions returning structured violations; `tests/dictionary.test.ts` and
-`tests/validate.test.ts` run them over the real corpus.
+> A surface is marked as ambiguous if and only if there is a _sibling_ form in the corpus that could only have been produced by the other lemma.
+
+For example, "understanding" is ambiguous because "understandings" exists in the corpus, and "understandings" could only have been produced by the noun lemma "understanding", not the verb lemma "understand". But "walkings" does not exist in the corpus, so "walking" is unambiguous: it is only a form of the verb lemma "walk".
+
+Similarly, "learned" is ambiguous because "learnedly" exists in the corpus, and "learnedly" could only have been produced by the adjective lemma "learned", not the verb lemma "learn". But neither "agedly" nor "agedness" exist in the corpus, so "aged" is unambiguous: it is only a form of the verb lemma "age".
+
+One more example: "lower" is ambiguous because "lowered" exists in the corpus, and "lowered" could only have been produced by the verb lemma "lower", not the adjective lemma "low". But "longered" does not exist in the corpus, so "longer" is unambiguous: it is only the comparative form of the adjective lemma "long".
+
+#### What the tests enforce
+
+"Could only have been produced by the other lemma" is not mechanically decidable in general — it needs a morphology. What _is_ mechanical is a closed set of **three inflectional patterns**, and those are the only ones the tests enforce (see `ambiguityEvidence`). For a surface treated as a form of a base lemma:
+
+- an **`-ing`** form (noun/participle, e.g. _understanding_) is ambiguous **iff** its plural **`-ings`** is attested — only a noun pluralises;
+- an **`-ed`** form (adjective/past, e.g. _learned_) is ambiguous **iff** **`-edness`** or **`-edly`** is attested — only an adjective feeds those;
+- an **`-er`/`-est`** form (comparative-or-superlative/verb, e.g. _lower_, _best_) is ambiguous **iff** the verb inflection **`-ered`/`-ering`** (resp. **`-ested`/`-esting`**) is attested — only a verb takes those. (The `-er` half is the common case — _lower_/_lowered_, _better_/_bettered_; the `-est` half earns its keep on _best_, the superlative of _good_ that is also the verb _to best_: _bested_, _besting_.)
+
+Within these three patterns the rule is an enforced biconditional: the surface must carry its own reading if and only if the evidence form is present in the register. Add the reading without the evidence, or omit it with the evidence present, and a test fails.
+
+All _other_ ambiguities — the irregular and suppletive cases such as _lay_/_lie_ or the possessive/contraction _its_ — obey the same underlying principle ("mark ambiguous only on clear corpus evidence") but rest on editorial judgement, because no surface-shape rule can license them. They are not machine-checkable, only the disambiguation _markup_ over them is (that every override and `[w:]` selects a reading the entry actually offers — see [Automatic Validation](#automatic-validation)).
+
+## The On-Disk Format
+
+The dictionary is stored in JSON shards keyed by the surface's first letter (ignoring any leading non-letter), with `other.json` for anything outside a–z. Keys are sorted, one entry per line.
+
+There are three basic kinds of entry:
+
+```jsonc
+{
+  "vertues": "virtues",  // a surface that is normalised to a different spelling
+  "virtues": "=virtue",  // a surface that is lemmatised to a different lemma
+  "virtue": null,        // a surface that is both normalised and lemmatised to itself
+}
+```
+
+A cross-reference may list more than one spelling, which is how a **contraction** is written — each spelling resolves to a lemma through its own entry:
+
+```jsonc
+{
+  "'tis": "it is",   // a contraction: a cross-reference to two spellings
+  "it": null,        // ...each of which has its own entry
+  "is": "=be",
+}
+```
+
+Every entry must "bottom out" in a `null` reading. Surfaces that require normalisation are never lemmatised directly; they are cross-referenced to their canonical spelling, which then has its own entry that states the lemma. This ensures that every lemma is stated in exactly one place, and that the register is closed under derivation.
+
+Ambiguous surfaces are represented as arrays, with the default reading first:
+
+```jsonc
+{
+  "lay": [null, "=lie"],    // one spelling, two lemmas
+  "then": [null, "than"],   // spelling-ambiguous; default first
+}
+```
+
+## The Wire Format
+
+The compiler emits the dictionary _expanded_ as `catalogue/dictionary.json`, so read-side consumers (the computer, and through it the web sites and companion) never parse the on-disk micro-syntax or chase a cross-reference. Every fact the shards state once, by reference, is resolved here into explicit `(spelling, lemma)` pairs.
+
+The shape mirrors the three levels of the register. Each surface maps to an ordered list of **readings** (default first); each reading is a list of **words** (more than one only for a contraction); each word states its modern `spelling` and its `lemma` outright:
+
+```json
+{
+  "vertues": { "readings": [[{ "spelling": "virtues", "lemma": "virtue" }]] },
+  "virtues": { "readings": [[{ "spelling": "virtues", "lemma": "virtue" }]] },
+  "virtue":  { "readings": [[{ "spelling": "virtue",  "lemma": "virtue" }]] },
+  "lay": {
+    "readings": [
+      [{ "spelling": "lay", "lemma": "lay" }],
+      [{ "spelling": "lay", "lemma": "lie" }]
+    ]
+  },
+  "'tis": {
+    "readings": [[
+      { "spelling": "it", "lemma": "it" },
+      { "spelling": "is", "lemma": "be" }
+    ]]
+  }
+}
+```
+
+The expansion is total. A normalised surface carries the _canonical_ spelling in every word (so "vertues" reads as "virtues", never "vertue"), and lemma ambiguity that belongs to the modern word is inherited through the cross-reference (if "virtues" were itself ambiguous, "vertues" would show both readings too). Nothing in the wire format is left to derive: a consumer reads a token's status by folding it, looking up the entry, and taking the reading selected by the precedence chain (`[w:]` markup → edition override → the default reading).
+
+## Automatic Validation
+
+Automated tests enforce various properties of the dictionary and its relationship to the corpus:
+
+- **Internal consistency:** The register is well-formed and closed under derivation. Keys are folded words, unique across shards, sorted, and each in the shard its first letter dictates; every value is valid entry micro-syntax in minimal canonical form (an array means two or more readings; a reading of the surface itself is written `null`; a cross-reference lists spellings only). Every entry bottoms out in a `null` reading: each cross-referenced spelling has an entry with an identity reading (so a lemma derives in a single step — no respelling chains or cycles — and a typo in a value dangles rather than passing silently), and each stated lemma has an entry with a `null` reading (a lemma is a citation form). Within an entry, the expanded readings are distinct, and every non-default reading is uniquely selectable by its spelling or lemma string.
+- **Consistency with the corpus:** The register's orthography is drawn from the texts, so every surface — and every cross-referenced (canonical) spelling — must occur in the corpus. The lemma is the one exception: it is a grammatical citation form, not a spelling, so an irregular base form that is never printed (`datum` for `data`, `ox` for `oxen`) is allowed. (See `attestationViolations` in `src/dictionary.ts`.)
+- **Canonical spelling:** Within a normalisation class — a canonical spelling and the surfaces that cross-reference it — the canonical one must be the most frequent in the corpus, ties broken alphabetically (see [Principles of Normalisation](#principles-of-normalisation)). This is the mechanical, deterministic tie-break that keeps the choice of canonical spelling from being agonised over. (See `canonicalSpellingViolations` in `src/dictionary.ts`.)
+- **Ambiguity:** Two checks. First, the systematic-ambiguity rule (see [Principles of Ambiguity](#principles-of-ambiguity)): a surface matching one of the three inflectional patterns, and treated as a form of a base lemma, carries its own reading _if and only if_ its licensing evidence form is attested in the register. Second, disambiguation within the corpus texts: every `[metadata.dictionary]` override and every `[w:]` markup must select exactly one reading that the dictionary provides for that surface.
+- **Coverage:** Tests report the percentage of tokens in each work, and in the corpus as a whole, that are accounted for by the dictionary. This is reported as a warning, not an error, until the dictionary is complete.

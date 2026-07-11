@@ -19,6 +19,9 @@ import {
 } from "../src/words.ts";
 import {
   accountTokens,
+  ambiguityEvidence,
+  attestationViolations,
+  canonicalSpellingViolations,
   coverageOf,
   type Dictionary,
   dictionaryViolations,
@@ -35,6 +38,7 @@ import {
   serializeEntry,
   shardDictionary,
   shardOf,
+  systematicAmbiguityViolations,
 } from "../src/dictionary.ts";
 import {
   dictionaryCoverage,
@@ -72,6 +76,26 @@ test("words: segmentation keeps apostrophes, splits hyphens, takes digit runs", 
   expect(words("… '' — !")).toEqual([]); // no letters or digits, no tokens
 });
 
+test("words: an internal period (letter/digit before a letter) joins the token", () => {
+  // `i.e.` -> `i.e` (the trailing period, before a space, drops); a missing
+  // sentence break (`end.The`) joins into one token — a probable typo left
+  // unaccounted — while `end. The` (period then space) still splits.
+  expect(words("i.e. and e.g things, N.B end.The end. The Ph.D 3.14"))
+    .toEqual([
+      "i.e",
+      "and",
+      "e.g",
+      "things",
+      "N.B",
+      "end.The",
+      "end",
+      "The",
+      "Ph.D",
+      "3",
+      "14", // period before a digit is not internal — numerals split
+    ]);
+});
+
 test('words: folding lower-cases every surface but the pronoun "I"', () => {
   expect(fold("THE")).toBe("the");
   expect(fold("Œconomy")).toBe("œconomy");
@@ -89,8 +113,13 @@ test("words: a word is one letters-and-apostrophes token", () => {
   expect(isWord("'tis")).toBe(true);
   expect(isWord("lookin'")).toBe(true);
   expect(isWord("œconomy")).toBe(true);
+  // The two internal joiners: a period before a letter, and the non-breaking
+  // space of a fixed multi-word unit (a key/lemma, never a cross-reference).
+  expect(isWord("i.e")).toBe(true);
+  expect(isWord("a priori")).toBe(true);
+  expect(isWord("to morrow")).toBe(true);
+  expect(isWord("i.e.")).toBe(false); // a trailing period is not internal
   expect(isWord("")).toBe(false);
-  expect(isWord("it is")).toBe(false); // two tokens
   expect(isWord("1st")).toBe(false); // digits are mechanical, not words
   expect(isWord("x=y")).toBe(false);
   expect(isWord("fine-day")).toBe(false);
@@ -169,6 +198,28 @@ test("words: scanBlock descends into quotes, lists, and tables", () => {
   ]);
 });
 
+test("words: scanBlock bridges a non-breaking space into one multi-word surface", () => {
+  const scan = scanBlock(block(
+    "reasoning a~priori until to~morrow, and A~B~C, but not [p:Tom]~Jones.",
+  ));
+  expect(scan.tokens.map((t) => t.text)).toEqual([
+    "reasoning",
+    "a priori", // `~` joins the flanking tokens into one surface
+    "until",
+    "to morrow",
+    "and",
+    "A B C", // a run of non-breaking spaces joins all three
+    "but",
+    "not",
+    "Tom", // the `~` after `[p:Tom]` does not join across the markup boundary
+    "Jones",
+  ]);
+  // The joined surface folds with its internal space kept, and is one word.
+  const priori = scan.tokens[1];
+  expect(priori.folded).toBe("a priori");
+  expect(isWord(priori.folded)).toBe(true);
+});
+
 /* ----------------------------- micro-syntax ---------------------------- */
 
 /** An identity reading: the surface is a modern word with this lemma. */
@@ -177,34 +228,26 @@ const id = (lemma: string) => ({ lemma });
 /** A cross-reference reading: see those entries for the lemmas. */
 const see = (...spellings: string[]) => ({ spellings });
 
-const raw = (
-  confirmed: boolean,
-  ...readings: RawEntry["readings"]
-): RawEntry => ({
-  readings,
-  confirmed,
-});
+const raw = (...readings: RawEntry["readings"]): RawEntry => ({ readings });
 
 /** An expanded dictionary word, defaulting the lemma to the spelling. */
 const w = (spelling: string, lemma = spelling) => ({ spelling, lemma });
 
-const entry = (confirmed: boolean, ...readings: Entry["readings"]): Entry => ({
-  readings,
-  confirmed,
-});
+const entry = (...readings: Entry["readings"]): Entry => ({ readings });
 
 /** The worked examples from DICTIONARY.md's on-disk format, all real seed
  * entries. */
 const examples: [string, unknown, RawEntry][] = [
-  ["the", null, raw(true, id("the"))],
-  ["increases", "=increase", raw(true, id("increase"))],
-  ["vertue", "virtue", raw(true, see("virtue"))],
-  ["vertues", "virtues", raw(true, see("virtues"))],
-  ["'tis", "it is", raw(true, see("it", "is"))],
-  ["then", [null, "than"], raw(true, id("then"), see("than"))],
-  ["lay", [null, "=lie"], raw(true, id("lay"), id("lie"))],
-  ["borne", ["=bear", "born"], raw(true, id("bear"), see("born"))],
-  ["compleat", "?complete", raw(false, see("complete"))],
+  ["the", null, raw(id("the"))],
+  ["increases", "=increase", raw(id("increase"))],
+  ["vertue", "virtue", raw(see("virtue"))],
+  ["vertues", "virtues", raw(see("virtues"))],
+  ["'tis", "it is", raw(see("it", "is"))],
+  ["a priori", null, raw(id("a priori"))], // an nbSpace-joined multi-word unit
+  ["to morrow", "tomorrow", raw(see("tomorrow"))],
+  ["then", [null, "than"], raw(id("then"), see("than"))],
+  ["lay", [null, "=lie"], raw(id("lay"), id("lie"))],
+  ["borne", ["=bear", "born"], raw(id("bear"), see("born"))],
 ];
 
 test("dictionary: the micro-syntax parses and round-trips", () => {
@@ -212,9 +255,6 @@ test("dictionary: the micro-syntax parses and round-trips", () => {
     expect(parseEntry(surface, value)).toEqual(expected);
     expect(serializeEntry(surface, expected)).toEqual(value);
   }
-  // "?" alone is an unconfirmed identity entry.
-  expect(parseEntry("agreable", "?")).toEqual(raw(false, id("agreable")));
-  expect(serializeEntry("agreable", raw(false, id("agreable")))).toBe("?");
 });
 
 test("dictionary: malformed entry values are rejected", () => {
@@ -234,34 +274,34 @@ test("dictionary: malformed entry values are rejected", () => {
   // cross-reference — they live on the spelling's own entry.
   expect(error("vertues", "virtues=virtue")).toContain("spellings only");
   expect(error("x", "it =be")).toContain("spellings only");
-  expect(error("x", "=it is")).toContain("not a word");
+  // A hyphen is not part of a word, so it never reaches a lemma or spelling.
+  expect(error("x", "=self-love")).toContain("not a word");
   expect(error("x", "=")).toContain("not a word");
   expect(error("x", "1st")).toContain("not a word");
   expect(error("x", "x")).toContain("null"); // the surface itself is null
-  expect(error("x", [null, "?than"])).toContain("first");
 });
 
 /* ------------------------------ expansion ------------------------------ */
 
 test("dictionary: expansion derives lemmas through cross-references", () => {
   const dictionary: RawDictionary = {
-    "'tis": raw(true, see("it", "is")),
-    is: raw(true, id("be")),
-    it: raw(true, id("it")),
-    vertues: raw(false, see("virtues")),
-    virtue: raw(true, id("virtue")),
-    virtues: raw(true, id("virtue")),
+    "'tis": raw(see("it", "is")),
+    is: raw(id("be")),
+    it: raw(id("it")),
+    vertues: raw(see("virtues")),
+    virtue: raw(id("virtue")),
+    virtues: raw(id("virtue")),
   };
   expect(expandDictionary(dictionary)).toEqual({
     // A contraction: each word's lemma comes from that word's own entry.
-    "'tis": entry(true, [w("it"), w("is", "be")]),
-    is: entry(true, [w("is", "be")]),
-    it: entry(true, [w("it")]),
+    "'tis": entry([w("it"), w("is", "be")]),
+    is: entry([w("is", "be")]),
+    it: entry([w("it")]),
     // The lemma of "vertues" is stated nowhere near it: it derives via the
-    // cross-referenced "virtues". `confirmed` carries over unchanged.
-    vertues: entry(false, [w("virtues", "virtue")]),
-    virtue: entry(true, [w("virtue")]),
-    virtues: entry(true, [w("virtues", "virtue")]),
+    // cross-referenced "virtues".
+    vertues: entry([w("virtues", "virtue")]),
+    virtue: entry([w("virtue")]),
+    virtues: entry([w("virtues", "virtue")]),
   });
 });
 
@@ -269,38 +309,38 @@ test("dictionary: lemma ambiguity inherits through a cross-reference", () => {
   // "laie" respells to "lay"; "lay" is lemma-ambiguous; so "laie" is too —
   // in the target's order, so unmarked occurrences agree with unmarked "lay".
   const dictionary: RawDictionary = {
-    laie: raw(true, see("lay")),
-    lay: raw(true, id("lay"), id("lie")),
-    lie: raw(true, id("lie")),
+    laie: raw(see("lay")),
+    lay: raw(id("lay"), id("lie")),
+    lie: raw(id("lie")),
   };
   expect(expandDictionary(dictionary).laie).toEqual(
-    entry(true, [w("lay")], [w("lay", "lie")]),
+    entry([w("lay")], [w("lay", "lie")]),
   );
 });
 
 test("dictionary: multi-word cross-references expand as a cross product", () => {
   const dictionary: RawDictionary = {
-    a: raw(true, id("a"), id("q")),
-    b: raw(true, id("b")),
-    q: raw(true, id("q")),
-    x: raw(true, see("a", "b")),
+    a: raw(id("a"), id("q")),
+    b: raw(id("b")),
+    q: raw(id("q")),
+    x: raw(see("a", "b")),
   };
   // The leftmost word is most significant; each word's lemmas keep their
   // entry's order.
   expect(expandDictionary(dictionary).x).toEqual(
-    entry(true, [w("a"), w("b")], [w("a", "q"), w("b")]),
+    entry([w("a"), w("b")], [w("a", "q"), w("b")]),
   );
 });
 
 test("dictionary: expansion is best-effort where the register dangles", () => {
   const dictionary: RawDictionary = {
-    olde: raw(true, see("vertue")), // target has no identity reading
-    vertue: raw(true, see("virtue")), // target has no entry at all
+    olde: raw(see("vertue")), // target has no identity reading
+    vertue: raw(see("virtue")), // target has no entry at all
   };
   // Both fall back to lemma = spelling; dictionaryViolations flags them.
   expect(expandDictionary(dictionary)).toEqual({
-    olde: entry(true, [w("vertue")]),
-    vertue: entry(true, [w("virtue")]),
+    olde: entry([w("vertue")]),
+    vertue: entry([w("virtue")]),
   });
 });
 
@@ -308,29 +348,29 @@ test("dictionary: expansion is best-effort where the register dangles", () => {
 
 test("dictionary: a closed register has no violations", () => {
   expect(dictionaryViolations({
-    "'tis": raw(true, see("it", "is")),
-    be: raw(true, id("be")),
-    is: raw(true, id("be")),
-    it: raw(true, id("it")),
-    laie: raw(true, see("lay")),
-    lay: raw(true, id("lay"), id("lie")),
-    lie: raw(true, id("lie")),
-    vertue: raw(true, see("virtue")),
-    virtue: raw(true, id("virtue")),
+    "'tis": raw(see("it", "is")),
+    be: raw(id("be")),
+    is: raw(id("be")),
+    it: raw(id("it")),
+    laie: raw(see("lay")),
+    lay: raw(id("lay"), id("lie")),
+    lie: raw(id("lie")),
+    vertue: raw(see("virtue")),
+    virtue: raw(id("virtue")),
   })).toEqual([]);
 });
 
 test("dictionary: cross-references resolve in one step or dangle", () => {
   // A missing target — or just a typo — is caught.
-  expect(dictionaryViolations({ vertue: raw(true, see("virtue")) })).toEqual([
+  expect(dictionaryViolations({ vertue: raw(see("virtue")) })).toEqual([
     { key: "vertue", message: '"virtue" has no entry' },
   ]);
   // A target that is itself only a cross-reference cannot supply a lemma:
   // normalisation is single-step, so chains (and cycles) are violations.
   expect(dictionaryViolations({
-    olde: raw(true, see("vertue")),
-    vertue: raw(true, see("virtue")),
-    virtue: raw(true, id("virtue")),
+    olde: raw(see("vertue")),
+    vertue: raw(see("virtue")),
+    virtue: raw(id("virtue")),
   })).toEqual([{
     key: "olde",
     message:
@@ -338,20 +378,20 @@ test("dictionary: cross-references resolve in one step or dangle", () => {
   }]);
   expect(
     dictionaryViolations({
-      vertue: raw(true, see("virtue")),
-      virtue: raw(true, see("vertue")),
+      vertue: raw(see("virtue")),
+      virtue: raw(see("vertue")),
     }).map(({ key }) => key),
   ).toEqual(["vertue", "virtue"]);
 });
 
 test("dictionary: stated lemmas are registered citation forms", () => {
   // A lemma dangles independently of any spelling.
-  expect(dictionaryViolations({ increases: raw(true, id("increase")) }))
+  expect(dictionaryViolations({ increases: raw(id("increase")) }))
     .toEqual([{ key: "increases", message: '"increase" has no entry' }]);
   // A lemma's own entry must contain a null reading (lemma = itself).
   expect(dictionaryViolations({
-    them: raw(true, id("they")),
-    they: raw(true, id("them")),
+    them: raw(id("they")),
+    they: raw(id("them")),
   })).toEqual([
     {
       key: "them",
@@ -368,8 +408,8 @@ test("dictionary: expanded readings are distinct and selectable", () => {
   // Two readings that expand identically are duplicates.
   expect(
     dictionaryViolations({
-      x: raw(true, see("y"), see("y")),
-      y: raw(true, id("y")),
+      x: raw(see("y"), see("y")),
+      y: raw(id("y")),
     }).map(({ message }) => message),
   ).toEqual(['duplicate reading "y"']);
   // A non-default reading must be uniquely selectable by its spelling or
@@ -377,8 +417,8 @@ test("dictionary: expanded readings are distinct and selectable", () => {
   // another reading, so neither can ever be chosen by [w:] markup.
   expect(
     dictionaryViolations({
-      x: raw(true, id("x"), id("y"), see("y")),
-      y: raw(true, id("y")),
+      x: raw(id("x"), id("y"), see("y")),
+      y: raw(id("y")),
     }).map(({ message }) => message),
   ).toEqual([
     'reading "x" is not uniquely selectable by its spelling or lemma',
@@ -386,9 +426,202 @@ test("dictionary: expanded readings are distinct and selectable", () => {
   ]);
   // Entries whose references dangle skip these checks (no cascading noise).
   expect(
-    dictionaryViolations({ x: raw(true, see("y"), see("y")) })
+    dictionaryViolations({ x: raw(see("y"), see("y")) })
       .map(({ message }) => message),
   ).toEqual(['"y" has no entry']);
+});
+
+/* ------------------------- corpus attestation -------------------------- */
+
+test("dictionary: a fully attested register has no attestation violations", () => {
+  const corpus = new Set([
+    "vertue",
+    "virtue",
+    "data",
+    "datum",
+    "walk",
+    "walks",
+  ]);
+  expect(attestationViolations({
+    vertue: raw(see("virtue")),
+    virtue: raw(id("virtue")),
+    data: raw(id("datum")),
+    datum: raw(id("datum")),
+    walk: raw(id("walk")),
+    walks: raw(id("walk")),
+  }, corpus)).toEqual([]);
+});
+
+test("dictionary: an unattested surface must occur in the corpus", () => {
+  // A plain modern word with no corpus attestation is a dead or mistyped entry.
+  expect(attestationViolations({ xyzzy: raw(id("xyzzy")) }, new Set()))
+    .toEqual([{ key: "xyzzy", message: "does not occur in the corpus" }]);
+});
+
+test("dictionary: a respelling target must be a printed spelling", () => {
+  // "virtue" is named as the canonical spelling but never appears — the wrong
+  // canonical form was chosen (the printed "vertue" should itself be canonical).
+  expect(attestationViolations({
+    vertue: raw(see("virtue")),
+    virtue: raw(id("virtue")),
+  }, new Set(["vertue"]))).toEqual([{
+    key: "virtue",
+    message: "is a respelling target but does not occur in the corpus " +
+      "(a canonical spelling must be a form that appears in the texts)",
+  }]);
+});
+
+test("dictionary: a lemma citation form may be unprinted", () => {
+  // "datum" never appears, but it is the citation form of the attested "data"
+  // — exempt, because a lemma is grammatical, not orthographic.
+  expect(attestationViolations({
+    data: raw(id("datum")),
+    datum: raw(id("datum")),
+  }, new Set(["data"]))).toEqual([]);
+});
+
+test("dictionary: a spelling target that is also a lemma still must be printed", () => {
+  // Being a lemma elsewhere ("older" → old) does not excuse an unattested
+  // spelling target ("olde" → old): the spelling requirement dominates.
+  expect(attestationViolations({
+    old: raw(id("old")),
+    olde: raw(see("old")),
+    older: raw(id("old")),
+  }, new Set(["olde", "older"]))).toEqual([{
+    key: "old",
+    message: "is a respelling target but does not occur in the corpus " +
+      "(a canonical spelling must be a form that appears in the texts)",
+  }]);
+});
+
+/* ------------------------- systematic ambiguity ------------------------ */
+
+test("dictionary: ambiguityEvidence names the licensing sibling form", () => {
+  expect(ambiguityEvidence("writing")).toEqual(["writings"]); // -ing: plural
+  expect(ambiguityEvidence("aged")).toEqual(["agedness", "agedly"]); // -ed
+  expect(ambiguityEvidence("lower")).toEqual(["lowered", "lowering"]); // -er
+  expect(ambiguityEvidence("warmest")).toEqual(["warmested", "warmesting"]);
+  expect(ambiguityEvidence("cat")).toBeUndefined(); // no rule governs it
+});
+
+test("dictionary: systematic ambiguity must be backed by an attested sibling form", () => {
+  const register: RawDictionary = {
+    // -ing noun, plural attested, own reading present -> consistent
+    writing: raw(id("writing"), id("write")),
+    writings: raw(id("writing")),
+    // -ing, plural attested but no own reading -> must add it
+    building: raw(id("build")),
+    buildings: raw(id("building")),
+    // -ing, no plural, own reading present -> must collapse
+    wedding: raw(id("wedding"), id("wed")),
+    // -ing, no plural, no own reading -> consistent (the collapsed form)
+    walking: raw(id("walk")),
+    // pure noun (no base reading) and a cross-reference -> both silent
+    morning: raw(id("morning")),
+    lovinge: raw(see("loving")),
+    // -ed adjective, -ness attested, own reading present -> consistent
+    learned: raw(id("learned"), id("learn")),
+    learnedness: raw(id("learnedness")),
+    // -ed, no -ness/-ly, own reading present -> must collapse
+    aged: raw(id("aged"), id("age")),
+    // comparative with a verb homograph (lowered attested) -> consistent
+    lower: raw(id("lower"), id("low")),
+    lowered: raw(id("lower")),
+    // comparative, no verb inflection -> must collapse
+    longer: raw(id("longer"), id("long")),
+    // plurale-tantum plural is not an inflected shape -> silent
+    works: raw(id("works"), id("work")),
+  };
+  expect(systematicAmbiguityViolations(register)).toEqual([
+    {
+      key: "building",
+      message: '"building" reads only as a form of "build", but "buildings" ' +
+        'is attested — add its own reading, or drop the "build" reading',
+    },
+    {
+      key: "wedding",
+      message: '"wedding" carries its own reading, but no evidence form ' +
+        '(weddings) is attested — collapse it onto "wed"',
+    },
+    {
+      key: "aged",
+      message: '"aged" carries its own reading, but no evidence form ' +
+        '(agedness, agedly) is attested — collapse it onto "age"',
+    },
+    {
+      key: "longer",
+      message: '"longer" carries its own reading, but no evidence form ' +
+        '(longered, longering) is attested — collapse it onto "long"',
+    },
+  ]);
+});
+
+/* ------------------------ canonical spelling --------------------------- */
+
+test("dictionary: the most frequent spelling of a class must be canonical", () => {
+  // enquiry/inquiry and surprise/surprize are each variants of one word; the
+  // canonical spelling (the one the others cross-reference) must be whichever
+  // occurs most often in the corpus.
+  const register: RawDictionary = {
+    enquiry: raw(id("enquiry")), // canonical, but the rarer spelling
+    inquiry: raw(see("enquiry")),
+    surprise: raw(id("surprise")), // canonical, and the commoner spelling
+    surprize: raw(see("surprise")),
+  };
+  const frequency = new Map([
+    ["enquiry", 5],
+    ["inquiry", 9], // more frequent than its canonical -> a violation
+    ["surprise", 10], // more frequent than its variant -> fine
+    ["surprize", 3],
+  ]);
+  expect(canonicalSpellingViolations(register, frequency)).toEqual([{
+    key: "enquiry",
+    message: '"inquiry" should be the canonical spelling, not "enquiry" ' +
+      "(the most frequent spelling is canonical, ties broken alphabetically)",
+  }]);
+});
+
+test("dictionary: a canonical-spelling tie breaks alphabetically", () => {
+  const tie = new Map([["grey", 4], ["gray", 4]]);
+  // Equal frequency: the alphabetically first spelling ("gray") must be canonical.
+  expect(canonicalSpellingViolations({
+    grey: raw(id("grey")),
+    gray: raw(see("grey")),
+  }, tie)).toEqual([{
+    key: "grey",
+    message: '"gray" should be the canonical spelling, not "grey" ' +
+      "(the most frequent spelling is canonical, ties broken alphabetically)",
+  }]);
+  // With "gray" canonical the same tie is satisfied.
+  expect(canonicalSpellingViolations({
+    gray: raw(id("gray")),
+    grey: raw(see("gray")),
+  }, tie)).toEqual([]);
+});
+
+test("dictionary: only single-spelling respellings form a class", () => {
+  // Contractions (multi-spelling), spelling-ambiguous surfaces, and lemma
+  // statements are not spelling variants, so no lopsided frequency implicates
+  // them.
+  const register: RawDictionary = {
+    it: raw(id("it")),
+    is: raw(id("be")),
+    "'tis": raw(see("it", "is")), // contraction: two spellings, not a respelling
+    then: raw(id("then"), see("than")), // spelling-ambiguous: two readings
+    than: raw(id("than")),
+    increases: raw(id("increase")), // a lemma statement, not a cross-reference
+    increase: raw(id("increase")),
+  };
+  const frequency = new Map([
+    ["is", 99],
+    ["than", 50],
+    ["increases", 80],
+  ]);
+  expect(canonicalSpellingViolations(register, frequency)).toEqual([]);
+  // A variant pointing at a canonical with no entry is a dangle
+  // `dictionaryViolations` reports; this rule stays silent rather than pile on.
+  expect(canonicalSpellingViolations({ olde: raw(see("old")) }, new Map()))
+    .toEqual([]);
 });
 
 /* -------------------------------- shards ------------------------------- */
@@ -403,14 +636,14 @@ test("dictionary: keys shard by their first letter, ignoring non-letters", () =>
 
 test("dictionary: shardDictionary writes canonical, sorted, one-entry-per-line shards", () => {
   const dictionary: RawDictionary = {
-    then: raw(true, id("then"), see("than")),
-    "'tis": raw(true, see("it", "is")),
-    the: raw(true, id("the")),
-    compleat: raw(false, see("complete")),
+    then: raw(id("then"), see("than")),
+    "'tis": raw(see("it", "is")),
+    the: raw(id("the")),
+    "a priori": raw(id("a priori")), // a multi-word key shards by its first letter
   };
   expect(shardDictionary(dictionary)).toEqual(
     new Map([
-      ["c.json", '{\n  "compleat": "?complete"\n}\n'],
+      ["a.json", '{\n  "a priori": null\n}\n'],
       [
         "t.json",
         '{\n  "\'tis": "it is",\n  "the": null,\n  "then": [null, "than"]\n}\n',
@@ -421,9 +654,9 @@ test("dictionary: shardDictionary writes canonical, sorted, one-entry-per-line s
 
 test('dictionary: the pronoun "I" shards and sorts ahead of the i-words', () => {
   const dictionary: RawDictionary = {
-    into: raw(true, id("into")),
-    I: raw(true, id("I")),
-    if: raw(true, id("if")),
+    into: raw(id("into")),
+    I: raw(id("I")),
+    if: raw(id("if")),
   };
   expect(shardDictionary(dictionary)).toEqual(
     new Map([[
@@ -473,8 +706,11 @@ test("dictionary: parseDictionary reports structural problems", () => {
     key: "The",
     dropped: true,
   });
-  expect(problemsOf({ "t.json": '{"to morrow": "tomorrow"}' })[0].message)
+  // A hyphenated key is not a word (each part needs its own entry); a
+  // non-breaking-space-joined multi-word key (`to morrow`) is a word, and valid.
+  expect(problemsOf({ "s.json": '{"self-love": null}' })[0].message)
     .toContain("not a word");
+  expect(problemsOf({ "t.json": '{"to morrow": "tomorrow"}' })).toEqual([]);
   expect(problemsOf({ "t.json": '{"then": ["than"]}' })[0].message).toContain(
     "ambiguous",
   );
@@ -486,32 +722,32 @@ test("dictionary: parseDictionary reports structural problems", () => {
     "t.json": '{"the": "thee"}',
   }));
   expect(dup.problems.some((p) => p.message.includes("duplicate"))).toBe(true);
-  expect(dup.dictionary.the).toEqual(raw(true, id("the")));
+  expect(dup.dictionary.the).toEqual(raw(id("the")));
 });
 
 /* ------------------------------ accounting ----------------------------- */
 
 const register: RawDictionary = {
-  "'tis": raw(true, see("it", "is")),
-  then: raw(true, id("then"), see("than")),
-  vertue: raw(true, see("virtue")),
-  compleat: raw(false, see("complete")),
+  "'tis": raw(see("it", "is")),
+  then: raw(id("then"), see("than")),
+  vertue: raw(see("virtue")),
+  "a priori": raw(id("a priori")), // an nbSpace-joined surface, accounted by its entry
 };
 
 test("dictionary: accountTokens applies the accounting rule to every token", () => {
   const [doc, errors] = compile(
-    "# t\n\n{#1}\n'Tis [p:Will] writing then vertue compleat MDCCXL 1739 zzz " +
+    "# t\n\n{#1}\n'Tis [p:Will] writing then vertue a~priori MDCCXL 1739 zzz " +
       "[w:to morrow=tomorrow].\n",
   );
   expect(errors).toEqual([]);
   const accounts = accountTokens(doc, register);
   expect(accounts.map((a) => `${a.text}:${a.status}`)).toEqual([
-    "'Tis:confirmed",
+    "'Tis:registered",
     "Will:exempt",
     "writing:unaccounted",
-    "then:confirmed",
-    "vertue:confirmed",
-    "compleat:unconfirmed",
+    "then:registered",
+    "vertue:registered",
+    "a priori:registered", // the joined surface matches its dictionary entry
     "MDCCXL:mechanical",
     "1739:mechanical",
     "zzz:unaccounted",
@@ -521,8 +757,7 @@ test("dictionary: accountTokens applies the accounting rule to every token", () 
   expect(accounts[0].textId).toBe("t");
   expect(coverageOf(accounts)).toEqual({
     total: 11,
-    confirmed: 8, // exempt, mechanical, and marked tokens count as confirmed
-    unconfirmed: 1,
+    accounted: 9, // registered, exempt, mechanical, and marked tokens
     unaccounted: 2,
   });
 });
@@ -533,7 +768,7 @@ test("dictionary: accountTokens covers a document's sections too", () => {
   );
   expect(errors).toEqual([]);
   expect(accountTokens(doc, register).map((a) => `${a.textId}:${a.status}`))
-    .toEqual(["t:confirmed", "t.s:unaccounted"]);
+    .toEqual(["t:registered", "t.s:unaccounted"]);
 });
 
 /* --------------------------- validation rules -------------------------- */
@@ -641,6 +876,35 @@ test("validate: dictionary readings must resolve within the register", async () 
   ).toEqual([]);
 });
 
+test("validate: the canonical spelling must be the most frequent in the corpus", async () => {
+  const name = "canonical spelling is the most frequent";
+  const files = (body: string) =>
+    fixture(body, {
+      "data/dictionary/e.json": '{\n  "enquiry": null\n}\n',
+      "data/dictionary/i.json": '{\n  "inquiry": "enquiry"\n}\n',
+    });
+  // "enquiry" is printed more often, so the register's choice of canonical stands.
+  expect(await violationsOf(name, files("Enquiry enquiry enquiry inquiry.")))
+    .toEqual([]);
+  // "inquiry" is printed more often, so the wrong canonical was chosen.
+  const wrong = await violationsOf(
+    name,
+    files("Inquiry inquiry inquiry enquiry."),
+  );
+  expect(wrong).toEqual([
+    'dictionary/e.json "enquiry": "inquiry" should be the canonical spelling, ' +
+    'not "enquiry" (the most frequent spelling is canonical, ties broken ' +
+    "alphabetically)",
+  ]);
+  // Shards that don't parse cleanly defer to the shards rule.
+  expect(
+    await violationsOf(
+      name,
+      fixture("Text.", { "data/dictionary/a.json": "not json" }),
+    ),
+  ).toEqual([]);
+});
+
 test("validate: word markup must select exactly one reading of an ambiguous entry", async () => {
   const name = "word markup selects a dictionary reading";
   const files = (body: string) =>
@@ -701,12 +965,12 @@ test("dictionary: overridesOf reads a text's [metadata.dictionary] map", () => {
 });
 
 test("dictionary: resolveReading follows [w:] markup → override → default", () => {
-  const then = entry(true, [w("then")], [w("than")]);
+  const then = entry([w("then")], [w("than")]);
   expect(selectReading(then, "than")).toEqual([w("than")]);
   expect(selectReading(then, "then")).toEqual([w("then")]); // a pin
   expect(selectReading(then, "nan")).toBeUndefined();
   // Selection by lemma string; a value matching two readings selects neither.
-  const lay = entry(true, [w("lay")], [w("lay", "lie")]);
+  const lay = entry([w("lay")], [w("lay", "lie")]);
   expect(selectReading(lay, "lie")).toEqual([w("lay", "lie")]);
   expect(selectReading(lay, "lay")).toBeUndefined();
   expect(resolveReading(then)).toEqual([w("then")]);
@@ -843,9 +1107,8 @@ test("validate: the coverage report counts per work and corpus-wide", async () =
       "w",
       "1700",
       { imported: true, title: "W", breadcrumb: "W", published: [1700] },
-      `## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nthe vertue compleat zzz`,
+      `## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nthe vertue zzz nope`,
     )
-    .file("data/dictionary/c.json", '{\n  "compleat": "?complete"\n}\n')
     .file(
       "data/dictionary/t.json",
       '{\n  "the": null\n}\n',
@@ -853,12 +1116,8 @@ test("validate: the coverage report counts per work and corpus-wide", async () =
     .file("data/dictionary/v.json", '{\n  "vertue": "virtue"\n}\n')
     .build();
   const lines = await dictionaryCoverage(await contextFor(files));
-  expect(lines[0]).toBe(
-    "corpus: 75.0% of 4 tokens accounted (50.0% confirmed, 25.0% unconfirmed)",
-  );
-  expect(lines[1]).toBe(
-    "  a/w: 75.0% of 4 tokens accounted (50.0% confirmed, 25.0% unconfirmed)",
-  );
+  expect(lines[0]).toBe("corpus: 50.0% of 4 tokens accounted");
+  expect(lines[1]).toBe("  a/w: 50.0% of 4 tokens accounted");
 });
 
 /* --------------------------- catalogue emission ------------------------ */
@@ -889,7 +1148,7 @@ test("catalogue: the dictionary is built into the catalogue, dropped entries war
     memoryCorpus(files),
     CORPUS_ROOT,
   );
-  expect(catalogue.dictionary).toEqual({ the: entry(true, [w("the")]) });
+  expect(catalogue.dictionary).toEqual({ the: entry([w("the")]) });
   expect(warnings.some((warning) => warning.includes("dropped"))).toBe(true);
 });
 
@@ -909,11 +1168,11 @@ test("catalogue: the expanded dictionary round-trips through catalogue/", async 
     {
       // The catalogue holds the *expanded* dictionary: "'tis" carries the
       // lemma "be" that on disk is stated only on the entry for "is".
-      "'tis": entry(true, [w("it"), w("is", "be")]),
-      is: entry(true, [w("is", "be")]),
-      it: entry(true, [w("it")]),
-      than: entry(true, [w("than")]),
-      then: entry(true, [w("then")], [w("than")]),
+      "'tis": entry([w("it"), w("is", "be")]),
+      is: entry([w("is", "be")]),
+      it: entry([w("it")]),
+      than: entry([w("than")]),
+      then: entry([w("then")], [w("than")]),
     } satisfies Dictionary,
   );
 

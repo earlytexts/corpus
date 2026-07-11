@@ -1,4 +1,20 @@
 {
+  "yard": null,
+  "yards": "=yard",
+  "yea": null,
+  "year": null,
+  "yearly": null,
+  "years": "=year",
+  "yellow": null,
   "yet": null,
-  "you": null
+  "yield": null,
+  "yielded": "=yield",
+  "yielding": "=yield",
+  "yields": "=yield",
+  "yoke": null,
+  "you": null,
+  "young": null,
+  "younger": "=young",
+  "youngest": "=young",
+  "youth": null
 }

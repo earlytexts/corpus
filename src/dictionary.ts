@@ -45,7 +45,6 @@ export type Dictionary = Record<string, Entry>;
 
 export type Entry = {
   readings: Reading[]; // length 1 = unambiguous; 2+ = ambiguous
-  confirmed: boolean; // false = machine-suggested (`?` on disk)
 };
 
 /** One way to read the surface: usually one word; more for contractions. */
@@ -61,7 +60,6 @@ export type RawDictionary = Record<string, RawEntry>;
 
 export type RawEntry = {
   readings: RawReading[];
-  confirmed: boolean;
 };
 
 /** An identity reading — the surface is a modern word, with this lemma (on
@@ -70,9 +68,9 @@ export type RawEntry = {
 export type RawReading = { lemma: string } | { spellings: string[] };
 
 /** What the accounting rule needs to know about the register: which surfaces
- * have entries, and whether they are confirmed. Both dictionary shapes
- * qualify. */
-export type Register = Record<string, { confirmed: boolean }>;
+ * have an entry. Membership is all it reads, so both dictionary shapes (raw
+ * and expanded) qualify. */
+export type Register = Record<string, unknown>;
 
 /* --------------------------- the accounting rule ------------------------ */
 
@@ -84,8 +82,7 @@ export type Register = Record<string, { confirmed: boolean }>;
  * that entry, not a numeral).
  */
 export type TokenStatus =
-  | "confirmed" // a confirmed dictionary entry
-  | "unconfirmed" // a machine-suggested (`?`) dictionary entry
+  | "registered" // has a dictionary entry for its folded surface
   | "exempt" // inside person / place / org / citation / language markup
   | "mechanical" // contains digits, or reads as a roman numeral
   | "marked" // inside multi-token `[w:]` markup, which is its own reading
@@ -136,8 +133,7 @@ const statusOf = (
 ): TokenStatus => {
   if (token.exemption !== undefined) return "exempt";
   if (token.word !== undefined && marked.has(token.word)) return "marked";
-  const entry = register[token.folded];
-  if (entry !== undefined) return entry.confirmed ? "confirmed" : "unconfirmed";
+  if (token.folded in register) return "registered";
   if (/\p{N}/u.test(token.text) || isRomanNumeral(token.text)) {
     return "mechanical";
   }
@@ -146,25 +142,17 @@ const statusOf = (
 
 export type Coverage = {
   total: number;
-  /** Accounted without human review pending: confirmed entries, exempt,
-   * mechanical, and `[w:]`-marked tokens. */
-  confirmed: number;
-  /** Accounted by a machine-suggested (`?`) entry awaiting confirmation. */
-  unconfirmed: number;
+  /** Accounted for by any route: a dictionary entry, exempting markup, a
+   * mechanical class, or `[w:]` markup. */
+  accounted: number;
   unaccounted: number;
 };
 
 export const coverageOf = (accounts: TokenAccount[]): Coverage => {
-  const coverage = {
-    total: accounts.length,
-    confirmed: 0,
-    unconfirmed: 0,
-    unaccounted: 0,
-  };
+  const coverage = { total: accounts.length, accounted: 0, unaccounted: 0 };
   for (const { status } of accounts) {
-    if (status === "unconfirmed") coverage.unconfirmed++;
-    else if (status === "unaccounted") coverage.unaccounted++;
-    else coverage.confirmed++;
+    if (status === "unaccounted") coverage.unaccounted++;
+    else coverage.accounted++;
   }
   return coverage;
 };
@@ -424,11 +412,10 @@ export const parseDictionary = (
 export type EntryValue = null | string | (null | string)[];
 
 /**
- * Parse one raw entry value for `surface`. `null` (or a bare `?`) is the
- * doubly-identity reading — the surface is a modern word, lemma = itself;
- * `"=lemma"` states the lemma; anything else is a cross-reference. A `?`
- * prefix on the first reading marks the whole entry machine-suggested
- * (unconfirmed).
+ * Parse one raw entry value for `surface`. `null` is the doubly-identity
+ * reading — the surface is a modern word, lemma = itself; `"=lemma"` states the
+ * lemma; anything else is a cross-reference. An array is an ambiguous entry
+ * (2+ readings, default first).
  */
 export const parseEntry = (
   surface: string,
@@ -439,9 +426,8 @@ export const parseEntry = (
   if (ambiguous && values.length < 2) {
     return { error: "an array value means an ambiguous entry (2+ readings)" };
   }
-  let confirmed = true;
   const readings: RawReading[] = [];
-  for (const [index, item] of values.entries()) {
+  for (const item of values) {
     if (item === null) {
       readings.push({ lemma: surface });
       continue;
@@ -449,25 +435,14 @@ export const parseEntry = (
     if (typeof item !== "string") {
       return { error: "a reading is null or a string" };
     }
-    let text = item;
-    if (text.startsWith("?")) {
-      if (index > 0) {
-        return { error: `"?" (unconfirmed) belongs on the first reading only` };
-      }
-      confirmed = false;
-      text = text.slice(1);
-      if (text === "") {
-        readings.push({ lemma: surface });
-        continue;
-      }
-    } else if (text === "") {
+    if (item === "") {
       return { error: "an empty reading (write null instead)" };
     }
-    const reading = parseReading(surface, text);
+    const reading = parseReading(surface, item);
     if ("error" in reading) return reading;
     readings.push(reading);
   }
-  return { readings, confirmed };
+  return { readings };
 };
 
 /** Parse one reading string: `"=lemma"` (a lemma statement — the whole
@@ -523,7 +498,6 @@ export const serializeEntry = (
   const values = entry.readings.map((reading) =>
     serializeReading(surface, reading)
   );
-  if (!entry.confirmed) values[0] = `?${values[0] ?? ""}`;
   return values.length === 1 ? values[0] : values;
 };
 
@@ -563,7 +537,6 @@ export const expandEntry = (
   readings: entry.readings.flatMap((reading) =>
     expandReading(surface, reading, raw)
   ),
-  confirmed: entry.confirmed,
 });
 
 const expandReading = (
@@ -599,8 +572,9 @@ const lemmasOf = (spelling: string, raw: RawDictionary): string[] => {
  * closed under derivation:
  * - every cross-referenced spelling has an entry with an identity reading, so
  *   lemmas derive in a single step (no respelling chains or cycles) and a
- *   typo in a value dangles instead of passing silently — the accepted price
- *   is that the register includes modern targets even where never printed;
+ *   typo in a value dangles instead of passing silently (that the target is
+ *   also *printed* — never a spelling invented off-corpus — is a separate
+ *   rule, `attestationViolations`);
  * - every stated lemma has an entry with a null reading (a lemma is a
  *   citation form);
  * - an entry's expanded readings are distinct, and every non-default one is
@@ -702,6 +676,183 @@ const expansionViolations = (entry: Entry): string[] => {
   }
   return violations;
 };
+
+/* ------------------------- corpus attestation --------------------------- */
+
+/**
+ * The corpus-attestation violations of a parsed dictionary: the register's
+ * orthography is drawn from the texts, so every surface, and every
+ * cross-referenced (canonical) spelling, must occur in the corpus (`corpus` is
+ * the set of folded surfaces the texts attest). The lemma is the one register
+ * fact that need *not* be printed — it is a grammatical citation form, not a
+ * spelling, so an irregular base form that never appears (`datum` for `data`,
+ * `ox` for `oxen`) is legitimate. So an unattested key is a violation unless it
+ * exists purely to supply a lemma: named as a lemma by some *other* entry and
+ * referenced by no cross-reference. Attributed to the unattested key.
+ */
+export const attestationViolations = (
+  raw: RawDictionary,
+  corpus: ReadonlySet<string>,
+): { key: string; message: string }[] => {
+  const spellingTargets = new Set<string>();
+  const lemmaOfOther = new Set<string>();
+  for (const [key, entry] of Object.entries(raw)) {
+    for (const reading of entry.readings) {
+      if ("spellings" in reading) {
+        for (const spelling of reading.spellings) spellingTargets.add(spelling);
+      } else if (reading.lemma !== key) lemmaOfOther.add(reading.lemma);
+    }
+  }
+  const violations: { key: string; message: string }[] = [];
+  for (const key of Object.keys(raw)) {
+    if (corpus.has(key)) continue;
+    if (spellingTargets.has(key)) {
+      violations.push({
+        key,
+        message: "is a respelling target but does not occur in the corpus " +
+          "(a canonical spelling must be a form that appears in the texts)",
+      });
+    } else if (!lemmaOfOther.has(key)) {
+      violations.push({ key, message: "does not occur in the corpus" });
+    }
+  }
+  return violations;
+};
+
+/* ----------------------- systematic ambiguity --------------------------- */
+
+/**
+ * The evidence forms whose attestation licenses an inflected surface's *own*
+ * reading — the three systematic ambiguities (noun/participle,
+ * adjective/past, comparative/verb). Each is a form only the independent word,
+ * never the inflection, can produce, so its presence in the register is
+ * objective proof the second lexeme exists:
+ * - `-ing` noun: the plural (`writings` for `writing`) — only a noun pluralises;
+ * - `-ed` adjective: `-ness`/`-ly` (`learnedness`, `learnedly`) — only an
+ *   adjective feeds them;
+ * - `-er`/`-est` comparative: the verb inflections `-ed`/`-ing` (`lowered`,
+ *   `lowering` for `lower`) — only a verb takes them.
+ * `undefined` for a surface no rule governs. See ../DICTIONARY.md.
+ */
+export const ambiguityEvidence = (surface: string): string[] | undefined =>
+  surface.endsWith("ing")
+    ? [`${surface}s`]
+    : surface.endsWith("ed")
+    ? [`${surface}ness`, `${surface}ly`]
+    : surface.endsWith("er") || surface.endsWith("est")
+    ? [`${surface}ed`, `${surface}ing`]
+    : undefined;
+
+/**
+ * The systematic-ambiguity violations of a parsed dictionary: an inflected
+ * surface the register treats as a form of a base lemma (it has a `=base`
+ * reading) must carry its own identity reading **iff** an evidence form is
+ * attested. Silent otherwise — a pure noun (`morning`, no base reading), a
+ * plurale-tantum plural (`works`, not an inflected shape), or a cross-reference
+ * all fall outside the rule, needing no exception list. Attributed to the
+ * entry's key.
+ */
+export const systematicAmbiguityViolations = (
+  raw: RawDictionary,
+): { key: string; message: string }[] => {
+  const violations: { key: string; message: string }[] = [];
+  for (const [key, entry] of Object.entries(raw)) {
+    const evidence = ambiguityEvidence(key);
+    if (evidence === undefined) continue;
+    const base = entry.readings.find(
+      (reading): reading is { lemma: string } =>
+        "lemma" in reading && reading.lemma !== key,
+    );
+    if (base === undefined) continue; // not treated as an inflection
+    const hasOwn = entry.readings.some(
+      (reading) => "lemma" in reading && reading.lemma === key,
+    );
+    const attested = evidence.filter((form) => Object.hasOwn(raw, form));
+    if (attested.length > 0 && !hasOwn) {
+      violations.push({
+        key,
+        message: `"${key}" reads only as a form of "${base.lemma}", but ` +
+          `"${attested[0]}" is attested — add its own reading, or drop ` +
+          `the "${base.lemma}" reading`,
+      });
+    } else if (attested.length === 0 && hasOwn) {
+      violations.push({
+        key,
+        message: `"${key}" carries its own reading, but no evidence form ` +
+          `(${evidence.join(", ")}) is attested — collapse it onto ` +
+          `"${base.lemma}"`,
+      });
+    }
+  }
+  return violations;
+};
+
+/* ------------------------ canonical spelling ---------------------------- */
+
+/**
+ * The canonical-spelling violations of a parsed dictionary. When several
+ * spellings are variants of one word, which one is canonical — the modern
+ * spelling the others cross-reference — is not left to taste: it is whichever
+ * occurs most often in the corpus, ties broken alphabetically, so the choice is
+ * deterministic and never agonised over (see ../DICTIONARY.md, Principles of
+ * Normalisation). A normalisation class is a canonical spelling together with
+ * every surface whose *sole* reading is a single-spelling cross-reference to it
+ * (`"vertue": "virtue"`); contractions (multi-spelling), lemma statements, and
+ * ambiguous surfaces are not spelling variants and are never weighed.
+ * `frequency` is each folded surface's printed count in the corpus (0 when
+ * absent). Attributed to the current canonical spelling's entry; a class whose
+ * canonical spelling has no entry (a dangle `dictionaryViolations` reports) is
+ * skipped.
+ */
+export const canonicalSpellingViolations = (
+  raw: RawDictionary,
+  frequency: ReadonlyMap<string, number>,
+): { key: string; message: string }[] => {
+  const variants = new Map<string, string[]>(); // canonical → its variant spellings
+  for (const [surface, entry] of Object.entries(raw)) {
+    const canonical = respellingTarget(entry);
+    if (canonical !== undefined) {
+      variants.set(canonical, [...(variants.get(canonical) ?? []), surface]);
+    }
+  }
+  const violations: { key: string; message: string }[] = [];
+  for (const [canonical, spellings] of variants) {
+    if (raw[canonical] === undefined) continue; // dangling; another rule reports
+    const preferred = mostFrequent([canonical, ...spellings], frequency);
+    if (preferred !== canonical) {
+      violations.push({
+        key: canonical,
+        message: `"${preferred}" should be the canonical spelling, not ` +
+          `"${canonical}" (the most frequent spelling is canonical, ties ` +
+          `broken alphabetically)`,
+      });
+    }
+  }
+  return violations;
+};
+
+/** The single canonical spelling a surface purely respells — its sole reading
+ * is a one-word cross-reference — or `undefined` when it is not a plain
+ * respelling (a modern word, a contraction, or an ambiguous surface). */
+const respellingTarget = (entry: RawEntry): string | undefined => {
+  if (entry.readings.length !== 1) return undefined;
+  const [reading] = entry.readings;
+  return "spellings" in reading && reading.spellings.length === 1
+    ? reading.spellings[0]
+    : undefined;
+};
+
+/** The spelling of a class that should be canonical: most frequent, ties
+ * broken by alphabetical order (so a class has a single deterministic answer). */
+const mostFrequent = (
+  spellings: string[],
+  frequency: ReadonlyMap<string, number>,
+): string =>
+  spellings.reduce((best, spelling) => {
+    const here = frequency.get(spelling) ?? 0;
+    const top = frequency.get(best) ?? 0;
+    return here > top || (here === top && spelling < best) ? spelling : best;
+  });
 
 /* --------------------------- canonical shards --------------------------- */
 
