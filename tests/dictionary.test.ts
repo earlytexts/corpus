@@ -14,6 +14,8 @@ import {
   fold,
   isRomanNumeral,
   isWord,
+  joinMultiWord,
+  multiWordSurfaces,
   scanBlock,
   words,
 } from "../src/words.ts";
@@ -113,8 +115,9 @@ test("words: a word is one letters-and-apostrophes token", () => {
   expect(isWord("'tis")).toBe(true);
   expect(isWord("lookin'")).toBe(true);
   expect(isWord("œconomy")).toBe(true);
-  // The two internal joiners: a period before a letter, and the non-breaking
-  // space of a fixed multi-word unit (a key/lemma, never a cross-reference).
+  // Beyond a lone word: a period before a letter, and internal spaces (a fixed
+  // multi-word unit registered as one surface — a key/lemma, never a
+  // cross-reference).
   expect(isWord("i.e")).toBe(true);
   expect(isWord("a priori")).toBe(true);
   expect(isWord("to morrow")).toBe(true);
@@ -198,26 +201,90 @@ test("words: scanBlock descends into quotes, lists, and tables", () => {
   ]);
 });
 
-test("words: scanBlock bridges a non-breaking space into one multi-word surface", () => {
+test("words: scanBlock segments single words and records join adjacency", () => {
   const scan = scanBlock(block(
-    "reasoning a~priori until to~morrow, and A~B~C, but not [p:Tom]~Jones.",
+    "reasoning a~priori, and A~B~C, but not [p:Tom]~Jones.",
   ));
+  // A non-breaking space is ordinary whitespace: segmentation is single-word.
   expect(scan.tokens.map((t) => t.text)).toEqual([
     "reasoning",
-    "a priori", // `~` joins the flanking tokens into one surface
-    "until",
-    "to morrow",
+    "a",
+    "priori",
     "and",
-    "A B C", // a run of non-breaking spaces joins all three
+    "A",
+    "B",
+    "C",
     "but",
     "not",
-    "Tom", // the `~` after `[p:Tom]` does not join across the markup boundary
+    "Tom",
     "Jones",
   ]);
-  // The joined surface folds with its internal space kept, and is one word.
-  const priori = scan.tokens[1];
-  expect(priori.folded).toBe("a priori");
-  expect(isWord(priori.folded)).toBe(true);
+  // Each token records whether only inter-word space separates it from the one
+  // before — the adjacency a join may bridge. A run starts fresh (`false`),
+  // continues across spaces (`true`), breaks after punctuation (`priori,` →
+  // `and`), and never crosses a markup boundary (`[p:Tom]` → `Jones`).
+  expect(scan.tokens.map((t) => t.joinsLeft)).toEqual([
+    false, // reasoning — run start
+    true, // a
+    true, // priori (~ is just space)
+    false, // and — the comma after "priori" broke the run
+    true, // A
+    true, // B
+    true, // C
+    false, // but — comma
+    true, // not
+    false, // Tom — inside [p:], a new run
+    false, // Jones — the ~ after the markup does not bridge
+  ]);
+});
+
+test("words: multiWordSurfaces are the register keys with a space", () => {
+  expect(
+    multiWordSurfaces({ "a priori": 0, "to morrow": 0, priori: 0, the: 0 }),
+  ).toEqual(new Set(["a priori", "to morrow"]));
+});
+
+test("words: joinMultiWord fuses registered runs, greedily longest-first", () => {
+  type T = { folded: string; joinsLeft: boolean };
+  const ops = {
+    folded: (t: T) => t.folded,
+    joinsLeft: (t: T) => t.joinsLeft,
+    merge: (run: T[]): T => ({
+      folded: run.map((t) => t.folded).join(" "),
+      joinsLeft: run[0].joinsLeft,
+    }),
+  };
+  const run = (...spec: [string, boolean][]): T[] =>
+    spec.map(([folded, joinsLeft]) => ({ folded, joinsLeft }));
+  const folded = (tokens: T[]) => tokens.map((t) => t.folded);
+
+  // No keys: nothing to fuse.
+  expect(joinMultiWord(run(["a", false], ["b", true]), new Set(), ops))
+    .toEqual(run(["a", false], ["b", true]));
+  // A two-word unit fuses when the run is unbroken.
+  expect(
+    folded(joinMultiWord(
+      run(["a", false], ["priori", true], ["holds", true]),
+      new Set(["a priori"]),
+      ops,
+    )),
+  ).toEqual(["a priori", "holds"]);
+  // Longest-first: `a b c` wins over its `a b` prefix.
+  expect(
+    folded(joinMultiWord(
+      run(["a", false], ["b", true], ["c", true]),
+      new Set(["a b", "a b c"]),
+      ops,
+    )),
+  ).toEqual(["a b c"]);
+  // A broken run (the second word does not join left) does not fuse.
+  expect(
+    folded(joinMultiWord(
+      run(["a", false], ["priori", false]),
+      new Set(["a priori"]),
+      ops,
+    )),
+  ).toEqual(["a", "priori"]);
 });
 
 /* ----------------------------- micro-syntax ---------------------------- */
@@ -243,7 +310,7 @@ const examples: [string, unknown, RawEntry][] = [
   ["vertue", "virtue", raw(see("virtue"))],
   ["vertues", "virtues", raw(see("virtues"))],
   ["'tis", "it is", raw(see("it", "is"))],
-  ["a priori", null, raw(id("a priori"))], // an nbSpace-joined multi-word unit
+  ["a priori", null, raw(id("a priori"))], // a fixed multi-word unit, one key
   ["to morrow", "tomorrow", raw(see("tomorrow"))],
   ["then", [null, "than"], raw(id("then"), see("than"))],
   ["lay", [null, "=lie"], raw(id("lay"), id("lie"))],
@@ -329,6 +396,24 @@ test("dictionary: multi-word cross-references expand as a cross product", () => 
   // entry's order.
   expect(expandDictionary(dictionary).x).toEqual(
     entry([w("a"), w("b")], [w("a", "q"), w("b")]),
+  );
+});
+
+test("dictionary: a multi-word key's identity reading is one word per part", () => {
+  // `null` on an n-word surface expands to n identity words (a search for
+  // either half finds the unit); an ambiguous multi-word entry pairs a
+  // one-word respelling against the literal two-word reading.
+  const dictionary: RawDictionary = {
+    "a priori": raw(id("a priori")),
+    "my self": raw(see("myself"), id("my self")),
+    myself: raw(id("myself")),
+    my: raw(id("my")),
+    self: raw(id("self")),
+  };
+  const expanded = expandDictionary(dictionary);
+  expect(expanded["a priori"]).toEqual(entry([w("a"), w("priori")]));
+  expect(expanded["my self"]).toEqual(
+    entry([w("myself")], [w("my"), w("self")]),
   );
 });
 

@@ -32,6 +32,9 @@ import {
   fold,
   isRomanNumeral,
   isWord,
+  joinMultiWord,
+  type JoinOps,
+  multiWordSurfaces,
   scanBlock,
   type Token,
 } from "./words.ts";
@@ -105,6 +108,7 @@ export const accountTokens = (
   doc: MarkitDocument,
   register: Register,
 ): TokenAccount[] => {
+  const keys = multiWordSurfaces(register);
   const accounts: TokenAccount[] = [];
   const walk = (text: MarkitDocument): void => {
     for (const block of text.blocks) {
@@ -112,7 +116,7 @@ export const accountTokens = (
       const marked = new Set(
         words.filter((w) => w.tokens.length > 1).map((w) => w.element),
       );
-      for (const token of tokens) {
+      for (const token of joinMultiWord(tokens, keys, tokenJoin)) {
         accounts.push({
           ...token,
           textId: text.id,
@@ -124,6 +128,18 @@ export const accountTokens = (
   };
   walk(doc);
   return accounts;
+};
+
+/** Fuse a run of adjacent block tokens into one multi-word surface: the printed
+ * texts join with spaces and the folded key follows. The run shares one
+ * enclosing context, so the first token's carries over. */
+const tokenJoin: JoinOps<Token> = {
+  folded: (token) => token.folded,
+  joinsLeft: (token) => token.joinsLeft,
+  merge: (run) => {
+    const text = run.map((token) => token.text).join(" ");
+    return { ...run[0], text, folded: fold(text) };
+  },
 };
 
 const statusOf = (
@@ -545,6 +561,18 @@ const expandReading = (
   raw: RawDictionary,
 ): Reading[] => {
   if ("lemma" in reading) {
+    // An identity reading of an n-word surface is n identity words: `null` on
+    // `"a priori"` is the words `a` and `priori`, each spelled and lemmatised
+    // as itself, so a search for either half finds the unit. Spelling and lemma
+    // pair up word by word (they match for `null`, where lemma = surface).
+    const spellings = surface.split(" ");
+    const lemmas = reading.lemma.split(" ");
+    if (spellings.length === lemmas.length) {
+      return [spellings.map((spelling, index) => ({
+        spelling,
+        lemma: lemmas[index],
+      }))];
+    }
     return [[{ spelling: surface, lemma: reading.lemma }]];
   }
   return reading.spellings.reduce<Reading[]>(
