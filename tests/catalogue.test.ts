@@ -8,9 +8,9 @@
 
 import { expect } from "@std/expect";
 import { test } from "@std/testing/bdd";
-import { buildCatalogue } from "../src/catalogue.ts";
-import type { CorpusFs } from "../src/types.ts";
-import { corpus, CORPUS_ROOT, memoryCorpus } from "../src/harness.ts";
+import { buildCatalogue } from "../src/catalogue/compile.ts";
+import type { CorpusFs } from "../src/ports.ts";
+import { corpus, CORPUS_ROOT, memoryCorpus } from "../src/test.ts";
 
 /** An @std/assert-style shim over vitest's expect, so the cases read unchanged. */
 const assert: (cond: unknown, msg?: string) => asserts cond = (cond, msg) => {

@@ -10,9 +10,9 @@
  * graph rather than by convention.
  */
 
-export * from "./types.ts";
-export * from "./serialize.ts";
-export * from "./deserialize.ts";
+export * from "./catalogue/types.ts";
+export * from "./catalogue/serialize.ts";
+export * from "./catalogue/deserialize.ts";
 
 // Word identity — segmentation, folding, the roman-numeral class, the block
 // tokenizer — so the computer and Compositor share one definition of "a word".
@@ -25,17 +25,12 @@ export * from "./words.ts";
 // precedence chain (`[w:]` markup → edition override → the entry's default).
 // The authoring surface (the entry micro-syntax, shard files, the accounting
 // rule, the violation checks) is write-side and stays on the main entry point.
-export type {
-  Dictionary,
-  Entry,
-  Overrides,
-  Reading,
-  Word,
-} from "./dictionary.ts";
+export type { Dictionary, Entry, Reading, Word } from "./dictionary/types.ts";
+export type { Overrides } from "./dictionary/resolve.ts";
 export {
   overridesOf,
   readingLemma,
   readingSpelling,
   resolveReading,
   selectReading,
-} from "./dictionary.ts";
+} from "./dictionary/resolve.ts";

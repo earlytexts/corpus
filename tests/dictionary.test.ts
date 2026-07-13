@@ -1,10 +1,11 @@
 /**
  * The dictionary: word segmentation and folding (../src/words.ts), the entry
- * micro-syntax and shard files, expansion (lemma derivation through
- * cross-references), the accounting rule (../src/dictionary.ts), the
- * dictionary validation rules and coverage report (../src/validate.ts), and
- * the catalogue emission of the expanded dictionary. Fixtures are in-memory
- * corpora (../src/harness.ts); no files on disk.
+ * micro-syntax and shard files (../src/dictionary/shards.ts), expansion (lemma
+ * derivation through cross-references, ../src/dictionary/expand.ts), the
+ * accounting rule (../src/dictionary/account.ts), the dictionary validation
+ * rules and coverage report (../src/validation/rules.ts), and the catalogue
+ * emission of the expanded dictionary. Fixtures are in-memory corpora
+ * (../src/test.ts); no files on disk.
  */
 
 import { expect } from "@std/expect";
@@ -19,42 +20,47 @@ import {
   scanBlock,
   words,
 } from "../src/words.ts";
+import type {
+  Dictionary,
+  Entry,
+  RawDictionary,
+  RawEntry,
+} from "../src/dictionary/types.ts";
+import { accountTokens, coverageOf } from "../src/dictionary/account.ts";
 import {
-  accountTokens,
-  ambiguityEvidence,
-  attestationViolations,
-  canonicalSpellingViolations,
-  coverageOf,
-  type Dictionary,
-  dictionaryViolations,
-  type Entry,
-  expandDictionary,
   overridesOf,
-  parseDictionary,
-  parseEntry,
-  type RawDictionary,
-  type RawEntry,
-  readDictionaryShards,
   resolveReading,
   selectReading,
+} from "../src/dictionary/resolve.ts";
+import {
+  parseDictionary,
+  parseEntry,
+  readDictionaryShards,
   serializeEntry,
   shardDictionary,
   shardOf,
-  systematicAmbiguityViolations,
-} from "../src/dictionary.ts";
+} from "../src/dictionary/shards.ts";
+import {
+  canonicalSpellingViolations,
+  dictionaryViolations,
+  expandDictionary,
+} from "../src/dictionary/expand.ts";
 import {
   dictionaryCoverage,
   loadCorpus,
   type RuleContext,
   rules,
   violationText,
-} from "../src/validate.ts";
-import { corpus, CORPUS_ROOT, memoryCorpus } from "../src/harness.ts";
-import { buildCatalogue } from "../src/catalogue.ts";
-import { writeCatalogue } from "../src/catalogue-output.ts";
-import { catalogueReader, loadCatalogue } from "../src/deserialize.ts";
+} from "../src/validation/rules.ts";
+import { corpus, CORPUS_ROOT, memoryCorpus } from "../src/test.ts";
+import { buildCatalogue } from "../src/catalogue/compile.ts";
+import { writeCatalogue } from "../src/catalogue/write.ts";
+import {
+  catalogueReader,
+  loadCatalogue,
+} from "../src/catalogue/deserialize.ts";
 import { normalizePath } from "../src/paths.ts";
-import type { CorpusFsWrite } from "../src/types.ts";
+import type { CorpusFsWrite } from "../src/ports.ts";
 
 /* -------------------------------- words -------------------------------- */
 
@@ -516,178 +522,95 @@ test("dictionary: expanded readings are distinct and selectable", () => {
   ).toEqual(['"y" has no entry']);
 });
 
-/* ------------------------- corpus attestation -------------------------- */
-
-test("dictionary: a fully attested register has no attestation violations", () => {
-  const corpus = new Set([
-    "vertue",
-    "virtue",
-    "data",
-    "datum",
-    "walk",
-    "walks",
-  ]);
-  expect(attestationViolations({
-    vertue: raw(see("virtue")),
-    virtue: raw(id("virtue")),
-    data: raw(id("datum")),
-    datum: raw(id("datum")),
-    walk: raw(id("walk")),
-    walks: raw(id("walk")),
-  }, corpus)).toEqual([]);
-});
-
-test("dictionary: an unattested surface must occur in the corpus", () => {
-  // A plain modern word with no corpus attestation is a dead or mistyped entry.
-  expect(attestationViolations({ xyzzy: raw(id("xyzzy")) }, new Set()))
-    .toEqual([{ key: "xyzzy", message: "does not occur in the corpus" }]);
-});
-
-test("dictionary: a respelling target must be a printed spelling", () => {
-  // "virtue" is named as the canonical spelling but never appears — the wrong
-  // canonical form was chosen (the printed "vertue" should itself be canonical).
-  expect(attestationViolations({
-    vertue: raw(see("virtue")),
-    virtue: raw(id("virtue")),
-  }, new Set(["vertue"]))).toEqual([{
-    key: "virtue",
-    message: "is a respelling target but does not occur in the corpus " +
-      "(a canonical spelling must be a form that appears in the texts)",
-  }]);
-});
-
-test("dictionary: a lemma citation form may be unprinted", () => {
-  // "datum" never appears, but it is the citation form of the attested "data"
-  // — exempt, because a lemma is grammatical, not orthographic.
-  expect(attestationViolations({
-    data: raw(id("datum")),
-    datum: raw(id("datum")),
-  }, new Set(["data"]))).toEqual([]);
-});
-
-test("dictionary: a spelling target that is also a lemma still must be printed", () => {
-  // Being a lemma elsewhere ("older" → old) does not excuse an unattested
-  // spelling target ("olde" → old): the spelling requirement dominates.
-  expect(attestationViolations({
-    old: raw(id("old")),
-    olde: raw(see("old")),
-    older: raw(id("old")),
-  }, new Set(["olde", "older"]))).toEqual([{
-    key: "old",
-    message: "is a respelling target but does not occur in the corpus " +
-      "(a canonical spelling must be a form that appears in the texts)",
-  }]);
-});
-
-/* ------------------------- systematic ambiguity ------------------------ */
-
-test("dictionary: ambiguityEvidence names the licensing sibling form", () => {
-  expect(ambiguityEvidence("writing")).toEqual(["writings"]); // -ing: plural
-  expect(ambiguityEvidence("aged")).toEqual(["agedness", "agedly"]); // -ed
-  expect(ambiguityEvidence("lower")).toEqual(["lowered", "lowering"]); // -er
-  expect(ambiguityEvidence("warmest")).toEqual(["warmested", "warmesting"]);
-  expect(ambiguityEvidence("cat")).toBeUndefined(); // no rule governs it
-});
-
-test("dictionary: systematic ambiguity must be backed by an attested sibling form", () => {
-  const register: RawDictionary = {
-    // -ing noun, plural attested, own reading present -> consistent
-    writing: raw(id("writing"), id("write")),
-    writings: raw(id("writing")),
-    // -ing, plural attested but no own reading -> must add it
-    building: raw(id("build")),
-    buildings: raw(id("building")),
-    // -ing, no plural, own reading present -> must collapse
-    wedding: raw(id("wedding"), id("wed")),
-    // -ing, no plural, no own reading -> consistent (the collapsed form)
-    walking: raw(id("walk")),
-    // pure noun (no base reading) and a cross-reference -> both silent
-    morning: raw(id("morning")),
-    lovinge: raw(see("loving")),
-    // -ed adjective, -ness attested, own reading present -> consistent
-    learned: raw(id("learned"), id("learn")),
-    learnedness: raw(id("learnedness")),
-    // -ed, no -ness/-ly, own reading present -> must collapse
-    aged: raw(id("aged"), id("age")),
-    // comparative with a verb homograph (lowered attested) -> consistent
-    lower: raw(id("lower"), id("low")),
-    lowered: raw(id("lower")),
-    // comparative, no verb inflection -> must collapse
-    longer: raw(id("longer"), id("long")),
-    // plurale-tantum plural is not an inflected shape -> silent
-    works: raw(id("works"), id("work")),
-  };
-  expect(systematicAmbiguityViolations(register)).toEqual([
-    {
-      key: "building",
-      message: '"building" reads only as a form of "build", but "buildings" ' +
-        'is attested — add its own reading, or drop the "build" reading',
-    },
-    {
-      key: "wedding",
-      message: '"wedding" carries its own reading, but no evidence form ' +
-        '(weddings) is attested — collapse it onto "wed"',
-    },
-    {
-      key: "aged",
-      message: '"aged" carries its own reading, but no evidence form ' +
-        '(agedness, agedly) is attested — collapse it onto "age"',
-    },
-    {
-      key: "longer",
-      message: '"longer" carries its own reading, but no evidence form ' +
-        '(longered, longering) is attested — collapse it onto "long"',
-    },
-  ]);
-});
-
 /* ------------------------ canonical spelling --------------------------- */
 
-test("dictionary: the most frequent spelling of a class must be canonical", () => {
-  // enquiry/inquiry and surprise/surprize are each variants of one word; the
-  // canonical spelling (the one the others cross-reference) must be whichever
-  // occurs most often in the corpus.
+const listedRule =
+  "(the reference word list's spelling is canonical, ties broken alphabetically)";
+
+test("dictionary: the class member in the reference word list is canonical", () => {
+  // enquiry/inquiry and vertue/virtue are each variants of one word. The
+  // canonical spelling (the one the others cross-reference) must be the member
+  // the external reference list endorses — not a corpus statistic.
   const register: RawDictionary = {
-    enquiry: raw(id("enquiry")), // canonical, but the rarer spelling
-    inquiry: raw(see("enquiry")),
-    surprise: raw(id("surprise")), // canonical, and the commoner spelling
-    surprize: raw(see("surprise")),
+    inquiry: raw(id("inquiry")), // canonical, but NOT the reference spelling
+    enquiry: raw(see("inquiry")),
+    virtue: raw(id("virtue")), // canonical, and the reference spelling — fine
+    vertue: raw(see("virtue")),
   };
-  const frequency = new Map([
-    ["enquiry", 5],
-    ["inquiry", 9], // more frequent than its canonical -> a violation
-    ["surprise", 10], // more frequent than its variant -> fine
-    ["surprize", 3],
-  ]);
-  expect(canonicalSpellingViolations(register, frequency)).toEqual([{
-    key: "enquiry",
-    message: '"inquiry" should be the canonical spelling, not "enquiry" ' +
-      "(the most frequent spelling is canonical, ties broken alphabetically)",
+  const wordlist = new Set(["enquiry", "virtue"]); // inquiry, vertue absent
+  expect(canonicalSpellingViolations(register, wordlist, new Set())).toEqual([{
+    key: "inquiry",
+    message:
+      `"enquiry" should be the canonical spelling, not "inquiry" ${listedRule}`,
   }]);
 });
 
-test("dictionary: a canonical-spelling tie breaks alphabetically", () => {
-  const tie = new Map([["grey", 4], ["gray", 4]]);
-  // Equal frequency: the alphabetically first spelling ("gray") must be canonical.
-  expect(canonicalSpellingViolations({
-    grey: raw(id("grey")),
-    gray: raw(see("grey")),
-  }, tie)).toEqual([{
+test("dictionary: several members in the list break alphabetically", () => {
+  const wordlist = new Set(["grey", "gray"]); // both are current modern spellings
+  // "gray" sorts first among the in-list members, so "grey" canonical violates.
+  expect(canonicalSpellingViolations(
+    {
+      grey: raw(id("grey")),
+      gray: raw(see("grey")),
+    },
+    wordlist,
+    new Set(),
+  )).toEqual([{
     key: "grey",
-    message: '"gray" should be the canonical spelling, not "grey" ' +
-      "(the most frequent spelling is canonical, ties broken alphabetically)",
+    message:
+      `"gray" should be the canonical spelling, not "grey" ${listedRule}`,
   }]);
-  // With "gray" canonical the same tie is satisfied.
-  expect(canonicalSpellingViolations({
-    gray: raw(id("gray")),
-    grey: raw(see("gray")),
-  }, tie)).toEqual([]);
+  // With "gray" canonical the class is satisfied.
+  expect(canonicalSpellingViolations(
+    {
+      gray: raw(id("gray")),
+      grey: raw(see("gray")),
+    },
+    wordlist,
+    new Set(),
+  )).toEqual([]);
+});
+
+test("dictionary: a class with no member in the list must be pinned", () => {
+  // Neither spelling is in the reference list (a list gap, or an all-archaic word).
+  const register: RawDictionary = {
+    foo: raw(id("foo")),
+    phoo: raw(see("foo")),
+  };
+  expect(canonicalSpellingViolations(register, new Set(), new Set())).toEqual([{
+    key: "foo",
+    message: 'no spelling of this class ("foo", "phoo") is in the reference ' +
+      "word list — pin the intended canonical in canonical-exceptions.json",
+  }]);
+  // Pinning the current canonical resolves it.
+  expect(canonicalSpellingViolations(register, new Set(), new Set(["foo"])))
+    .toEqual([]);
+  // Pinning the variant instead demands the flip.
+  expect(canonicalSpellingViolations(register, new Set(), new Set(["phoo"])))
+    .toEqual([{
+      key: "foo",
+      message: '"phoo" should be the canonical spelling, not "foo" ' +
+        "(pinned in canonical-exceptions.json)",
+    }]);
+});
+
+test("dictionary: a pin overrides the reference word list", () => {
+  // "gray" is in the list, but an editor pins "grey"; the pin wins outright.
+  const wordlist = new Set(["grey", "gray"]);
+  expect(canonicalSpellingViolations(
+    {
+      grey: raw(id("grey")),
+      gray: raw(see("grey")),
+    },
+    wordlist,
+    new Set(["grey"]),
+  )).toEqual([]);
 });
 
 test("dictionary: only single-spelling respellings form a class", () => {
   // Contractions (multi-spelling), spelling-ambiguous surfaces, and lemma
-  // statements are not spelling variants, so no lopsided frequency implicates
-  // them.
+  // statements are not spelling variants, so the rule never weighs them —
+  // nothing is required of the word list for any of these.
   const register: RawDictionary = {
     it: raw(id("it")),
     is: raw(id("be")),
@@ -697,15 +620,17 @@ test("dictionary: only single-spelling respellings form a class", () => {
     increases: raw(id("increase")), // a lemma statement, not a cross-reference
     increase: raw(id("increase")),
   };
-  const frequency = new Map([
-    ["is", 99],
-    ["than", 50],
-    ["increases", 80],
-  ]);
-  expect(canonicalSpellingViolations(register, frequency)).toEqual([]);
+  expect(canonicalSpellingViolations(register, new Set(), new Set()))
+    .toEqual([]);
   // A variant pointing at a canonical with no entry is a dangle
   // `dictionaryViolations` reports; this rule stays silent rather than pile on.
-  expect(canonicalSpellingViolations({ olde: raw(see("old")) }, new Map()))
+  expect(
+    canonicalSpellingViolations(
+      { olde: raw(see("old")) },
+      new Set(),
+      new Set(),
+    ),
+  )
     .toEqual([]);
 });
 
@@ -961,33 +886,77 @@ test("validate: dictionary readings must resolve within the register", async () 
   ).toEqual([]);
 });
 
-test("validate: the canonical spelling must be the most frequent in the corpus", async () => {
-  const name = "canonical spelling is the most frequent";
-  const files = (body: string) =>
-    fixture(body, {
-      "data/dictionary/e.json": '{\n  "enquiry": null\n}\n',
-      "data/dictionary/i.json": '{\n  "inquiry": "enquiry"\n}\n',
+test("validate: the canonical spelling must match the reference word list", async () => {
+  const name = "canonical spelling matches the reference word list";
+  // The fixture ships a tiny reference word list; "enquiry" is in it, "inquiry"
+  // is not (SCOWL's British primary), so "enquiry" must be canonical.
+  const files = (
+    dict: Record<string, string>,
+    extra: Record<string, string> = {},
+  ) =>
+    fixture("Text.", {
+      "data/reference/words.txt": "enquiry\nvirtue\n",
+      ...dict,
+      ...extra,
     });
-  // "enquiry" is printed more often, so the register's choice of canonical stands.
-  expect(await violationsOf(name, files("Enquiry enquiry enquiry inquiry.")))
-    .toEqual([]);
-  // "inquiry" is printed more often, so the wrong canonical was chosen.
-  const wrong = await violationsOf(
-    name,
-    files("Inquiry inquiry inquiry enquiry."),
-  );
-  expect(wrong).toEqual([
-    'dictionary/e.json "enquiry": "inquiry" should be the canonical spelling, ' +
-    'not "enquiry" (the most frequent spelling is canonical, ties broken ' +
-    "alphabetically)",
-  ]);
-  // Shards that don't parse cleanly defer to the shards rule.
+  // The register makes "enquiry" (the list's spelling) canonical — fine.
   expect(
     await violationsOf(
       name,
-      fixture("Text.", { "data/dictionary/a.json": "not json" }),
+      files({
+        "data/dictionary/e.json": '{\n  "enquiry": null\n}\n',
+        "data/dictionary/i.json": '{\n  "inquiry": "enquiry"\n}\n',
+      }),
     ),
   ).toEqual([]);
+  // The register made "inquiry" canonical, but only "enquiry" is in the list.
+  expect(
+    await violationsOf(
+      name,
+      files({
+        "data/dictionary/e.json": '{\n  "enquiry": "inquiry"\n}\n',
+        "data/dictionary/i.json": '{\n  "inquiry": null\n}\n',
+      }),
+    ),
+  ).toEqual([
+    'dictionary/i.json "inquiry": "enquiry" should be the canonical spelling, ' +
+    'not "inquiry" (the reference word list\'s spelling is canonical, ties ' +
+    "broken alphabetically)",
+  ]);
+  // A class no member of which is in the list is flagged, then pinnable.
+  const gap = {
+    "data/dictionary/f.json": '{\n  "foo": null\n}\n',
+    "data/dictionary/p.json": '{\n  "phoo": "foo"\n}\n',
+  };
+  expect(await violationsOf(name, files(gap))).toEqual([
+    'dictionary/f.json "foo": no spelling of this class ("foo", "phoo") is in ' +
+    "the reference word list — pin the intended canonical in " +
+    "canonical-exceptions.json",
+  ]);
+  expect(
+    await violationsOf(
+      name,
+      files(gap, {
+        "data/reference/canonical-exceptions.json": '["foo"]\n',
+      }),
+    ),
+  ).toEqual([]);
+  // Without the reference word list the rule cannot run, and defers (this dict
+  // would otherwise violate).
+  expect(
+    await violationsOf(
+      name,
+      fixture("Text.", {
+        "data/dictionary/e.json": '{\n  "enquiry": "inquiry"\n}\n',
+        "data/dictionary/i.json": '{\n  "inquiry": null\n}\n',
+      }),
+    ),
+  ).toEqual([]);
+  // Shards that don't parse cleanly defer to the shards rule.
+  expect(
+    await violationsOf(name, files({ "data/dictionary/a.json": "not json" })),
+  )
+    .toEqual([]);
 });
 
 test("validate: word markup must select exactly one reading of an ambiguous entry", async () => {

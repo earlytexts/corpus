@@ -17,25 +17,29 @@ import {
   type MarkitError,
   startLine,
 } from "@earlytexts/markit";
-import type { CorpusFs } from "./types.ts";
+import type { CorpusFs } from "../ports.ts";
 import {
   accountTokens,
-  attestationViolations,
-  canonicalSpellingViolations,
   type Coverage,
   coverageOf,
+} from "../dictionary/account.ts";
+import {
+  canonicalSpellingViolations,
   dictionaryViolations,
   expandDictionary,
+} from "../dictionary/expand.ts";
+import {
   overridesOf,
   overrideViolation,
+  wordMarkupViolation,
+} from "../dictionary/resolve.ts";
+import {
   parseDictionary,
   readDictionaryShards,
   shardDictionary,
   shardOf,
-  systematicAmbiguityViolations,
-  wordMarkupViolation,
-} from "./dictionary.ts";
-import { scanBlock } from "./words.ts";
+} from "../dictionary/shards.ts";
+import { scanBlock } from "../words.ts";
 import {
   authorRequired,
   authorSchema,
@@ -50,7 +54,7 @@ import {
   resolveEdition,
   resolveVariant,
   YEAR,
-} from "./paths.ts";
+} from "../paths.ts";
 
 /** A corpus file, compiled standalone (borrowed children left unresolved). */
 export type CorpusFile = {
@@ -524,82 +528,25 @@ export const rules: Rule[] = [
     },
   },
   {
-    // The corpus-attestation tier (see ../DICTIONARY.md): the register's
-    // orthography is drawn from the texts, so every surface and every
-    // cross-referenced spelling must occur in the corpus; only a lemma (a
-    // citation form) may be unprinted. The corpus vocabulary is every
-    // non-mechanical token, folded — built the same way the coverage report
-    // walks the works. Skipped while the shards have structural problems.
-    name: "dictionary surfaces occur in the corpus",
-    check: async ({ files, fs, root }) => {
-      const rule = "dictionary surfaces occur in the corpus";
-      const { dictionary, problems } = parseDictionary(
-        await readDictionaryShards(fs, root),
-      );
-      if (problems.length > 0) return [];
-      const corpus = new Set<string>();
-      for (const { doc } of compiled(workFiles(files))) {
-        for (const token of accountTokens(doc, dictionary)) {
-          if (token.status !== "mechanical") corpus.add(token.folded);
-        }
-      }
-      return attestationViolations(dictionary, corpus).map(
-        ({ key, message }) => ({
-          rule,
-          path: `dictionary/${shardOf(key)}`,
-          locus: `"${key}"`,
-          message,
-        }),
-      );
-    },
-  },
-  {
-    // The register's editorial invariant (see ../DICTIONARY.md): an inflected
-    // surface carries its own noun/adjective/verb reading iff the sibling form
-    // that only that independent word can produce is attested — the plural for
-    // an `-ing` noun, `-ness`/`-ly` for an `-ed` adjective, the verb
-    // inflections for a comparative. Keeps systematic ambiguity evidence-backed
-    // both ways, so it never drifts on either a spurious or a missing reading.
-    name: "systematic ambiguity is evidence-backed",
-    check: async ({ fs, root }) => {
-      const rule = "systematic ambiguity is evidence-backed";
-      const { dictionary, problems } = parseDictionary(
-        await readDictionaryShards(fs, root),
-      );
-      if (problems.length > 0) return [];
-      return systematicAmbiguityViolations(dictionary).map(
-        ({ key, message }) => ({
-          rule,
-          path: `dictionary/${shardOf(key)}`,
-          locus: `"${key}"`,
-          message,
-        }),
-      );
-    },
-  },
-  {
     // The canonical-spelling rule (see ../DICTIONARY.md, Principles of
-    // Normalisation): when spellings are variants of one word, the canonical
-    // one — the modern spelling the others cross-reference — must be the most
-    // frequent in the corpus, ties broken alphabetically. A deterministic
-    // tie-break, so the choice is never agonised over and the test has a single
-    // right answer. Frequency is each folded surface's printed count, tallied
-    // the same way the coverage report walks the works. Skipped while the shards
-    // have structural problems.
-    name: "canonical spelling is the most frequent",
-    check: async ({ files, fs, root }) => {
-      const rule = "canonical spelling is the most frequent";
+    // Normalisation): within a normalisation class the canonical spelling must
+    // be the one an external authority endorses — a fixed, version-pinned modern
+    // reference word list (data/reference/words.txt, from SCOWL) — several
+    // matches or ties broken alphabetically, gaps pinned in
+    // canonical-exceptions.json. External and fixed, so the choice never drifts
+    // as the corpus grows. Skipped while the shards have structural problems or
+    // the reference list is absent (nothing to check against).
+    name: "canonical spelling matches the reference word list",
+    check: async ({ fs, root }) => {
+      const rule = "canonical spelling matches the reference word list";
       const { dictionary, problems } = parseDictionary(
         await readDictionaryShards(fs, root),
       );
       if (problems.length > 0) return [];
-      const frequency = new Map<string, number>();
-      for (const { doc } of compiled(workFiles(files))) {
-        for (const token of accountTokens(doc, dictionary)) {
-          frequency.set(token.folded, (frequency.get(token.folded) ?? 0) + 1);
-        }
-      }
-      return canonicalSpellingViolations(dictionary, frequency).map(
+      const wordlist = await loadReferenceWords(fs, root);
+      if (wordlist === null) return [];
+      const exceptions = await loadCanonicalExceptions(fs, root);
+      return canonicalSpellingViolations(dictionary, wordlist, exceptions).map(
         ({ key, message }) => ({
           rule,
           path: `dictionary/${shardOf(key)}`,
@@ -727,6 +674,33 @@ export const loadCorpus = async (
     }
   }
   return files.sort((a, b) => a.path.localeCompare(b.path));
+};
+
+/** The external reference word list (data/reference/words.txt): one lower-cased
+ * spelling per line. `null` when absent — the canonical-spelling rule then
+ * defers, since it has no authority to check against. */
+export const loadReferenceWords = async (
+  fs: CorpusFs,
+  root: string,
+): Promise<Set<string> | null> => {
+  const text = await fs.readFile(`${root}/data/reference/words.txt`);
+  if (text === null) return null;
+  return new Set(
+    text.split("\n").map((line) => line.trim().toLowerCase()).filter(Boolean),
+  );
+};
+
+/** The canonical-spelling exceptions (data/reference/canonical-exceptions.json):
+ * a JSON array of spellings pinned as their class's canonical, overriding the
+ * word list. Empty when the file is absent. */
+export const loadCanonicalExceptions = async (
+  fs: CorpusFs,
+  root: string,
+): Promise<Set<string>> => {
+  const text = await fs.readFile(
+    `${root}/data/reference/canonical-exceptions.json`,
+  );
+  return text === null ? new Set() : new Set(JSON.parse(text) as string[]);
 };
 
 /** Render a violation in the corpus's conventional one-line form:

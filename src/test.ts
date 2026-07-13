@@ -6,7 +6,7 @@
  * `catalogue/`) import this harness, so the fixture format lives in one place.
  */
 
-import type { CorpusFs } from "./types.ts";
+import type { CorpusFs } from "./ports.ts";
 import { normalizePath } from "./paths.ts";
 
 /** The root every corpus path hangs off (an arbitrary absolute prefix). */

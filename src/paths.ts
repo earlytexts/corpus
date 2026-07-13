@@ -5,7 +5,7 @@
  * the test harness all draw on these so the rules live in exactly one place.
  */
 
-import type { CorpusFs } from "./types.ts";
+import type { CorpusFs } from "./ports.ts";
 
 /**
  * A year-named edition slug: four digits with an optional letter (`1742a`),
