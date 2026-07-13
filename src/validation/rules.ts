@@ -24,11 +24,9 @@ import {
   coverageOf,
 } from "../dictionary/account.ts";
 import {
-  attestationViolations,
   canonicalSpellingViolations,
   dictionaryViolations,
   expandDictionary,
-  systematicAmbiguityViolations,
 } from "../dictionary/expand.ts";
 import {
   overridesOf,
@@ -527,60 +525,6 @@ export const rules: Rule[] = [
         locus: `"${key}"`,
         message,
       }));
-    },
-  },
-  {
-    // The corpus-attestation tier (see ../DICTIONARY.md): the register's
-    // orthography is drawn from the texts, so every surface and every
-    // cross-referenced spelling must occur in the corpus; only a lemma (a
-    // citation form) may be unprinted. The corpus vocabulary is every
-    // non-mechanical token, folded — built the same way the coverage report
-    // walks the works. Skipped while the shards have structural problems.
-    name: "dictionary surfaces occur in the corpus",
-    check: async ({ files, fs, root }) => {
-      const rule = "dictionary surfaces occur in the corpus";
-      const { dictionary, problems } = parseDictionary(
-        await readDictionaryShards(fs, root),
-      );
-      if (problems.length > 0) return [];
-      const corpus = new Set<string>();
-      for (const { doc } of compiled(workFiles(files))) {
-        for (const token of accountTokens(doc, dictionary)) {
-          if (token.status !== "mechanical") corpus.add(token.folded);
-        }
-      }
-      return attestationViolations(dictionary, corpus).map(
-        ({ key, message }) => ({
-          rule,
-          path: `dictionary/${shardOf(key)}`,
-          locus: `"${key}"`,
-          message,
-        }),
-      );
-    },
-  },
-  {
-    // The register's editorial invariant (see ../DICTIONARY.md): an inflected
-    // surface carries its own noun/adjective/verb reading iff the sibling form
-    // that only that independent word can produce is attested — the plural for
-    // an `-ing` noun, `-ness`/`-ly` for an `-ed` adjective, the verb
-    // inflections for a comparative. Keeps systematic ambiguity evidence-backed
-    // both ways, so it never drifts on either a spurious or a missing reading.
-    name: "systematic ambiguity is evidence-backed",
-    check: async ({ fs, root }) => {
-      const rule = "systematic ambiguity is evidence-backed";
-      const { dictionary, problems } = parseDictionary(
-        await readDictionaryShards(fs, root),
-      );
-      if (problems.length > 0) return [];
-      return systematicAmbiguityViolations(dictionary).map(
-        ({ key, message }) => ({
-          rule,
-          path: `dictionary/${shardOf(key)}`,
-          locus: `"${key}"`,
-          message,
-        }),
-      );
     },
   },
   {

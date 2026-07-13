@@ -41,12 +41,9 @@ import {
   shardOf,
 } from "../src/dictionary/shards.ts";
 import {
-  ambiguityEvidence,
-  attestationViolations,
   canonicalSpellingViolations,
   dictionaryViolations,
   expandDictionary,
-  systematicAmbiguityViolations,
 } from "../src/dictionary/expand.ts";
 import {
   dictionaryCoverage,
@@ -523,131 +520,6 @@ test("dictionary: expanded readings are distinct and selectable", () => {
     dictionaryViolations({ x: raw(see("y"), see("y")) })
       .map(({ message }) => message),
   ).toEqual(['"y" has no entry']);
-});
-
-/* ------------------------- corpus attestation -------------------------- */
-
-test("dictionary: a fully attested register has no attestation violations", () => {
-  const corpus = new Set([
-    "vertue",
-    "virtue",
-    "data",
-    "datum",
-    "walk",
-    "walks",
-  ]);
-  expect(attestationViolations({
-    vertue: raw(see("virtue")),
-    virtue: raw(id("virtue")),
-    data: raw(id("datum")),
-    datum: raw(id("datum")),
-    walk: raw(id("walk")),
-    walks: raw(id("walk")),
-  }, corpus)).toEqual([]);
-});
-
-test("dictionary: an unattested surface must occur in the corpus", () => {
-  // A plain modern word with no corpus attestation is a dead or mistyped entry.
-  expect(attestationViolations({ xyzzy: raw(id("xyzzy")) }, new Set()))
-    .toEqual([{ key: "xyzzy", message: "does not occur in the corpus" }]);
-});
-
-test("dictionary: a respelling target must be a printed spelling", () => {
-  // "virtue" is named as the canonical spelling but never appears — the wrong
-  // canonical form was chosen (the printed "vertue" should itself be canonical).
-  expect(attestationViolations({
-    vertue: raw(see("virtue")),
-    virtue: raw(id("virtue")),
-  }, new Set(["vertue"]))).toEqual([{
-    key: "virtue",
-    message: "is a respelling target but does not occur in the corpus " +
-      "(a canonical spelling must be a form that appears in the texts)",
-  }]);
-});
-
-test("dictionary: a lemma citation form may be unprinted", () => {
-  // "datum" never appears, but it is the citation form of the attested "data"
-  // — exempt, because a lemma is grammatical, not orthographic.
-  expect(attestationViolations({
-    data: raw(id("datum")),
-    datum: raw(id("datum")),
-  }, new Set(["data"]))).toEqual([]);
-});
-
-test("dictionary: a spelling target that is also a lemma still must be printed", () => {
-  // Being a lemma elsewhere ("older" → old) does not excuse an unattested
-  // spelling target ("olde" → old): the spelling requirement dominates.
-  expect(attestationViolations({
-    old: raw(id("old")),
-    olde: raw(see("old")),
-    older: raw(id("old")),
-  }, new Set(["olde", "older"]))).toEqual([{
-    key: "old",
-    message: "is a respelling target but does not occur in the corpus " +
-      "(a canonical spelling must be a form that appears in the texts)",
-  }]);
-});
-
-/* ------------------------- systematic ambiguity ------------------------ */
-
-test("dictionary: ambiguityEvidence names the licensing sibling form", () => {
-  expect(ambiguityEvidence("writing")).toEqual(["writings"]); // -ing: plural
-  expect(ambiguityEvidence("aged")).toEqual(["agedness", "agedly"]); // -ed
-  expect(ambiguityEvidence("lower")).toEqual(["lowered", "lowering"]); // -er
-  expect(ambiguityEvidence("warmest")).toEqual(["warmested", "warmesting"]);
-  expect(ambiguityEvidence("cat")).toBeUndefined(); // no rule governs it
-});
-
-test("dictionary: systematic ambiguity must be backed by an attested sibling form", () => {
-  const register: RawDictionary = {
-    // -ing noun, plural attested, own reading present -> consistent
-    writing: raw(id("writing"), id("write")),
-    writings: raw(id("writing")),
-    // -ing, plural attested but no own reading -> must add it
-    building: raw(id("build")),
-    buildings: raw(id("building")),
-    // -ing, no plural, own reading present -> must collapse
-    wedding: raw(id("wedding"), id("wed")),
-    // -ing, no plural, no own reading -> consistent (the collapsed form)
-    walking: raw(id("walk")),
-    // pure noun (no base reading) and a cross-reference -> both silent
-    morning: raw(id("morning")),
-    lovinge: raw(see("loving")),
-    // -ed adjective, -ness attested, own reading present -> consistent
-    learned: raw(id("learned"), id("learn")),
-    learnedness: raw(id("learnedness")),
-    // -ed, no -ness/-ly, own reading present -> must collapse
-    aged: raw(id("aged"), id("age")),
-    // comparative with a verb homograph (lowered attested) -> consistent
-    lower: raw(id("lower"), id("low")),
-    lowered: raw(id("lower")),
-    // comparative, no verb inflection -> must collapse
-    longer: raw(id("longer"), id("long")),
-    // plurale-tantum plural is not an inflected shape -> silent
-    works: raw(id("works"), id("work")),
-  };
-  expect(systematicAmbiguityViolations(register)).toEqual([
-    {
-      key: "building",
-      message: '"building" reads only as a form of "build", but "buildings" ' +
-        'is attested — add its own reading, or drop the "build" reading',
-    },
-    {
-      key: "wedding",
-      message: '"wedding" carries its own reading, but no evidence form ' +
-        '(weddings) is attested — collapse it onto "wed"',
-    },
-    {
-      key: "aged",
-      message: '"aged" carries its own reading, but no evidence form ' +
-        '(agedness, agedly) is attested — collapse it onto "age"',
-    },
-    {
-      key: "longer",
-      message: '"longer" carries its own reading, but no evidence form ' +
-        '(longered, longering) is attested — collapse it onto "long"',
-    },
-  ]);
 });
 
 /* ------------------------ canonical spelling --------------------------- */

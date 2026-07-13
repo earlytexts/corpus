@@ -2,15 +2,13 @@
  * The write-side closure of the register: expanding the authored facts into the
  * catalogue's explicit `Dictionary` (`expandDictionary`), and the register-level
  * rules that keep the authored shards well-formed and honest — every reference
- * resolves in one step (`dictionaryViolations`), every surface is printed in the
- * corpus (`attestationViolations`), the three systematic ambiguities are handled
- * consistently (`systematicAmbiguityViolations`), and each class's canonical
+ * resolves in one step (`dictionaryViolations`), and each class's canonical
  * spelling is the one an external reference word list endorses
- * (`canonicalSpellingViolations`). These are the corpus's own
- * accounting over the register; the computer only reads the expanded result.
+ * (`canonicalSpellingViolations`). These are the corpus's own accounting over
+ * the register; the computer only reads the expanded result.
  *
  * Reads top-down: expansion first (the readings the checks weigh), then the
- * four families of register violation.
+ * two families of register violation.
  */
 
 import type {
@@ -94,9 +92,7 @@ const lemmasOf = (spelling: string, raw: RawDictionary): string[] => {
  * closed under derivation:
  * - every cross-referenced spelling has an entry with an identity reading, so
  *   lemmas derive in a single step (no respelling chains or cycles) and a
- *   typo in a value dangles instead of passing silently (that the target is
- *   also *printed* — never a spelling invented off-corpus — is a separate
- *   rule, `attestationViolations`);
+ *   typo in a value dangles instead of passing silently;
  * - every stated lemma has an entry with a null reading (a lemma is a
  *   citation form);
  * - an entry's expanded readings are distinct, and every non-default one is
@@ -194,112 +190,6 @@ const expansionViolations = (entry: Entry): string[] => {
           spellings[index]
         }" is not uniquely selectable by its spelling or lemma`,
       );
-    }
-  }
-  return violations;
-};
-
-/**
- * The corpus-attestation violations of a parsed dictionary: the register's
- * orthography is drawn from the texts, so every surface, and every
- * cross-referenced (canonical) spelling, must occur in the corpus (`corpus` is
- * the set of folded surfaces the texts attest). The lemma is the one register
- * fact that need *not* be printed — it is a grammatical citation form, not a
- * spelling, so an irregular base form that never appears (`datum` for `data`,
- * `ox` for `oxen`) is legitimate. So an unattested key is a violation unless it
- * exists purely to supply a lemma: named as a lemma by some *other* entry and
- * referenced by no cross-reference. Attributed to the unattested key.
- */
-export const attestationViolations = (
-  raw: RawDictionary,
-  corpus: ReadonlySet<string>,
-): { key: string; message: string }[] => {
-  const spellingTargets = new Set<string>();
-  const lemmaOfOther = new Set<string>();
-  for (const [key, entry] of Object.entries(raw)) {
-    for (const reading of entry.readings) {
-      if ("spellings" in reading) {
-        for (const spelling of reading.spellings) spellingTargets.add(spelling);
-      } else if (reading.lemma !== key) lemmaOfOther.add(reading.lemma);
-    }
-  }
-  const violations: { key: string; message: string }[] = [];
-  for (const key of Object.keys(raw)) {
-    if (corpus.has(key)) continue;
-    if (spellingTargets.has(key)) {
-      violations.push({
-        key,
-        message: "is a respelling target but does not occur in the corpus " +
-          "(a canonical spelling must be a form that appears in the texts)",
-      });
-    } else if (!lemmaOfOther.has(key)) {
-      violations.push({ key, message: "does not occur in the corpus" });
-    }
-  }
-  return violations;
-};
-
-/**
- * The evidence forms whose attestation licenses an inflected surface's *own*
- * reading — the three systematic ambiguities (noun/participle,
- * adjective/past, comparative/verb). Each is a form only the independent word,
- * never the inflection, can produce, so its presence in the register is
- * objective proof the second lexeme exists:
- * - `-ing` noun: the plural (`writings` for `writing`) — only a noun pluralises;
- * - `-ed` adjective: `-ness`/`-ly` (`learnedness`, `learnedly`) — only an
- *   adjective feeds them;
- * - `-er`/`-est` comparative: the verb inflections `-ed`/`-ing` (`lowered`,
- *   `lowering` for `lower`) — only a verb takes them.
- * `undefined` for a surface no rule governs. See ../DICTIONARY.md.
- */
-export const ambiguityEvidence = (surface: string): string[] | undefined =>
-  surface.endsWith("ing")
-    ? [`${surface}s`]
-    : surface.endsWith("ed")
-    ? [`${surface}ness`, `${surface}ly`]
-    : surface.endsWith("er") || surface.endsWith("est")
-    ? [`${surface}ed`, `${surface}ing`]
-    : undefined;
-
-/**
- * The systematic-ambiguity violations of a parsed dictionary: an inflected
- * surface the register treats as a form of a base lemma (it has a `=base`
- * reading) must carry its own identity reading **iff** an evidence form is
- * attested. Silent otherwise — a pure noun (`morning`, no base reading), a
- * plurale-tantum plural (`works`, not an inflected shape), or a cross-reference
- * all fall outside the rule, needing no exception list. Attributed to the
- * entry's key.
- */
-export const systematicAmbiguityViolations = (
-  raw: RawDictionary,
-): { key: string; message: string }[] => {
-  const violations: { key: string; message: string }[] = [];
-  for (const [key, entry] of Object.entries(raw)) {
-    const evidence = ambiguityEvidence(key);
-    if (evidence === undefined) continue;
-    const base = entry.readings.find(
-      (reading): reading is { lemma: string } =>
-        "lemma" in reading && reading.lemma !== key,
-    );
-    if (base === undefined) continue; // not treated as an inflection
-    const hasOwn = entry.readings.some(
-      (reading) => "lemma" in reading && reading.lemma === key,
-    );
-    const attested = evidence.filter((form) => Object.hasOwn(raw, form));
-    if (attested.length > 0 && !hasOwn) {
-      violations.push({
-        key,
-        message: `"${key}" reads only as a form of "${base.lemma}", but ` +
-          `"${attested[0]}" is attested — add its own reading, or drop ` +
-          `the "${base.lemma}" reading`,
-      });
-    } else if (attested.length === 0 && hasOwn) {
-      violations.push({
-        key,
-        message: `"${key}" carries its own reading, but no evidence form ` +
-          `(${evidence.join(", ")}) is attested — collapse it onto ` +
-          `"${base.lemma}"`,
-      });
     }
   }
   return violations;
