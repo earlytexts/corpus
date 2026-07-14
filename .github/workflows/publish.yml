@@ -28,3 +28,49 @@ jobs:
 
       - name: "Publish to JSR"
         run: "deno publish"
+
+  publish-compositor:
+    if: "github.event.workflow_run.conclusion == 'success'"
+    runs-on: "ubuntu-latest"
+
+    steps:
+      - uses: "actions/checkout@v6"
+        with:
+          ref: "${{ github.event.workflow_run.head_sha }}"
+
+      - name: "Setup Node.js"
+        uses: "actions/setup-node@v6"
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: "compositor/package-lock.json"
+
+      - name: "Install dependencies"
+        run: "cd compositor && npm ci"
+
+      - name: "Check if version is new"
+        id: "check"
+        run: |
+          CURRENT=$(node -p "require('./compositor/package.json').version")
+          PUBLISHED=$(curl -s -X POST \
+            "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json;api-version=3.0-preview.1" \
+            -d '{"filters":[{"criteria":[{"filterType":7,"value":"earlytexts.compositor"}]}],"flags":512}' \
+            | jq -r '.results[0].extensions[0].versions[0].version // "0.0.0"')
+          echo "Current: $CURRENT, Published: $PUBLISHED"
+          if [ "$CURRENT" != "$PUBLISHED" ]; then
+            echo "publish=true" >> $GITHUB_OUTPUT
+          else
+            echo "publish=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: "Build extension bundle"
+        if: "steps.check.outputs.publish == 'true'"
+        run: "cd compositor && npm run build"
+
+      - name: "Publish to VS Code Marketplace"
+        if: "steps.check.outputs.publish == 'true'"
+        run: "cd compositor && npx vsce publish --no-dependencies"
+        env:
+          VSCE_PAT: "${{ secrets.VSCE_PAT }}"

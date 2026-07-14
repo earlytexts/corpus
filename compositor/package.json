@@ -1,0 +1,326 @@
+{
+  "name": "compositor",
+  "publisher": "earlytexts",
+  "displayName": "Early Text Compositor",
+  "version": "0.5.1",
+  "description": "A VSCode extension for contributing to the Early Text Corpus",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/earlytexts/corpus"
+  },
+  "type": "module",
+  "icon": "./media/etc-logo.png",
+  "main": "./dist/extension.cjs",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check .",
+    "package": "vsce package --no-dependencies --out build/compositor.vsix"
+  },
+  "dependencies": {
+    "@jsr/earlytexts__markit": "^3.7.0",
+    "isomorphic-git": "^1.38.7"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "@types/vscode": "^1.85.0",
+    "@vitest/coverage-v8": "^3.0.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.0",
+    "prettier": "^3.4.2",
+    "typescript": "^6.0.2",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:data/authors"
+  ],
+  "extensionDependencies": [
+    "earlytexts.markit-language"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "compositor",
+          "title": "Compositor",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "compositor": [
+        {
+          "id": "compositor.corpusBrowser",
+          "name": "Corpus",
+          "contextualTitle": "Early Text Corpus"
+        },
+        {
+          "id": "compositor.curation",
+          "name": "Dictionary Curation",
+          "contextualTitle": "Dictionary Curation"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "compositor.corpusBrowser",
+        "contents": "No corpus found.\nSet up the [Early Text Corpus](https://github.com/earlytexts/corpus) on this computer — sign in with GitHub and it is cloned for you — or open a folder containing data/authors, or set compositor.corpusRoot if the corpus is a subfolder of the workspace.\n[Set up the corpus](command:compositor.setup)\n[Retry](command:compositor.refresh)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "compositor.setup",
+        "title": "Set up the Corpus…",
+        "category": "Compositor",
+        "icon": "$(repo-clone)"
+      },
+      {
+        "command": "compositor.refresh",
+        "title": "Refresh Corpus",
+        "category": "Compositor",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "compositor.validate",
+        "title": "Validate Corpus",
+        "category": "Compositor",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "compositor.fixFormatting",
+        "title": "Fix Formatting (Whole Corpus)",
+        "category": "Compositor"
+      },
+      {
+        "command": "compositor.newAuthor",
+        "title": "New Author…",
+        "category": "Compositor",
+        "icon": "$(person-add)"
+      },
+      {
+        "command": "compositor.newWork",
+        "title": "New Work…",
+        "category": "Compositor"
+      },
+      {
+        "command": "compositor.newEdition",
+        "title": "New Edition…",
+        "category": "Compositor"
+      },
+      {
+        "command": "compositor.insertBorrowedRef",
+        "title": "Insert Borrowed Section Reference…",
+        "category": "Compositor"
+      },
+      {
+        "command": "compositor.replaceInScope",
+        "title": "Replace in Work / Author…",
+        "category": "Compositor"
+      },
+      {
+        "command": "compositor.configureDiagnostics",
+        "title": "Suggest Markup & Flag Unaccounted Words…",
+        "category": "Compositor",
+        "icon": "$(lightbulb-sparkle)"
+      },
+      {
+        "command": "compositor.compareEditions",
+        "title": "Compare Editions…",
+        "category": "Compositor",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "compositor.curateModern",
+        "title": "Add to Dictionary (Modern Word)",
+        "category": "Compositor"
+      },
+      {
+        "command": "compositor.curateRespell",
+        "title": "Add to Dictionary as a Respelling…",
+        "category": "Compositor"
+      },
+      {
+        "command": "compositor.curateLemma",
+        "title": "Add to Dictionary with a Lemma…",
+        "category": "Compositor"
+      },
+      {
+        "command": "compositor.compareWithNext",
+        "title": "Compare with Next Edition",
+        "category": "Compositor",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "compositor.openAuthorStub",
+        "title": "Open Author Metadata",
+        "category": "Compositor"
+      },
+      {
+        "command": "compositor.openWorkStub",
+        "title": "Open Work Metadata",
+        "category": "Compositor"
+      },
+      {
+        "command": "compositor.copyDocId",
+        "title": "Copy Document ID",
+        "category": "Compositor"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "compositor.refresh",
+          "when": "view == compositor.corpusBrowser",
+          "group": "navigation@1"
+        },
+        {
+          "command": "compositor.newAuthor",
+          "when": "view == compositor.corpusBrowser",
+          "group": "navigation@2"
+        },
+        {
+          "command": "compositor.validate",
+          "when": "view == compositor.corpusBrowser",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "compositor.newWork",
+          "when": "view == compositor.corpusBrowser && viewItem == author",
+          "group": "compositor@1"
+        },
+        {
+          "command": "compositor.openAuthorStub",
+          "when": "view == compositor.corpusBrowser && viewItem == author",
+          "group": "compositor@2"
+        },
+        {
+          "command": "compositor.newEdition",
+          "when": "view == compositor.corpusBrowser && viewItem == work",
+          "group": "compositor@1"
+        },
+        {
+          "command": "compositor.compareWithNext",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /HasNext$/",
+          "group": "compositor@2"
+        },
+        {
+          "command": "compositor.compareEditions",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /work|edition|borrowed/",
+          "group": "compositor@3"
+        },
+        {
+          "command": "compositor.openWorkStub",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /^(work|borrowed)/",
+          "group": "compositor@4"
+        },
+        {
+          "command": "compositor.copyDocId",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /work|edition|borrowed/",
+          "group": "compositor@5"
+        },
+        {
+          "command": "compositor.curateModern",
+          "when": "view == compositor.curation && viewItem == curationUnaccounted",
+          "group": "compositor@1"
+        },
+        {
+          "command": "compositor.curateRespell",
+          "when": "view == compositor.curation && viewItem == curationUnaccounted",
+          "group": "compositor@2"
+        },
+        {
+          "command": "compositor.curateLemma",
+          "when": "view == compositor.curation && viewItem == curationUnaccounted",
+          "group": "compositor@3"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "compositor.insertBorrowedRef",
+          "when": "resourceExtname == .mit",
+          "group": "compositor"
+        },
+        {
+          "command": "compositor.replaceInScope",
+          "when": "resourceExtname == .mit",
+          "group": "compositor"
+        },
+        {
+          "command": "compositor.configureDiagnostics",
+          "when": "resourceExtname == .mit",
+          "group": "compositor"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "compositor.openAuthorStub",
+          "when": "false"
+        },
+        {
+          "command": "compositor.openWorkStub",
+          "when": "false"
+        },
+        {
+          "command": "compositor.copyDocId",
+          "when": "false"
+        },
+        {
+          "command": "compositor.newWork",
+          "when": "false"
+        },
+        {
+          "command": "compositor.newEdition",
+          "when": "false"
+        },
+        {
+          "command": "compositor.compareWithNext",
+          "when": "false"
+        },
+        {
+          "command": "compositor.curateModern",
+          "when": "false"
+        },
+        {
+          "command": "compositor.curateRespell",
+          "when": "false"
+        },
+        {
+          "command": "compositor.curateLemma",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Compositor",
+      "properties": {
+        "compositor.corpusRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Workspace-relative path to the corpus root (the directory containing data/). Leave empty when VSCode is opened in the corpus itself."
+        },
+        "compositor.flagUnaccountedWords": {
+          "type": "boolean",
+          "default": false,
+          "description": "Squiggle words the dictionary does not yet account for (unknown surfaces, as warnings) in open editions. Off by default: until the register is backfilled, most words are unaccounted, so this is a curation aid rather than an everyday diagnostic."
+        },
+        "compositor.suggestMarkup": {
+          "type": "boolean",
+          "default": false,
+          "description": "Squiggle likely people, places, organisations, citations, and foreign text (as hints) in open editions, each with a quick fix to wrap it in the corresponding markup. Off by default: it is an enrichment aid, mined from the markup the corpus already carries."
+        }
+      }
+    }
+  }
+}

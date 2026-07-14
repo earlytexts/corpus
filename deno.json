@@ -28,7 +28,13 @@
     "strict": true,
     "verbatimModuleSyntax": true
   },
-  "exclude": ["data/", "catalogue/", "node_modules/", "coverage/"],
+  "exclude": [
+    "data/",
+    "catalogue/",
+    "node_modules/",
+    "coverage/",
+    "compositor/"
+  ],
   "fmt": {
     "exclude": ["*.md"]
   }

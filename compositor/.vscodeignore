@@ -1,0 +1,16 @@
+# Only dist/extension.cjs, media/, package.json and the readme are needed at
+# runtime — esbuild bundles everything else. Keep source, tests, config, notes,
+# and sourcemaps out of the published .vsix.
+.github/**
+.vscode/**
+src/**
+test/**
+node_modules/**
+**/*.map
+esbuild.mjs
+tsconfig.json
+vitest.config.ts
+package-lock.json
+CLAUDE.md
+TODO.md
+.gitignore

@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    // Bundler, not nodenext: the corpus (below) has no package.json to declare
+    // "type": "module", so nodenext's CJS/ESM-per-file detection would treat
+    // its sources as CommonJS and reject their top-level `export`. Bundler
+    // resolution sidesteps that — matching markit-language's own tsconfig,
+    // which typechecks markit's sibling source the same way.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": ["node"],
+
+    // esbuild emits; tsc only typechecks. Imports use explicit .ts extensions
+    // (matching the corpus sources this extension bundles).
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "preserveSymlinks": true,
+
+    // strict, but no stricter than the corpus's own deno check (whose sources
+    // this project typechecks directly, via the alias below)
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+
+    // Mirrors esbuild.mjs/vitest.config.ts: the corpus is the sibling package
+    // in this repo, typechecked from its TypeScript source directly. Markit
+    // stays external, so its own "@earlytexts/markit" import resolves to the
+    // installed JSR npm-compat package.
+    "paths": {
+      "@earlytexts/corpus": ["../src/index.ts"],
+      "@earlytexts/corpus/test": ["../src/test.ts"],
+      "@earlytexts/markit": [
+        "./node_modules/@jsr/earlytexts__markit/_dist/src/index.d.ts"
+      ]
+    }
+  },
+  "include": ["src", "test"]
+}
