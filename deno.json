@@ -1,6 +1,6 @@
 {
   "name": "@earlytexts/corpus",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
@@ -12,7 +12,7 @@
     "include": ["src/", "README.md", "LICENSE.md", "deno.json"]
   },
   "imports": {
-    "@earlytexts/markit": "jsr:@earlytexts/markit@^4.0.0",
+    "@earlytexts/markit": "jsr:@earlytexts/markit@^4.1.0",
     "@std/expect": "jsr:@std/expect@^1.0.0",
     "@std/testing": "jsr:@std/testing@^1.0.0"
   },
