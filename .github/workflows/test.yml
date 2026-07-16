@@ -33,3 +33,28 @@ jobs:
 
       - name: "Publish dry run"
         run: "deno publish --dry-run"
+
+  test-compositor:
+    runs-on: "ubuntu-latest"
+
+    steps:
+      - uses: "actions/checkout@v6"
+
+      - name: "Setup Node.js"
+        uses: "actions/setup-node@v6"
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: "compositor/package-lock.json"
+
+      - name: "Install dependencies"
+        run: "cd compositor && npm ci"
+
+      - name: "Run tests"
+        run: "cd compositor && npm test"
+
+      - name: "Type checking"
+        run: "cd compositor && npm run check"
+
+      - name: "Format checking"
+        run: "cd compositor && npm run fmt:check"
