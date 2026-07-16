@@ -4,10 +4,12 @@
  * catalogue types, `serializeCatalogue`, and `loadCatalogue` — and nothing
  * about authoring (scanning, compiling, validating, hints).
  *
- * The computer imports this subpath (`@earlytexts/corpus/wire`) instead of
- * the full library, so the corpus/computer boundary — the computer reads
- * `catalogue/`, it never scans or compiles `.mit` — is enforced by the import
- * graph rather than by convention.
+ * The computer's application code imports this subpath
+ * (`@earlytexts/corpus/wire`) and nothing wider, so the corpus/computer
+ * boundary — the computer reads `catalogue/`, it never scans or compiles
+ * `.mit` — is enforced by the import graph rather than by convention. (Its
+ * tests reach the compiler through `@earlytexts/corpus/test`, to build
+ * fixtures; those are the package's only two exports.)
  */
 
 export * from "./catalogue/types.ts";
@@ -17,7 +19,7 @@ export * from "./catalogue/deserialize.ts";
 // Word semantics on top of Markit's tokenizer — folding, the roman-numeral
 // class, exemption policy, the both-versions token stream — so the computer
 // and Compositor share one definition of "a word".
-export * from "./words.ts";
+export * from "./dictionary/words.ts";
 
 // The dictionary's wire types — the shape of `catalogue/dictionary.json` (the
 // register expanded: explicit spelling + lemma per word per reading) — plus

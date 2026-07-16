@@ -12,7 +12,7 @@
  *
  * Each entity is its shared `…Meta` base plus the one field that differs
  * between the layers: a live document/object graph in memory, a key or
- * reference on the wire. The filesystem ports these run on live in ../ports.ts.
+ * reference on the wire. The filesystem ports these run on live in ../fs/ports.ts.
  */
 
 import type { MarkitDocument } from "@earlytexts/markit";
@@ -64,10 +64,12 @@ export type AuthorMeta = {
   sex?: string;
 };
 
+/** An author in memory: their metadata plus their live works. */
 export type Author = AuthorMeta & {
   works: Work[]; // ascending by first publication year
 };
 
+/** A serialised author: their metadata plus work keys into `CatalogueFile.works`. */
 export type CatalogueAuthor = AuthorMeta & {
   /** Work keys (`<hostSlug>/<work>`), in order; resolved against `works`. */
   works: string[];
@@ -110,10 +112,12 @@ export type WorkMeta = {
   dir: string;
 };
 
+/** A work in memory: its metadata plus its live, dated editions. */
 export type Work = WorkMeta & {
   editions: Edition[]; // dated editions, ascending by year
 };
 
+/** A serialised work: its metadata plus its serialised editions. */
 export type CatalogueWork = WorkMeta & {
   editions: CatalogueEdition[];
 };
@@ -134,6 +138,7 @@ export type EditionMeta = {
   sourceDesc?: string;
 };
 
+/** An edition in memory: its metadata plus its live Markit document. */
 export type Edition = EditionMeta & {
   document: MarkitDocument;
 };

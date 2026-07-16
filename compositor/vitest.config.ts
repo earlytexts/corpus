@@ -12,7 +12,7 @@ export default defineConfig({
     alias: {
       "@earlytexts/corpus/test": path.resolve(
         import.meta.dirname,
-        "../src/test.ts",
+        "../tests/harness.ts",
       ),
       "@earlytexts/corpus": path.resolve(
         import.meta.dirname,

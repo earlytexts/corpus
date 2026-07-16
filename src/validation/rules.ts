@@ -17,12 +17,8 @@ import {
   type MarkitError,
   type SourceRange,
 } from "@earlytexts/markit";
-import type { CorpusFs } from "../ports.ts";
-import {
-  accountTokens,
-  type Coverage,
-  coverageOf,
-} from "../dictionary/account.ts";
+import type { CorpusFs } from "../fs/ports.ts";
+import { accountTokens, type Coverage, coverageOf } from "./account.ts";
 import {
   canonicalSpellingViolations,
   dictionaryViolations,
@@ -39,7 +35,7 @@ import {
   shardDictionary,
   shardOf,
 } from "../dictionary/shards.ts";
-import { blockTokens, fold } from "../words.ts";
+import { blockTokens, fold } from "../dictionary/words.ts";
 import {
   authorRequired,
   authorSchema,
@@ -54,7 +50,7 @@ import {
   resolveEdition,
   resolveVariant,
   YEAR,
-} from "../paths.ts";
+} from "../fs/paths.ts";
 
 /** A corpus file, compiled standalone (borrowed children left unresolved). */
 export type CorpusFile = {

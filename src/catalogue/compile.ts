@@ -27,7 +27,7 @@
 
 import { compile, type MarkitDocument } from "@earlytexts/markit";
 import type { Author, Catalogue, Edition, Work } from "./types.ts";
-import type { CorpusFs, DirEntry } from "../ports.ts";
+import type { CorpusFs, DirEntry } from "../fs/ports.ts";
 import { expandDictionary } from "../dictionary/expand.ts";
 import { parseDictionary, readDictionaryShards } from "../dictionary/shards.ts";
 import {
@@ -37,8 +37,14 @@ import {
   resolveFile,
   resolveVariant,
   YEAR,
-} from "../paths.ts";
+} from "../fs/paths.ts";
 
+/**
+ * Scan the corpus under `corpusDir`, compile every Markit file, and organise the
+ * results into the in-memory `Catalogue` (authors → works → editions, with
+ * borrowed children composed and cascading metadata resolved). Returns the
+ * catalogue and any non-fatal build warnings.
+ */
 export const buildCatalogue = async (
   fs: CorpusFs,
   corpusDir: string,

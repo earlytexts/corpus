@@ -14,7 +14,7 @@ import {
   rules,
   violationText,
 } from "../src/validation/rules.ts";
-import { nodeCorpusFs } from "../src/fs.ts";
+import { nodeCorpusFs } from "../src/build/node.ts";
 import { corpusRoot, report } from "../scripts/lib.ts";
 
 const ctx: RuleContext = {

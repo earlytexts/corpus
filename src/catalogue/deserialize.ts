@@ -21,7 +21,7 @@ import type {
   SerializedDoc,
   Work,
 } from "./types.ts";
-import type { CorpusFs } from "../ports.ts";
+import type { CorpusFs } from "../fs/ports.ts";
 import type { Dictionary } from "../dictionary/types.ts";
 
 /**

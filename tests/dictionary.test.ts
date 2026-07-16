@@ -1,11 +1,12 @@
 /**
- * The dictionary: word segmentation and folding (../src/words.ts), the entry
- * micro-syntax and shard files (../src/dictionary/shards.ts), expansion (lemma
- * derivation through cross-references, ../src/dictionary/expand.ts), the
- * accounting rule (../src/dictionary/account.ts), the dictionary validation
+ * The dictionary: word segmentation and folding (../src/dictionary/words.ts),
+ * the entry micro-syntax and shard files (../src/dictionary/shards.ts),
+ * expansion (lemma derivation through cross-references,
+ * ../src/dictionary/expand.ts), the accounting rule
+ * (../src/validation/account.ts), the dictionary validation
  * rules and coverage report (../src/validation/rules.ts), and the catalogue
  * emission of the expanded dictionary. Fixtures are in-memory corpora
- * (../src/test.ts); no files on disk.
+ * (./harness.ts); no files on disk.
  */
 
 import { expect } from "@std/expect";
@@ -17,14 +18,14 @@ import {
   fold,
   isRomanNumeral,
   isWord,
-} from "../src/words.ts";
+} from "../src/dictionary/words.ts";
 import type {
   Dictionary,
   Entry,
   RawDictionary,
   RawEntry,
 } from "../src/dictionary/types.ts";
-import { accountTokens, coverageOf } from "../src/dictionary/account.ts";
+import { accountTokens, coverageOf } from "../src/validation/account.ts";
 import {
   multiWordSurfaces,
   overridesOf,
@@ -51,15 +52,15 @@ import {
   rules,
   violationText,
 } from "../src/validation/rules.ts";
-import { corpus, CORPUS_ROOT, memoryCorpus } from "../src/test.ts";
+import { corpus, CORPUS_ROOT, memoryCorpus } from "./harness.ts";
 import { buildCatalogue } from "../src/catalogue/compile.ts";
-import { writeCatalogue } from "../src/catalogue/write.ts";
+import { writeCatalogue } from "../src/build/write.ts";
 import {
   catalogueReader,
   loadCatalogue,
 } from "../src/catalogue/deserialize.ts";
-import { normalizePath } from "../src/paths.ts";
-import type { CorpusFsWrite } from "../src/ports.ts";
+import { normalizePath } from "../src/fs/paths.ts";
+import type { CorpusFsWrite } from "../src/fs/ports.ts";
 
 /* -------------------------------- words -------------------------------- */
 

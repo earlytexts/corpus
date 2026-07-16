@@ -11,7 +11,7 @@
 
 import type { Metadata } from "@earlytexts/markit";
 import type { Dictionary, Entry, Reading } from "./types.ts";
-import { fold, isWord } from "../words.ts";
+import { fold, isWord } from "./words.ts";
 
 /** A reading's full spelling string: its words' spellings joined by spaces. */
 export const readingSpelling = (reading: Reading): string =>

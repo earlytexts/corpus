@@ -25,6 +25,7 @@ export const exemptions = [
   "language",
 ] as const;
 
+/** One of the exempting markup kinds (see `exemptions`). */
 export type Exemption = (typeof exemptions)[number];
 
 /** The nearest enclosing exempting markup of a token, read from the wrapper

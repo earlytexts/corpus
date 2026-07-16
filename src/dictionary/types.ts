@@ -13,6 +13,7 @@
  * per word per reading, nothing left to derive. */
 export type Dictionary = Record<string, Entry>;
 
+/** A surface's readings: one entry per folded surface in the `Dictionary`. */
 export type Entry = {
   readings: Reading[]; // length 1 = unambiguous; 2+ = ambiguous
 };
@@ -20,6 +21,7 @@ export type Entry = {
 /** One way to read the surface: usually one word; more for contractions. */
 export type Reading = Word[];
 
+/** A single word of a reading: its modern spelling and citation form. */
 export type Word = {
   spelling: string; // modern spelling; equals the surface when already modern
   lemma: string; // citation form; equals the spelling when uninflected
