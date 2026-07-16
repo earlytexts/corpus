@@ -12,13 +12,11 @@ import { expect } from "@std/expect";
 import { test } from "@std/testing/bdd";
 import { type Block, compile } from "@earlytexts/markit";
 import {
+  blockTokens,
+  exemptionOf,
   fold,
   isRomanNumeral,
   isWord,
-  joinMultiWord,
-  multiWordSurfaces,
-  scanBlock,
-  words,
 } from "../src/words.ts";
 import type {
   Dictionary,
@@ -28,6 +26,7 @@ import type {
 } from "../src/dictionary/types.ts";
 import { accountTokens, coverageOf } from "../src/dictionary/account.ts";
 import {
+  multiWordSurfaces,
   overridesOf,
   resolveReading,
   selectReading,
@@ -63,46 +62,6 @@ import { normalizePath } from "../src/paths.ts";
 import type { CorpusFsWrite } from "../src/ports.ts";
 
 /* -------------------------------- words -------------------------------- */
-
-test("words: segmentation keeps apostrophes, splits hyphens, takes digit runs", () => {
-  expect(words("'Tis a fine-day at o'clock, lookin' on 1739 &c MDCCXL x=y"))
-    .toEqual([
-      "'Tis",
-      "a",
-      "fine",
-      "day",
-      "at",
-      "o'clock",
-      "lookin'",
-      "on",
-      "1739",
-      "c",
-      "MDCCXL",
-      "x",
-      "y",
-    ]);
-  expect(words("… '' — !")).toEqual([]); // no letters or digits, no tokens
-});
-
-test("words: an internal period (letter/digit before a letter) joins the token", () => {
-  // `i.e.` -> `i.e` (the trailing period, before a space, drops); a missing
-  // sentence break (`end.The`) joins into one token — a probable typo left
-  // unaccounted — while `end. The` (period then space) still splits.
-  expect(words("i.e. and e.g things, N.B end.The end. The Ph.D 3.14"))
-    .toEqual([
-      "i.e",
-      "and",
-      "e.g",
-      "things",
-      "N.B",
-      "end.The",
-      "end",
-      "The",
-      "Ph.D",
-      "3",
-      "14", // period before a digit is not internal — numerals split
-    ]);
-});
 
 test('words: folding lower-cases every surface but the pronoun "I"', () => {
   expect(fold("THE")).toBe("the");
@@ -151,14 +110,13 @@ const block = (line: string): Block => {
   return doc.blocks[0];
 };
 
-test("words: scanBlock reports tokens with their exempting markup and [w:] elements", () => {
-  const scan = scanBlock(block(
-    '\'Tis _writ_ by [p:*Will* Shake] in ["A Treatise"] at $la:cogito ergo$ ' +
-      "on MDCCXL-1739, [w:then=than] [w:to~morrow=tomorrow].",
+test("words: exemptionOf reads the nearest exempting markup off a token's context", () => {
+  const tokens = blockTokens(block(
+    '\'Tis _writ_ by [p:*Will* Shake] in ["A Treatise"] at $la:cogito ergo$ on MDCCXL.',
   ));
   expect(
-    scan.tokens.map((t) =>
-      `${t.text}${t.exemption === undefined ? "" : `/${t.exemption}`}`
+    tokens.map((t) =>
+      `${t.text}${exemptionOf(t) === undefined ? "" : `/${exemptionOf(t)}`}`
     ),
   ).toEqual([
     "'Tis",
@@ -174,32 +132,54 @@ test("words: scanBlock reports tokens with their exempting markup and [w:] eleme
     "ergo/language",
     "on",
     "MDCCXL",
-    "1739",
-    "then",
-    "to",
-    "morrow",
   ]);
-  expect(scan.tokens.map((t) => t.folded).slice(0, 2)).toEqual([
-    "'tis",
-    "writ",
-  ]);
-  expect(scan.words.map((w) => ({
-    value: w.element.word,
-    tokens: w.tokens.map((t) => t.text),
-  }))).toEqual([
-    { value: "than", tokens: ["then"] },
-    { value: "tomorrow", tokens: ["to", "morrow"] },
-  ]);
-  // Each [w:] token points back at its element.
-  expect(scan.words[0].tokens[0].word).toBe(scan.words[0].element);
 });
 
-test("words: scanBlock descends into quotes, lists, and tables", () => {
+test("words: blockTokens segments with markit's tokenizer — `~` fuses, [w:] carries its value", () => {
+  const tokens = blockTokens(block(
+    "reasoning a~priori, [w:then=than] and [w:to~morrow=tomorrow].",
+  ));
+  expect(
+    tokens.map((t) => `${t.text}${t.word === undefined ? "" : `=${t.word}`}`),
+  )
+    .toEqual([
+      "reasoning",
+      "a priori", // the `~`-fused unit is one token, its space plain
+      "then=than",
+      "and",
+      "to morrow=tomorrow", // fused inside the [w:] surface too
+    ]);
+});
+
+test("words: blockTokens unites the two versions — a deleted word is still a token", () => {
+  const tokens = blockTokens(block(
+    "it was a [-mistak-][+mistake+], plainly [-writ-] here.",
+  ));
+  // Every edited token, then the original's surplus (the deleted words).
+  expect(tokens.map((t) => t.text)).toEqual([
+    "it",
+    "was",
+    "a",
+    "mistake",
+    "plainly",
+    "here",
+    "mistak",
+    "writ",
+  ]);
+  // Without editorial markup the two versions are one stream: no duplicates.
+  expect(blockTokens(block("plain words here.")).map((t) => t.text)).toEqual([
+    "plain",
+    "words",
+    "here",
+  ]);
+});
+
+test("words: blockTokens descends into quotes, lists, and tables", () => {
   const { document: doc, errors } = compile(
     "# t\n\n{#1}\n> Quoted words.\n\n{#2}\n- one item\n- two\n\n{#3}\n| a cell | more |\n",
   );
   expect(errors).toEqual([]);
-  const texts = doc.blocks.map((b) => scanBlock(b).tokens.map((t) => t.text));
+  const texts = doc.blocks.map((b) => blockTokens(b).map((t) => t.text));
   expect(texts).toEqual([
     ["Quoted", "words"],
     ["one", "item", "two"],
@@ -207,90 +187,10 @@ test("words: scanBlock descends into quotes, lists, and tables", () => {
   ]);
 });
 
-test("words: scanBlock segments single words and records join adjacency", () => {
-  const scan = scanBlock(block(
-    "reasoning a~priori, and A~B~C, but not [p:Tom]~Jones.",
-  ));
-  // A non-breaking space is ordinary whitespace: segmentation is single-word.
-  expect(scan.tokens.map((t) => t.text)).toEqual([
-    "reasoning",
-    "a",
-    "priori",
-    "and",
-    "A",
-    "B",
-    "C",
-    "but",
-    "not",
-    "Tom",
-    "Jones",
-  ]);
-  // Each token records whether only inter-word space separates it from the one
-  // before — the adjacency a join may bridge. A run starts fresh (`false`),
-  // continues across spaces (`true`), breaks after punctuation (`priori,` →
-  // `and`), and never crosses a markup boundary (`[p:Tom]` → `Jones`).
-  expect(scan.tokens.map((t) => t.joinsLeft)).toEqual([
-    false, // reasoning — run start
-    true, // a
-    true, // priori (~ is just space)
-    false, // and — the comma after "priori" broke the run
-    true, // A
-    true, // B
-    true, // C
-    false, // but — comma
-    true, // not
-    false, // Tom — inside [p:], a new run
-    false, // Jones — the ~ after the markup does not bridge
-  ]);
-});
-
-test("words: multiWordSurfaces are the register keys with a space", () => {
+test("dictionary: multiWordSurfaces are the register keys with a space", () => {
   expect(
     multiWordSurfaces({ "a priori": 0, "to morrow": 0, priori: 0, the: 0 }),
   ).toEqual(new Set(["a priori", "to morrow"]));
-});
-
-test("words: joinMultiWord fuses registered runs, greedily longest-first", () => {
-  type T = { folded: string; joinsLeft: boolean };
-  const ops = {
-    folded: (t: T) => t.folded,
-    joinsLeft: (t: T) => t.joinsLeft,
-    merge: (run: T[]): T => ({
-      folded: run.map((t) => t.folded).join(" "),
-      joinsLeft: run[0].joinsLeft,
-    }),
-  };
-  const run = (...spec: [string, boolean][]): T[] =>
-    spec.map(([folded, joinsLeft]) => ({ folded, joinsLeft }));
-  const folded = (tokens: T[]) => tokens.map((t) => t.folded);
-
-  // No keys: nothing to fuse.
-  expect(joinMultiWord(run(["a", false], ["b", true]), new Set(), ops))
-    .toEqual(run(["a", false], ["b", true]));
-  // A two-word unit fuses when the run is unbroken.
-  expect(
-    folded(joinMultiWord(
-      run(["a", false], ["priori", true], ["holds", true]),
-      new Set(["a priori"]),
-      ops,
-    )),
-  ).toEqual(["a priori", "holds"]);
-  // Longest-first: `a b c` wins over its `a b` prefix.
-  expect(
-    folded(joinMultiWord(
-      run(["a", false], ["b", true], ["c", true]),
-      new Set(["a b", "a b c"]),
-      ops,
-    )),
-  ).toEqual(["a b c"]);
-  // A broken run (the second word does not join left) does not fuse.
-  expect(
-    folded(joinMultiWord(
-      run(["a", false], ["priori", false]),
-      new Set(["a priori"]),
-      ops,
-    )),
-  ).toEqual(["a", "priori"]);
 });
 
 /* ----------------------------- micro-syntax ---------------------------- */
@@ -741,7 +641,7 @@ const register: RawDictionary = {
   "'tis": raw(see("it", "is")),
   then: raw(id("then"), see("than")),
   vertue: raw(see("virtue")),
-  "a priori": raw(id("a priori")), // an nbSpace-joined surface, accounted by its entry
+  "a priori": raw(id("a priori")), // a `~`-fused surface, accounted by its entry
 };
 
 test("dictionary: accountTokens applies the accounting rule to every token", () => {
@@ -757,19 +657,37 @@ test("dictionary: accountTokens applies the accounting rule to every token", () 
     "writing:unaccounted",
     "then:registered",
     "vertue:registered",
-    "a priori:registered", // the joined surface matches its dictionary entry
+    "a priori:registered", // the fused surface matches its dictionary entry
     "MDCCXL:mechanical",
     "1739:mechanical",
     "zzz:unaccounted",
-    "to:marked",
-    "morrow:marked",
+    // A [w:]-marked token is accounted like any other, by its own entry —
+    // which "to morrow" has not got here.
+    "to morrow:unaccounted",
   ]);
   expect(accounts[0].textId).toBe("t");
   expect(coverageOf(accounts)).toEqual({
-    total: 11,
-    accounted: 9, // registered, exempt, mechanical, and marked tokens
-    unaccounted: 2,
+    total: 10,
+    accounted: 7, // registered, exempt, and mechanical tokens
+    unaccounted: 3,
   });
+});
+
+test("dictionary: accountTokens accounts both versions of a correction", () => {
+  const { document: doc, errors } = compile(
+    "# t\n\n{#1}\nit was a [-mistak-][+vertue+].\n",
+  );
+  expect(errors).toEqual([]);
+  // The edited stream first, then the original's surplus: the deleted word is
+  // still a printed word, and it wants its own entry.
+  expect(accountTokens(doc, register).map((a) => `${a.text}:${a.status}`))
+    .toEqual([
+      "it:unaccounted",
+      "was:unaccounted",
+      "a:unaccounted",
+      "vertue:registered",
+      "mistak:unaccounted",
+    ]);
 });
 
 test("dictionary: accountTokens covers a document's sections too", () => {
@@ -968,7 +886,7 @@ test("validate: word markup must select exactly one reading of an ambiguous entr
       "data/dictionary/l.json":
         '{\n  "laie": "lay",\n  "lay": [null, "=lie"],\n  "lie": null\n}\n',
       "data/dictionary/t.json":
-        '{\n  "than": null,\n  "the": null,\n  "then": [null, "than"]\n}\n',
+        '{\n  "than": null,\n  "the": null,\n  "then": [null, "than"],\n  "to morrow": [null, "tomorrow"],\n  "tomorrow": null\n}\n',
     });
 
   expect(await violationsOf(name, files("Better [w:then=than] never.")))
@@ -980,10 +898,16 @@ test("validate: word markup must select exactly one reading of an ambiguous entr
   // purely by inheritance from "lay".
   expect(await violationsOf(name, files("She [w:laie=lie] down.")))
     .toEqual([]);
-  // A multi-token surface (a `~`-marked multi-word unit) needs no entry: the
-  // markup is the reading.
+  // A `~`-fused multi-word unit is one token, selected like any other surface
+  // (Markit rejects a multi-token surface at compile time).
   expect(await violationsOf(name, files("Until [w:to~morrow=tomorrow] then.")))
     .toEqual([]);
+  // A [w:] inside a deletion is only in the original version — still checked.
+  expect(
+    await violationsOf(name, files("So [-[w:the=thee]-][+thee+] said.")),
+  ).toEqual([
+    'works/a/w/1700.mit (a.w.1700.1): "the" is unambiguous — [w:] markup is only for ambiguous surfaces',
+  ]);
 
   const single = async (body: string): Promise<string> => {
     const violations = await violationsOf(name, files(body));
@@ -996,9 +920,11 @@ test("validate: word markup must select exactly one reading of an ambiguous entr
   );
   expect(await single("So [w:then=nan] said.")).toContain("selects no reading");
   expect(await single("So [w:borne=bear] said.")).toContain("more than one");
-  // A token-less surface ([w:=than]) no longer reaches this rule: the markit
-  // compiler rejects it, so the compile rule owns that case now.
-  expect(await single("So [w:to~morrow==x] said.")).toContain("spellings only");
+  // A fused surface with no entry is a violation like any other: the markup
+  // is no longer its own reading.
+  expect(await single("So [w:up~hill=x] said.")).toContain(
+    "no dictionary entry",
+  );
 });
 
 /* --------------------------- edition overrides ------------------------- */

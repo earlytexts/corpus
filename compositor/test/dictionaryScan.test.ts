@@ -189,11 +189,19 @@ test("a run already fused with ~ and registered is not flagged", () => {
   ).toEqual([]);
 });
 
-test("a ~-fused run with no entry is counted but not locatable", () => {
-  // The accounting rule sees "to" and "morrow" (both unaccounted); the source
-  // stream reads one fused token, whose folded form matches no surface — the
-  // occurrence goes unflagged rather than mis-flagged (the counts stay exact).
-  expect(scan("known to~morrow", { known: null })).toEqual([]);
+test("a ~-fused run with no entry is flagged as one unit", () => {
+  // Accounting and location both run markit's tokenizer now, so the fused
+  // token ("to morrow", folded) lines up exactly with its source range —
+  // squiggled whole, filed under the multi-word key it would be entered as.
+  expect(scan("known to~morrow", { known: null })).toEqual([
+    {
+      surface: "to morrow",
+      display: "to morrow",
+      line: 6,
+      startColumn: 6,
+      endColumn: 15,
+    },
+  ]);
 });
 
 test("unaccountedSurfaces collects the folded surfaces with no entry", () => {

@@ -1,41 +1,41 @@
 /**
  * The accounting rule: given a document and the register (any dictionary shape —
  * only membership is read), classify every token of every text as accounted for
- * by at least one of a dictionary entry, exempting markup, a mechanical class,
- * or (multi-token surfaces) `[w:]` markup — or `"unaccounted"`, the only
- * violation. This one pure function is both the corpus coverage validation and
- * the Compositor's live squiggle engine.
+ * by at least one of a dictionary entry, exempting markup, or a mechanical
+ * class — or `"unaccounted"`, the only violation. Tokens come from Markit's
+ * tokenizer, both versions united (`blockTokens` — a deleted word is still a
+ * printed word). This one pure function is both the corpus coverage validation
+ * and the Compositor's live squiggle engine.
  */
 
-import type { MarkitDocument, Word as WordElement } from "@earlytexts/markit";
+import type { Block, MarkitDocument, Token } from "@earlytexts/markit";
 import type { Register } from "./types.ts";
-import {
-  fold,
-  isRomanNumeral,
-  joinMultiWord,
-  type JoinOps,
-  multiWordSurfaces,
-  scanBlock,
-  type Token,
-} from "../words.ts";
+import { blockTokens, exemptionOf, fold, isRomanNumeral } from "../words.ts";
 
 /**
  * How a token is accounted for — "at least one of" a dictionary entry,
- * exempting markup, a mechanical class, or (multi-token surfaces) `[w:]`
- * markup itself; "unaccounted" is the only violation. A token both mechanical
- * and registered reports its dictionary status (`I` with an entry for "i" is
- * that entry, not a numeral).
+ * exempting markup, or a mechanical class; "unaccounted" is the only
+ * violation. A token both mechanical and registered reports its dictionary
+ * status (`I` with an entry for "i" is that entry, not a numeral). A
+ * `~`-fused multi-word unit is one token whose folded surface is its
+ * dictionary key ("a priori"); a `[w:]`-marked token is accounted like any
+ * other, by its own entry (which the word-markup validation requires).
  */
 export type TokenStatus =
   | "registered" // has a dictionary entry for its folded surface
   | "exempt" // inside person / place / org / citation / language markup
   | "mechanical" // contains digits, or reads as a roman numeral
-  | "marked" // inside multi-token `[w:]` markup, which is its own reading
   | "unaccounted";
 
-export type TokenAccount = Token & {
+export type TokenAccount = {
+  /** The token as printed (a fused unit with a plain space, "a priori"). */
+  text: string;
+  /** The folded form — the dictionary key. */
+  folded: string;
   /** The id of the text (document or section) the token appears in. */
   textId: string;
+  /** The block the token sits in (anchors diagnostics to a line). */
+  block: Block;
   status: TokenStatus;
 };
 
@@ -43,26 +43,23 @@ export type TokenAccount = Token & {
  * Apply the accounting rule to every token of a document (its own blocks and
  * its sections', recursively): every token in every text is accounted for by
  * at least one of a dictionary entry for its folded surface, enclosure in
- * exempting markup, or a mechanical class. This one pure function is both the
- * corpus coverage validation and the Compositor's live squiggle engine.
+ * exempting markup, or a mechanical class.
  */
 export const accountTokens = (
   doc: MarkitDocument,
   register: Register,
 ): TokenAccount[] => {
-  const keys = multiWordSurfaces(register);
   const accounts: TokenAccount[] = [];
   const walk = (text: MarkitDocument): void => {
     for (const block of text.blocks) {
-      const { tokens, words } = scanBlock(block);
-      const marked = new Set(
-        words.filter((w) => w.tokens.length > 1).map((w) => w.element),
-      );
-      for (const token of joinMultiWord(tokens, keys, tokenJoin)) {
+      for (const token of blockTokens(block)) {
+        const folded = fold(token.text);
         accounts.push({
-          ...token,
+          text: token.text,
+          folded,
           textId: text.id,
-          status: statusOf(token, marked, register),
+          block,
+          status: statusOf(token, folded, register),
         });
       }
     }
@@ -72,26 +69,13 @@ export const accountTokens = (
   return accounts;
 };
 
-/** Fuse a run of adjacent block tokens into one multi-word surface: the printed
- * texts join with spaces and the folded key follows. The run shares one
- * enclosing context, so the first token's carries over. */
-const tokenJoin: JoinOps<Token> = {
-  folded: (token) => token.folded,
-  joinsLeft: (token) => token.joinsLeft,
-  merge: (run) => {
-    const text = run.map((token) => token.text).join(" ");
-    return { ...run[0], text, folded: fold(text) };
-  },
-};
-
 const statusOf = (
   token: Token,
-  marked: Set<WordElement>,
+  folded: string,
   register: Register,
 ): TokenStatus => {
-  if (token.exemption !== undefined) return "exempt";
-  if (token.word !== undefined && marked.has(token.word)) return "marked";
-  if (token.folded in register) return "registered";
+  if (exemptionOf(token) !== undefined) return "exempt";
+  if (folded in register) return "registered";
   if (/\p{N}/u.test(token.text) || isRomanNumeral(token.text)) {
     return "mechanical";
   }
@@ -100,8 +84,8 @@ const statusOf = (
 
 export type Coverage = {
   total: number;
-  /** Accounted for by any route: a dictionary entry, exempting markup, a
-   * mechanical class, or `[w:]` markup. */
+  /** Accounted for by any route: a dictionary entry, exempting markup, or a
+   * mechanical class. */
   accounted: number;
   unaccounted: number;
 };
