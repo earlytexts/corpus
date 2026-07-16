@@ -39,7 +39,7 @@ import {
   shardDictionary,
   shardOf,
 } from "../dictionary/shards.ts";
-import { scanBlock } from "../words.ts";
+import { blockTokens, fold } from "../words.ts";
 import {
   authorRequired,
   authorSchema,
@@ -581,8 +581,16 @@ export const rules: Rule[] = [
       for (const { path, doc } of compiled(workFiles(files))) {
         for (const { text } of allTexts(doc)) {
           for (const block of text.blocks) {
-            for (const { element, tokens } of scanBlock(block).words) {
-              const message = wordMarkupViolation(element, tokens, dictionary);
+            // A `[w:]` surface is exactly one token (a Markit compile rule),
+            // so the marked occurrences are the tokens carrying a word value;
+            // blockTokens unites the two versions, each occurrence once.
+            for (const token of blockTokens(block)) {
+              if (token.word === undefined) continue;
+              const message = wordMarkupViolation(
+                fold(token.text),
+                token.word,
+                dictionary,
+              );
               if (message !== undefined) {
                 violations.push({
                   rule,

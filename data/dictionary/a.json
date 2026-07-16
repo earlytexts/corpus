@@ -1,5 +1,7 @@
 {
   "a": null,
+  "a posteriori": null,
+  "a priori": null,
   "abandon": null,
   "abandoned": "=abandon",
   "abandoning": "=abandon",
@@ -310,6 +312,7 @@
   "acute": null,
   "acutely": null,
   "acuteness": null,
+  "ad infinitum": null,
   "adamant": null,
   "adapt": null,
   "adapted": "=adapt",

@@ -9,10 +9,9 @@
  * `Dictionary`, never the shards.
  */
 
-import type { Metadata, Word as WordElement } from "@earlytexts/markit";
+import type { Metadata } from "@earlytexts/markit";
 import type { Dictionary, Entry, Reading } from "./types.ts";
-import { fold, isWord, type Token } from "../words.ts";
-import { parseReference } from "./shards.ts";
+import { fold, isWord } from "../words.ts";
 
 /** A reading's full spelling string: its words' spellings joined by spaces. */
 export const readingSpelling = (reading: Reading): string =>
@@ -24,29 +23,27 @@ export const readingLemma = (reading: Reading): string =>
 
 /**
  * How one `[w:surface=value]` occurrence violates the dictionary, if it does.
- * A single-token surface must have an ambiguous entry — 2+ *expanded*
- * readings, so ambiguity inherited through a cross-reference counts — whose
- * readings the value selects exactly one of, matching a reading's full
- * spelling string or full lemma string. A multi-token surface (`[w:to
- * morrow=tomorrow]`) needs no entry: the value is a cross-reference reading
- * (spellings only), and the marked tokens are accounted for by the markup.
+ * A surface is always exactly one token (Markit enforces this at compile time;
+ * a multi-word unit is `~`-fused, `[w:a~priori=x]`) and must have an ambiguous
+ * entry — 2+ *expanded* readings, so ambiguity inherited through a
+ * cross-reference counts — whose readings the value selects exactly one of,
+ * matching a reading's full spelling string or full lemma string. `surface` is
+ * the token's folded text; `value` the token's `[w:]` value (markit
+ * `Token.word`).
  */
 export const wordMarkupViolation = (
-  element: WordElement,
-  tokens: Token[],
+  surface: string,
+  value: string,
   dictionary: Dictionary,
-): string | undefined => {
-  const value = element.word;
-  if (tokens.length === 0) return `[w:=${value}] wraps no words`;
-  if (tokens.length > 1) {
-    const reference = parseReference(value);
-    return "error" in reference
-      ? `value "${value}": ${reference.error}`
-      : undefined;
-  }
-  const surface = tokens[0].folded;
-  return selectionViolation(surface, value, dictionary, "[w:] markup is");
-};
+): string | undefined =>
+  selectionViolation(surface, value, dictionary, "[w:] markup is");
+
+/** The multi-word surfaces of a register — its keys with an internal space,
+ * the fixed units the texts mark with `~` (`a~priori`). */
+export const multiWordSurfaces = (
+  register: Record<string, unknown>,
+): Set<string> =>
+  new Set(Object.keys(register).filter((key) => key.includes(" ")));
 
 /**
  * A text's `[metadata.dictionary]` map: surface → the reading its unmarked
