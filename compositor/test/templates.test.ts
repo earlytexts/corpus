@@ -53,7 +53,7 @@ const validateFiles = async (
 describe("scaffold templates", () => {
   it("compile without errors", () => {
     for (const text of [author, stub, edition]) {
-      expect(compile(text)[1]).toEqual([]);
+      expect(compile(text).errors).toEqual([]);
     }
   });
 

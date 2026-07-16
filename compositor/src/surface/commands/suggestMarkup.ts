@@ -28,7 +28,7 @@
  */
 
 import * as vscode from "vscode";
-import { compile } from "@jsr/earlytexts__markit";
+import { compileWithPositions } from "@jsr/earlytexts__markit";
 import type { Catalogue } from "@earlytexts/corpus";
 import {
   buildHints,
@@ -99,7 +99,7 @@ export const createSuggestionController = (
 
   /** Scan one document with the current hints and publish its diagnostics. */
   const scan = (document: vscode.TextDocument, active: Hints): void => {
-    const [doc] = compile(document.getText());
+    const { document: doc } = compileWithPositions(document.getText());
     const suggestions = scanSource(document.getText(), doc, active);
     scanned.set(document.uri.fsPath, suggestions);
     collection.set(

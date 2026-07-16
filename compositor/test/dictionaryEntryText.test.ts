@@ -9,6 +9,7 @@ import {
   addTargetTitle,
   entryActionTitle,
   entryWords,
+  fuseActionTitle,
   unaccountedMessage,
   unattestedLemmaMessage,
   unattestedRejectMessage,
@@ -57,6 +58,12 @@ test("unattestedRejectMessage refuses an unattested respelling target", () => {
 test("unattestedLemmaMessage asks to confirm an unprinted citation form", () => {
   expect(unattestedLemmaMessage("datum")).toContain(
     "“datum” never appears in the corpus",
+  );
+});
+
+test("fuseActionTitle shows the fused form and the registered key", () => {
+  expect(fuseActionTitle({ key: "a priori", joined: "a~priori" })).toBe(
+    "Join as a~priori — “a priori” is in the dictionary",
   );
 });
 

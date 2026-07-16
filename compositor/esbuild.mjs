@@ -22,9 +22,9 @@ const buildOptions = {
   // its real registry name (@jsr/earlytexts__markit) — this alias sends the
   // corpus's own "@earlytexts/markit" import (its Deno-side bare specifier) to
   // that same installed copy, so both halves of the suggestion pipeline share
-  // one markit instance. (markit tags compiled blocks with Symbol()s that only
-  // compare equal within one module instance; a second copy would silently
-  // break it.)
+  // one markit instance. (Since markit 4 source positions are plain
+  // properties, a second copy would no longer break anything — one instance
+  // is now just bundle tidiness.)
   alias: {
     "@earlytexts/corpus": path.resolve(import.meta.dirname, "../src/index.ts"),
     "@earlytexts/markit": path.resolve(

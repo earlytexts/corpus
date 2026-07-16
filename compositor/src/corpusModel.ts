@@ -14,7 +14,7 @@
  */
 
 import * as vscode from "vscode";
-import { compile } from "@jsr/earlytexts__markit";
+import { compileWithPositions } from "@jsr/earlytexts__markit";
 import {
   buildCatalogue,
   type Catalogue,
@@ -109,7 +109,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
       files.delete(path);
       return;
     }
-    const [doc, errors] = compile(text);
+    const { document: doc, errors } = compileWithPositions(text);
     files.set(path, { path, text, doc, errors });
   };
 

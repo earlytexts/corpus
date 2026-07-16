@@ -325,7 +325,7 @@ const loadDocument = async (
       ctx.cache.set(key, null);
       return null;
     }
-    [doc] = compile(text);
+    ({ document: doc } = compile(text));
   }
   ctx.stack.add(key);
   const composed = await resolveChildren(doc, key, ctx);

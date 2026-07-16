@@ -22,28 +22,33 @@
  *    from work titles), and a strong/weak word lexicon per language code.
  *    Generic `$…$` spans carry no language code and are ignored — in practice
  *    they mark symbols and other non-language material.
- *  - scanSource: tokenize a file's raw source (skipping metadata, block tags,
- *    and text already inside markup; folding `{…}` character escapes; staying
- *    word-transparent across page breaks and editorial marks) and report
+ *  - scanSource: run Markit's own tokenizer over a positioned compile of the
+ *    file (so word identity is Markit's — the same `~` joins, page-break and
+ *    editorial transparency the whole pipeline shares), drop the tokens
+ *    already inside markup, place the rest by their source spans, and report
  *    matches as ranges in that source, ready to become editor diagnostics.
- *    Greek needs no lexicon: Greek script and `{{…}}` spans match outright.
+ *    Greek needs no lexicon: Greek-script tokens match outright.
  *
  * Positions are 0-based (lines and columns), end-exclusive — the shape a
  * VSCode Range wants; the corpus's own display convention is 1-based.
  *
  * Reads top-down: tuning constants and public types, then each half's entry
- * point followed by its helpers (mining, then matching, then the tokenizer),
- * with the word-folding foundation both halves share at the bottom.
+ * point followed by its helpers (mining, then matching, then the source
+ * tokens), with the word-folding foundation both halves share at the bottom.
  */
 
-import type {
-  Block,
-  BlockElement,
-  InlineElement,
-  List,
-  MarkitDocument,
+import {
+  type Block,
+  type BlockElement,
+  type Extraction,
+  extractText,
+  type Frame,
+  type InlineElement,
+  type List,
+  type MarkitDocument,
+  tokenize,
+  wordPattern,
 } from "@jsr/earlytexts__markit";
-import { endLine, startLine } from "@jsr/earlytexts__markit";
 import type { Catalogue, Work } from "@earlytexts/corpus";
 
 /* ------------------------- tuning constants --------------------------- */
@@ -68,12 +73,19 @@ const CLUSTER_MIN_WORDS = 2;
 const SINGLETON_MIN_LENGTH = 4;
 
 const LETTER = /\p{L}/u;
-const WORD_CHAR = /[\p{L}\p{N}'’æœ-]/u;
-const WORD_RUN = /^[\p{L}\p{N}'’æœ-]+$/u;
-const WORDS_RE = /[\p{L}\p{N}'’æœ-]+/gu;
 const GREEK_CHAR = /[\u0370-\u03ff\u1f00-\u1fff]/u;
-/** A footnote reference, `<nID>` (footnoteReferenceSpec, with delimiters). */
-const FOOTNOTE_REF = /^<n[^\s#{}]+>/;
+
+/** The markup kinds whose content is already marked up (or, for `word`,
+ * already disambiguated by `[w:]`): their tokens are never suggestion or
+ * squiggle material. */
+const EXEMPT_FRAMES: ReadonlySet<string> = new Set([
+  "person",
+  "place",
+  "org",
+  "citation",
+  "language",
+  "word",
+]);
 
 /** Likely citation locators, matched against markup-masked source lines.
  * Mined from the corpus's existing citation spans ("Sect. II.", "Fig. 3.",
@@ -176,7 +188,7 @@ export const buildHints = (
     org: (text) => addPhrase(orgs, text),
     citation: (text) => addPhrase(citations, text),
     unmarked: (text) => {
-      for (const match of text.matchAll(WORDS_RE)) {
+      for (const match of text.matchAll(wordPattern)) {
         const folded = foldWord(match[0]);
         if (!keepWord(folded)) continue;
         unmarked.set(folded, (unmarked.get(folded) ?? 0) + 1);
@@ -350,7 +362,6 @@ const inlineText = (elements: InlineElement[]): string =>
     .map((el) => {
       if (el.type === "plainText") return el.content;
       if (el.type === "lineBreak" || el.type === "nbSpace") return " ";
-      if (el.type === "emSpace") return " ";
       return "content" in el && Array.isArray(el.content)
         ? inlineText(el.content)
         : "";
@@ -362,10 +373,11 @@ const inlineText = (elements: InlineElement[]): string =>
 /**
  * Scan a `.mit` file's raw source for likely markup, returning suggestions as
  * source ranges (ready to become diagnostics). `document` must be the compile
- * of THIS source (e.g. the compositor's per-file compile, not the composed
- * catalogue document, whose borrowed children live in other files): its block
- * ranges say which lines are content — everything else (text IDs, metadata)
- * is never scanned. Suggestions of every type are returned; callers filter.
+ * (with positions) of THIS source (e.g. the compositor's per-file compile,
+ * not the composed catalogue document, whose borrowed children live in other
+ * files): tokens and text spans place themselves by their source spans, so
+ * everything outside block content (text IDs, metadata, block tags) is never
+ * scanned. Suggestions of every type are returned; callers filter.
  */
 export const scanSource = (
   source: string,
@@ -375,13 +387,13 @@ export const scanSource = (
   const lines = source.split("\n");
   const out: MarkupSuggestion[] = [];
   for (const block of collectBlocks(document)) {
-    const from = block[startLine];
-    const to = Math.min(block[endLine], lines.length - 1);
-    const blockLines: { num: number; text: string }[] = [];
-    for (let num = from; num <= to; num++) {
-      blockLines.push({ num, text: lines[num] ?? "" });
-    }
-    const { tokens, masked } = tokenizeBlock(blockLines);
+    const extraction = extractText(block);
+    // Words too short to carry signal are dropped from lexicons and token
+    // streams alike (keepWord), so phrase matching stays aligned.
+    const tokens = blockTokens(block, extraction, lines).filter((token) =>
+      keepWord(token.folded),
+    );
+    const masked = maskedLines(block, extraction, lines);
     matchGreek(tokens, lines, out);
     matchLanguages(tokens, hints.languages, lines, out);
     matchPhrases(tokens, hints.people, "person", lines, out);
@@ -400,41 +412,28 @@ export const scanSource = (
 };
 
 /**
- * Every content word of a document's blocks as a source token — the folded
- * form, the source text, and a 0-based range — with markup dropped (names,
- * citations, foreign spans, block tags) and page breaks / editorial marks read
- * through. This is exactly the tokenization `scanSource` runs, exposed for the
- * dictionary accounting scan (dictionaryScan.ts), which re-folds each token's
- * `display` text with the corpus's own folding to match the register. As in
- * `scanSource`, `document` must be the compile of THIS source.
+ * Every non-exempt token of a compiled block as a source token — Markit's
+ * word identity (`~` joins, page-break and editorial transparency included),
+ * placed by its source span. Unfiltered: single-letter tokens included, so
+ * the dictionary scan (dictionaryScan.ts) sees the whole stream (it re-folds
+ * each token's `display` with the corpus's own folding to match the
+ * register); `scanSource` drops the short ones itself. The block must come
+ * from a compile (with positions) of THIS source.
  */
-export const documentSourceTokens = (
-  source: string,
-  document: MarkitDocument,
-): SourceToken[] => {
-  const lines = source.split("\n");
-  const out: SourceToken[] = [];
-  for (const block of collectBlocks(document)) {
-    const from = block[startLine];
-    const to = Math.min(block[endLine], lines.length - 1);
-    const blockLines: { num: number; text: string }[] = [];
-    for (let num = from; num <= to; num++) {
-      blockLines.push({ num, text: lines[num] ?? "" });
-    }
-    out.push(...tokenizeBlock(blockLines).tokens);
-  }
-  return out;
-};
+export const blockSourceTokens = (
+  block: Block,
+  lines: string[],
+): SourceToken[] => blockTokens(block, extractText(block), lines);
 
 /** Every block of the document and its (in-file) children, in source order. */
-const collectBlocks = (document: MarkitDocument): Block[] => {
+export const collectBlocks = (document: MarkitDocument): Block[] => {
   const out: Block[] = [];
   const walk = (doc: MarkitDocument): void => {
     out.push(...doc.blocks);
     doc.children.forEach(walk);
   };
   walk(document);
-  return out.sort((a, b) => a[startLine] - b[startLine]);
+  return out.sort((a, b) => a.source!.start.line - b.source!.start.line);
 };
 
 /* ------------------------------- matching ------------------------------ */
@@ -673,281 +672,163 @@ const prune = (list: MarkupSuggestion[]): MarkupSuggestion[] =>
       }),
   );
 
-/* --------------------------- source tokenizer -------------------------- */
+/* ----------------------------- source tokens --------------------------- */
 
 export type SourceToken = {
   folded: string;
+  /** The token as extracted (non-breaking spaces read as plain spaces, so a
+   * `~`-fused unit reads "a priori"). */
   display: string;
+  /** Whether only inter-word space separates this token from the previous one
+   * within the same plain-text run — the adjacency a multi-word join may
+   * bridge. Markup of any kind between the two breaks it. */
+  joinsLeft: boolean;
   /** The source occurrence began with a capital letter. */
   capital: boolean;
-  /** Greek script, or a `{{…}}` Greek-mode span. */
+  /** Greek script (typed directly or via a `{{…}}` Greek-mode span). */
   greek: boolean;
   line: number;
   start: number;
   end: number;
 };
 
-type BlockScan = {
-  tokens: SourceToken[];
-  /** Line number → the line with markup blanked to \x00 (for the regexes). */
-  masked: Map<number, string>;
+/**
+ * Place a block's Markit tokens in the source: drop the exempt ones (already
+ * inside markup), read each one's line and columns off its source span, and
+ * widen the edges over any `{…}`/`{{…}}` character- or Greek-mode span they
+ * fall inside — compiled positions point at the braces' content, but a
+ * replacement over the token must cover the whole span.
+ */
+const blockTokens = (
+  block: Block,
+  extraction: Extraction,
+  lines: string[],
+): SourceToken[] => {
+  const out: SourceToken[] = [];
+  const { text, spans } = extraction;
+  let startIndex = 0; // span holding the current token's first character
+  let endIndex = 0; // span holding the current token's last character
+  let previous: { span: number; end: number } | undefined;
+  for (const token of tokenize(block)) {
+    while (spans[startIndex]!.end <= token.start) startIndex++;
+    while (spans[endIndex]!.end <= token.end - 1) endIndex++;
+    const joinsLeft =
+      previous !== undefined &&
+      previous.span === startIndex &&
+      /^ *$/.test(text.slice(previous.end, token.start));
+    previous = { span: endIndex, end: token.end };
+    if (token.source === undefined || isExempt(token.context)) continue;
+    const line = token.source.start.line;
+    const [start, end] = widenOverBraces(
+      lines[line] ?? "",
+      token.source.start.column,
+      token.source.end.column,
+    );
+    out.push({
+      folded: foldWord(token.text),
+      display: token.text,
+      joinsLeft,
+      capital: /^\p{Lu}/u.test(token.text),
+      greek: GREEK_CHAR.test(token.text),
+      line,
+      start,
+      end,
+    });
+  }
+  return out;
+};
+
+/** Whether a wrapper stack contains exempting markup. */
+const isExempt = (context: Frame[]): boolean =>
+  context.some((frame) => EXEMPT_FRAMES.has(frame.type));
+
+/** Widen a token's column range over any character/Greek-mode span it
+ * overlaps on its line (a token strictly inside a multi-word Greek span
+ * widens to the whole span — replacing less would break the braces). */
+const widenOverBraces = (
+  line: string,
+  start: number,
+  end: number,
+): [number, number] => {
+  for (const span of braceSpans(line)) {
+    if (span.end <= start) continue;
+    if (span.start >= end) break;
+    if (span.start < start) start = span.start;
+    if (span.end > end) end = span.end;
+  }
+  return [start, end];
+};
+
+/** The `{…}` and `{{…}}` spans of a source line, as [start, end) column
+ * ranges, escaped braces skipped. Block-tag braces only occur on lines that
+ * carry no tokens, so they never matter here. */
+const braceSpans = (line: string): { start: number; end: number }[] => {
+  const spans: { start: number; end: number }[] = [];
+  let i = 0;
+  while (i < line.length) {
+    const ch = line[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch !== "{") {
+      i++;
+      continue;
+    }
+    const close = line[i + 1] === "{" ? "}}" : "}";
+    let j = i + close.length;
+    while (j < line.length && !line.startsWith(close, j)) {
+      j += line[j] === "\\" ? 2 : 1;
+    }
+    spans.push({ start: i, end: Math.min(j + close.length, line.length) });
+    i = spans[spans.length - 1]!.end;
+  }
+  return spans;
 };
 
 /**
- * Tokenize one block's source lines. Produces the folded tokens the matchers
- * run over, plus markup-masked copies of the lines for the citation regexes.
- * Text inside existing markup is masked: `$…$` spans, `[p:/[l:/[o:…]` names,
- * `[…]` citations, deletions, footnote references, raw-element tags, block
- * tags, and page breaks. Page breaks and editorial delimiters are
- * word-TRANSPARENT: `fo//12//ro` and `for[+o+]` both read "foro" (the edited
- * text), so a match can cover markup without being broken by it. A masked
- * span may close on a later line of the block, so mask state carries across
- * lines; tokens themselves never cross a line.
+ * The block's source lines with everything except unmarked text content
+ * blanked to \x00, for the citation regexes: a pattern can never match inside
+ * existing markup or across it. Inline formatting delimiters soften to a
+ * space instead — a word boundary the regexes may bridge, with the match
+ * widened back over the delimiter afterwards (expandOverMarkup).
  */
-const tokenizeBlock = (lines: { num: number; text: string }[]): BlockScan => {
-  const tokens: SourceToken[] = [];
-  const masked = new Map<number, string>();
-  /** The closing delimiter of the masked span we're inside, if any. */
-  let maskUntil: string | null = null;
-
-  for (const { num, text } of lines) {
-    const blank = text.split("");
-    let display = "";
-    let start = 0;
-    let end = 0;
-
-    const mask = (from: number, to: number): void => {
-      for (let k = from; k < Math.min(to, blank.length); k++) blank[k] = "\0";
-    };
-    const flush = (): void => {
-      if (display === "") return;
-      const folded = foldWord(display);
-      if (keepWord(folded)) {
-        tokens.push({
-          folded,
-          display,
-          capital: /^\p{Lu}/u.test(display),
-          greek: GREEK_CHAR.test(display),
-          line: num,
-          start,
-          end,
-        });
-      }
-      display = "";
-    };
-    const append = (part: string, from: number, to: number): void => {
-      if (display === "") start = from;
-      display += part;
-      end = to;
-    };
-
-    let i = 0;
-    while (i < text.length) {
-      if (maskUntil !== null) {
-        if (text[i] === "\\") {
-          mask(i, i + 2);
-          i += 2;
-        } else if (text.startsWith(maskUntil, i)) {
-          mask(i, i + maskUntil.length);
-          i += maskUntil.length;
-          maskUntil = null;
-        } else {
-          mask(i, i + 1);
-          i++;
-        }
-        continue;
-      }
-      const ch = text[i]!;
-      if (ch === "\\") {
-        const next = text[i + 1];
-        if (next !== undefined && WORD_CHAR.test(next)) append(next, i, i + 2);
-        else flush();
-        i += 2;
-        continue;
-      }
-      if (ch === "{") {
-        if (text[i + 1] === "{") {
-          // Greek mode: the span is one Greek-flagged token.
-          flush();
-          const close = text.indexOf("}}", i + 2);
-          const to = close === -1 ? text.length : close + 2;
-          const inner = text.slice(i + 2, close === -1 ? text.length : close);
-          if (LETTER.test(inner)) {
-            tokens.push({
-              folded: foldWord(inner),
-              display: inner,
-              capital: false,
-              greek: true,
-              line: num,
-              start: i,
-              end: to,
-            });
-          }
-          i = to;
-          continue;
-        }
-        if (text[i + 1] === "#") {
-          // Block tag (with any inline block metadata).
-          flush();
-          const close = text.indexOf("}", i);
-          const to = close === -1 ? text.length : close + 1;
-          mask(i, to);
-          i = to;
-          continue;
-        }
-        // Character mode: fold into the current word (or break it).
-        const close = text.indexOf("}", i);
-        const to = close === -1 ? text.length : close + 1;
-        const decoded = decodeCharSpan(
-          text.slice(i + 1, close === -1 ? text.length : close),
-        );
-        if (decoded !== "" && WORD_RUN.test(decoded)) append(decoded, i, to);
-        else flush();
-        i = to;
-        continue;
-      }
-      if (ch === "$") {
-        flush();
-        mask(i, i + 1);
-        maskUntil = "$";
-        i++;
-        continue;
-      }
-      if (ch === "[") {
-        const pair = text.slice(i, i + 2);
-        if (pair === "[+" || pair === "[?") {
-          // Insertion/uncertain: transparent — the content is the reading.
-          mask(i, i + 2);
-          i += 2;
-          continue;
-        }
-        if (pair === "[-") {
-          // Deletion: drop the content, keep the word around it whole.
-          mask(i, i + 2);
-          maskUntil = "-]";
-          i += 2;
-          continue;
-        }
-        const triple = text.slice(i, i + 3);
-        if (triple === "[p:" || triple === "[l:" || triple === "[o:") {
-          flush();
-          mask(i, i + 3);
-          maskUntil = "]";
-          i += 3;
-          continue;
-        }
-        // A citation (or `[…]` illegible): already marked up.
-        flush();
-        mask(i, i + 1);
-        maskUntil = "]";
-        i++;
-        continue;
-      }
-      if ((ch === "+" || ch === "?") && text[i + 1] === "]") {
-        mask(i, i + 2);
-        i += 2;
-        continue;
-      }
-      if (ch === "/" && text[i + 1] === "/") {
-        // Page break, `///` or `//ref//`: transparent, may fall mid-word.
-        if (text[i + 2] === "/") {
-          mask(i, i + 3);
-          i += 3;
-          continue;
-        }
-        const close = text.indexOf("//", i + 2);
-        if (close === -1) {
-          flush();
-          mask(i, i + 2);
-          i += 2;
-          continue;
-        }
-        mask(i, close + 2);
-        i = close + 2;
-        continue;
-      }
-      if (ch === "<") {
-        if (text[i + 1] === "<") {
-          // Raw-element tag: mask the tag, scan the content around it.
-          flush();
-          const close = text.indexOf(">>", i + 2);
-          const to = close === -1 ? text.length : close + 2;
-          mask(i, to);
-          i = to;
-          continue;
-        }
-        const ref = FOOTNOTE_REF.exec(text.slice(i));
-        if (ref !== null) {
-          flush();
-          mask(i, i + ref[0].length);
-          i += ref[0].length;
-          continue;
-        }
-        flush();
-        i++;
-        continue;
-      }
-      if (ch === "_" || ch === "*") {
-        // Inline emphasis/small-caps: a word boundary that the match will
-        // later be widened back over (expandOverMarkup), so a name or citation
-        // set in italics marks up whole. Softened to a space (not \0) in the
-        // masked line so the citation locators still see a boundary there.
-        flush();
-        blank[i] = " ";
-        i++;
-        continue;
-      }
-      if (WORD_CHAR.test(ch)) {
-        append(ch, i, i + 1);
-        i++;
-        continue;
-      }
-      flush();
-      i++;
+const maskedLines = (
+  block: Block,
+  extraction: Extraction,
+  lines: string[],
+): Map<number, string> => {
+  const from = block.source!.start.line;
+  const to = Math.min(block.source!.end.line - 1, lines.length - 1);
+  const blanks = new Map<number, string[]>();
+  for (let num = from; num <= to; num++) {
+    blanks.set(
+      num,
+      Array.from(lines[num] ?? "", () => "\0"),
+    );
+  }
+  for (const span of extraction.spans) {
+    if (span.source === undefined || isExempt(span.context)) continue;
+    const { start, end } = span.source;
+    for (let num = start.line; num <= end.line; num++) {
+      const blank = blanks.get(num);
+      if (blank === undefined) continue;
+      const line = lines[num] ?? "";
+      const a = num === start.line ? start.column : 0;
+      const b =
+        num === end.line ? Math.min(end.column, line.length) : line.length;
+      for (let k = a; k < b; k++) blank[k] = line[k]!;
     }
-    flush();
+  }
+  const masked = new Map<number, string>();
+  for (const [num, blank] of blanks) {
+    const line = lines[num] ?? "";
+    for (let k = 0; k < blank.length; k++) {
+      if (blank[k] === "\0" && FORMAT_DELIMS.has(line[k]!)) blank[k] = " ";
+    }
     masked.set(num, blank.join(""));
   }
-  return { tokens, masked };
-};
-
-/** Decode a `{…}` character-mode span to the letters it produces: digraphs
- * expand, diacritic markers drop. A span producing punctuation (en/em dash,
- * §) returns "" — a word boundary. Mirrors the Markit compiler's rules. */
-const decodeCharSpan = (inner: string): string => {
-  const digraphs: [string, string][] = [
-    ["ae", "ae"],
-    ["AE", "AE"],
-    ["oe", "oe"],
-    ["OE", "OE"],
-    ["c,", "c"],
-    ["C,", "C"],
-  ];
-  const markers = new Set(["/", "`", "^", '"']);
-  let out = "";
-  let pos = 0;
-  while (pos < inner.length) {
-    const ch = inner[pos];
-    if (ch === "\\") {
-      out += inner[pos + 1] ?? "";
-      pos += 2;
-      continue;
-    }
-    if (ch === "-" || ch === "$") return ""; // dash or § — punctuation
-    const digraph = digraphs.find(([d]) => inner.startsWith(d, pos));
-    if (digraph !== undefined) {
-      out += digraph[1];
-      pos += digraph[0].length;
-      continue;
-    }
-    if (markers.has(ch ?? "")) {
-      pos++;
-      continue;
-    }
-    out += ch;
-    pos++;
-  }
-  return out;
+  return masked;
 };
 
 /* ------------------------------- folding ------------------------------- */
@@ -973,10 +854,11 @@ export const foldWord = (raw: string): string =>
 const keepWord = (folded: string): boolean =>
   folded.length >= MIN_WORD_LENGTH && LETTER.test(folded);
 
-/** The kept, folded words of a text, in order. */
+/** The kept, folded words of a text, in order (Markit's word alphabet, so the
+ * lexicons segment exactly as the source tokens do). */
 const words = (text: string): string[] => {
   const out: string[] = [];
-  for (const match of text.matchAll(WORDS_RE)) {
+  for (const match of text.matchAll(wordPattern)) {
     const folded = foldWord(match[0]);
     if (keepWord(folded)) out.push(folded);
   }

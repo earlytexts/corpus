@@ -14,7 +14,6 @@
  * Vscode-free, so it is unit-tested against a built catalogue directly.
  */
 
-import { startLine } from "@jsr/earlytexts__markit";
 import type { MarkitDocument } from "@jsr/earlytexts__markit";
 import { accountTokens, type Catalogue } from "@earlytexts/corpus";
 
@@ -52,7 +51,7 @@ export const curationList = (catalogue: Catalogue): CurationEntry[] => {
       const tally = tallies.get(token.folded) ?? { count: 0 };
       tally.count++;
       if (tally.example === undefined && path !== undefined) {
-        tally.example = { path, line: token.block[startLine] };
+        tally.example = { path, line: token.block.source?.start.line ?? 0 };
       }
       tallies.set(token.folded, tally);
     }

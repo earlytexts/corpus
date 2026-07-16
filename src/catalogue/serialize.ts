@@ -7,15 +7,16 @@
  * placeholder naming the edition's document key, not an inlined copy. This lets
  * the computer splice the single shared parsed instance back in when it loads,
  * recreating the object graph (shared edition documents, shared blocks) that the
- * build relies on. Markit's symbol-keyed source ranges are dropped by
- * JSON.stringify, exactly as they already are when the computer writes blocks.
+ * build relies on. Source positions are stripped on the way out (the compositor
+ * builds its catalogue from position-compiled documents — see corpusModel), so
+ * the written catalogue is identical however the documents were compiled.
  *
  * Each entity's serialised form is its shared metadata base (see types.ts)
  * spread verbatim, plus the layer-specific fields — so a new metadata key
  * flows through here with no code change.
  */
 
-import type { MarkitDocument } from "@earlytexts/markit";
+import { type MarkitDocument, stripPositions } from "@earlytexts/markit";
 import type {
   Catalogue,
   CatalogueAuthor,
@@ -115,7 +116,7 @@ const serializeDoc = (
 ): SerializedDoc => ({
   id: doc.id,
   ...(doc.metadata !== undefined ? { metadata: doc.metadata } : {}),
-  blocks: doc.blocks,
+  blocks: doc.blocks.map(stripPositions),
   children: doc.children.map((child) => {
     const key = docKeys.get(child);
     return key !== undefined ? { __ref: key } : serializeDoc(child, docKeys);

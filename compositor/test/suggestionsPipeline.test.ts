@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { compile } from "@jsr/earlytexts__markit";
+import { compileWithPositions } from "@jsr/earlytexts__markit";
 import type { Catalogue } from "@earlytexts/corpus";
 import { buildHints, scanSource } from "../src/lib/hints.ts";
 import { wrapText } from "../src/lib/suggestions.ts";
@@ -15,7 +15,9 @@ import { hintOverrides } from "../src/lib/hintOverrides.ts";
 
 /** A one-author, one-edition catalogue over `body` (a `.mit` document body). */
 const catalogueOf = (body: string): Catalogue => {
-  const document = compile(`# Hume.Work.1748\n\n${body}\n`)[0];
+  const document = compileWithPositions(
+    `# Hume.Work.1748\n\n${body}\n`,
+  ).document;
   const edition = {
     authorSlugs: ["hume"],
     workSlug: "work",
@@ -55,7 +57,7 @@ const catalogueOf = (body: string): Catalogue => {
 /** Apply every scanner fix to a fresh source, right-to-left so the earlier
  * ranges keep their offsets. */
 const markUp = (source: string, catalogue: Catalogue): string => {
-  const [doc] = compile(source);
+  const { document: doc } = compileWithPositions(source);
   const suggestions = scanSource(
     source,
     doc,

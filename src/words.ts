@@ -176,7 +176,7 @@ export const scanBlock = (block: Block): BlockScan => {
         openRun = (emitted || openRun) && isSpaces(content.slice(cursor));
         continue;
       }
-      if (element.type === "nbSpace" || element.type === "emSpace") {
+      if (element.type === "nbSpace") {
         continue; // whitespace: emits nothing, leaves the run open
       }
       openRun = false;
