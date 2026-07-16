@@ -7,7 +7,7 @@
  */
 
 import { fold, isWord } from "@earlytexts/corpus";
-import type { UnaccountedWord } from "./dictionaryScan.ts";
+import type { TildeFusion, UnaccountedWord } from "./dictionaryScan.ts";
 import type { EntryAction } from "./dictionaryEdits.ts";
 
 /** The folded words of a contributor's entry input, or [] if any token is not
@@ -46,6 +46,11 @@ export const unattestedRejectMessage = (target: string): string =>
 export const unattestedLemmaMessage = (target: string): string =>
   `“${target}” never appears in the corpus. Add it anyway as a modern word ` +
   `(an unprinted citation form)?`;
+
+/** The quick-fix title for fusing a run into a registered multi-word unit. */
+export const fuseActionTitle = (
+  fuse: Pick<TildeFusion, "key" | "joined">,
+): string => `Join as ${fuse.joined} — “${fuse.key}” is in the dictionary`;
 
 /** The quick-fix title for a curation action on `surface`. */
 export const entryActionTitle = (

@@ -9,7 +9,7 @@
  */
 
 import { expect, test } from "vitest";
-import { compile } from "@jsr/earlytexts__markit";
+import { compileWithPositions } from "@jsr/earlytexts__markit";
 import {
   type Dictionary,
   expandDictionary,
@@ -30,14 +30,14 @@ const dict = (entries: Record<string, unknown>): Dictionary =>
 /** Compile a body under a single `{#1}` block; text starts on line 4 (0-based
  * line 3 is the block tag, line 4 the first content line). */
 const doc = (body: string) =>
-  compile(`# t\n\n[metadata]\ntitle = "t"\n\n{#1}\n${body}\n`);
+  compileWithPositions(`# t\n\n[metadata]\ntitle = "t"\n\n{#1}\n${body}\n`);
 
 const scan = (
   body: string,
   entries: Record<string, unknown>,
 ): UnaccountedWord[] => {
   const source = `# t\n\n[metadata]\ntitle = "t"\n\n{#1}\n${body}\n`;
-  const [document] = compile(source);
+  const { document } = compileWithPositions(source);
   return scanUnaccounted(source, document, dict(entries));
 };
 
@@ -116,8 +116,88 @@ test("folds case for matching but reports the printed form", () => {
   expect(found.map((w) => w.display)).toEqual(["Wombat", "WOMBAT"]);
 });
 
+test("proposes the ~ fusion when a run folds to a registered multi-word key", () => {
+  // The lone "Priori" leaves the surface unaccounted; the occurrence beside
+  // "a" fuses into the registered unit, so it carries the ~ fix.
+  const found = scan("Priori alone, then a priori too.", {
+    alone: null,
+    then: null,
+    a: null,
+    too: null,
+    "a priori": null,
+  });
+  expect(found.map((w) => w.surface)).toEqual(["priori", "priori"]);
+  expect(found[0]!.fuse).toBeUndefined();
+  expect(found[1]!.fuse).toEqual({
+    key: "a priori",
+    joined: "a~priori",
+    gaps: [{ startLine: 6, startColumn: 20, endLine: 6, endColumn: 21 }],
+  });
+});
+
+test("the ~ fusion also fires from the run's first token", () => {
+  const found = scan("Ipso alone, then ipso facto.", {
+    alone: null,
+    then: null,
+    facto: null,
+    "ipso facto": null,
+  });
+  expect(found.map((w) => w.surface)).toEqual(["ipso", "ipso"]);
+  expect(found[1]!.fuse).toEqual({
+    key: "ipso facto",
+    joined: "ipso~facto",
+    gaps: [{ startLine: 6, startColumn: 21, endLine: 6, endColumn: 22 }],
+  });
+});
+
+test("a ~ fusion gap may cross a line break within the paragraph", () => {
+  const found = scan("Priori alone. Then a\npriori too.", {
+    alone: null,
+    then: null,
+    a: null,
+    too: null,
+    "a priori": null,
+  });
+  expect(found).toHaveLength(2);
+  expect(found[1]!.fuse).toEqual({
+    key: "a priori",
+    joined: "a~priori",
+    gaps: [{ startLine: 6, startColumn: 20, endLine: 7, endColumn: 0 }],
+  });
+});
+
+test("no ~ fusion across a markup boundary", () => {
+  // The emphasis breaks the adjacency (and the gap is not pure whitespace),
+  // so the occurrence is flagged without a fix.
+  const found = scan("Then a _priori_ too.", {
+    then: null,
+    a: null,
+    too: null,
+    "a priori": null,
+  });
+  expect(found.map((w) => w.surface)).toEqual(["priori"]);
+  expect(found[0]!.fuse).toBeUndefined();
+});
+
+test("a run already fused with ~ and registered is not flagged", () => {
+  expect(
+    scan("Known a~priori here.", {
+      known: null,
+      here: null,
+      "a priori": null,
+    }),
+  ).toEqual([]);
+});
+
+test("a ~-fused run with no entry is counted but not locatable", () => {
+  // The accounting rule sees "to" and "morrow" (both unaccounted); the source
+  // stream reads one fused token, whose folded form matches no surface — the
+  // occurrence goes unflagged rather than mis-flagged (the counts stay exact).
+  expect(scan("known to~morrow", { known: null })).toEqual([]);
+});
+
 test("unaccountedSurfaces collects the folded surfaces with no entry", () => {
-  const [document] = doc("known also unknown");
+  const { document } = doc("known also unknown");
   const surfaces = unaccountedSurfaces(document, dict({ known: null }));
   expect([...surfaces].sort()).toEqual(["also", "unknown"]);
 });

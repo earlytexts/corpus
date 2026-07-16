@@ -146,7 +146,7 @@ test("words: strict roman numerals", () => {
 
 /** The first block of a compiled one-block document. */
 const block = (line: string): Block => {
-  const [doc, errors] = compile(`# t\n\n{#1}\n${line}\n`);
+  const { document: doc, errors } = compile(`# t\n\n{#1}\n${line}\n`);
   expect(errors).toEqual([]);
   return doc.blocks[0];
 };
@@ -154,7 +154,7 @@ const block = (line: string): Block => {
 test("words: scanBlock reports tokens with their exempting markup and [w:] elements", () => {
   const scan = scanBlock(block(
     '\'Tis _writ_ by [p:*Will* Shake] in ["A Treatise"] at $la:cogito ergo$ ' +
-      "on MDCCXL-1739, [w:then=than] [w:to morrow=tomorrow].",
+      "on MDCCXL-1739, [w:then=than] [w:to~morrow=tomorrow].",
   ));
   expect(
     scan.tokens.map((t) =>
@@ -195,7 +195,7 @@ test("words: scanBlock reports tokens with their exempting markup and [w:] eleme
 });
 
 test("words: scanBlock descends into quotes, lists, and tables", () => {
-  const [doc, errors] = compile(
+  const { document: doc, errors } = compile(
     "# t\n\n{#1}\n> Quoted words.\n\n{#2}\n- one item\n- two\n\n{#3}\n| a cell | more |\n",
   );
   expect(errors).toEqual([]);
@@ -745,9 +745,9 @@ const register: RawDictionary = {
 };
 
 test("dictionary: accountTokens applies the accounting rule to every token", () => {
-  const [doc, errors] = compile(
+  const { document: doc, errors } = compile(
     "# t\n\n{#1}\n'Tis [p:Will] writing then vertue a~priori MDCCXL 1739 zzz " +
-      "[w:to morrow=tomorrow].\n",
+      "[w:to~morrow=tomorrow].\n",
   );
   expect(errors).toEqual([]);
   const accounts = accountTokens(doc, register);
@@ -773,7 +773,7 @@ test("dictionary: accountTokens applies the accounting rule to every token", () 
 });
 
 test("dictionary: accountTokens covers a document's sections too", () => {
-  const [doc, errors] = compile(
+  const { document: doc, errors } = compile(
     "# t\n\n{#1}\nvertue.\n\n## s\n\n{#1}\nzzz.\n",
   );
   expect(errors).toEqual([]);
@@ -980,8 +980,9 @@ test("validate: word markup must select exactly one reading of an ambiguous entr
   // purely by inheritance from "lay".
   expect(await violationsOf(name, files("She [w:laie=lie] down.")))
     .toEqual([]);
-  // A multi-token surface needs no entry: the markup is the reading.
-  expect(await violationsOf(name, files("Until [w:to morrow=tomorrow] then.")))
+  // A multi-token surface (a `~`-marked multi-word unit) needs no entry: the
+  // markup is the reading.
+  expect(await violationsOf(name, files("Until [w:to~morrow=tomorrow] then.")))
     .toEqual([]);
 
   const single = async (body: string): Promise<string> => {
@@ -995,14 +996,15 @@ test("validate: word markup must select exactly one reading of an ambiguous entr
   );
   expect(await single("So [w:then=nan] said.")).toContain("selects no reading");
   expect(await single("So [w:borne=bear] said.")).toContain("more than one");
-  expect(await single("So [w:to morrow==x] said.")).toContain("spellings only");
-  expect(await single("So [w:=than] said.")).toContain("no words");
+  // A token-less surface ([w:=than]) no longer reaches this rule: the markit
+  // compiler rejects it, so the compile rule owns that case now.
+  expect(await single("So [w:to~morrow==x] said.")).toContain("spellings only");
 });
 
 /* --------------------------- edition overrides ------------------------- */
 
 test("dictionary: overridesOf reads a text's [metadata.dictionary] map", () => {
-  const [doc, errors] = compile(
+  const { document: doc, errors } = compile(
     '# t\n\n[metadata]\ntitle = "T"\n\n[metadata.dictionary]\nhumane = "human"\nthen = "than"\n\n{#1}\nText.\n',
   );
   expect(errors).toEqual([]);
@@ -1010,9 +1012,11 @@ test("dictionary: overridesOf reads a text's [metadata.dictionary] map", () => {
   expect(overridesOf(undefined)).toEqual({});
   // `dictionary` as a plain [metadata] scalar is not a map (the schema rule
   // reports it); non-string values inside the map are skipped likewise.
-  const [scalar] = compile('# t\n\n[metadata]\ndictionary = "x"\n\n{#1}\nT.\n');
+  const { document: scalar } = compile(
+    '# t\n\n[metadata]\ndictionary = "x"\n\n{#1}\nT.\n',
+  );
   expect(overridesOf(scalar.metadata)).toEqual({});
-  const [mixed] = compile(
+  const { document: mixed } = compile(
     '# t\n\n[metadata]\ntitle = "T"\n\n[metadata.dictionary]\na = "x"\nb = 7\n\n{#1}\nT.\n',
   );
   expect(overridesOf(mixed.metadata)).toEqual({ a: "x" });

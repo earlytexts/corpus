@@ -11,11 +11,11 @@
  */
 
 import {
-  compile,
+  compileWithPositions,
   format,
   type MarkitDocument,
   type MarkitError,
-  startLine,
+  type SourceRange,
 } from "@earlytexts/markit";
 import type { CorpusFs } from "../ports.ts";
 import {
@@ -114,10 +114,10 @@ export const rules: Rule[] = [
           rule: "every file compiles without errors",
           path,
           message: e.message,
-          line: e.line,
-          column: e.column,
-          endLine: e.endLine,
-          endColumn: e.endColumn,
+          line: e.source.start.line + 1,
+          column: e.source.start.column + 1,
+          endLine: e.source.end.line + 1,
+          endColumn: e.source.end.column + 1,
           severity: e.severity,
         }))
       ),
@@ -140,7 +140,7 @@ export const rules: Rule[] = [
       const rule = "author files match the author schema";
       for (const { path, doc } of compiled(authorFiles(files))) {
         const metadata = meta(doc.metadata);
-        const line = lineOf(doc.metadata) ?? lineOf(doc);
+        const line = lineOf(doc.metadataSource?.source) ?? lineOf(doc.source);
         const push = (message: string, at = line) =>
           violations.push({ rule, path, message, line: at });
         for (const message of keyViolations(metadata, authorSchema)) {
@@ -156,10 +156,16 @@ export const rules: Rule[] = [
           push(`"sex" must be "Male" or "Female"`);
         }
         if (doc.children.length > 0) {
-          push("author files cannot have sections", lineOf(doc.children[0]));
+          push(
+            "author files cannot have sections",
+            lineOf(doc.children[0]?.source),
+          );
         }
         if (doc.blocks.length > 0) {
-          push("author files cannot have content", lineOf(doc.blocks[0]));
+          push(
+            "author files cannot have content",
+            lineOf(doc.blocks[0]?.source),
+          );
         }
       }
       return violations;
@@ -182,7 +188,8 @@ export const rules: Rule[] = [
           }
           const locus = `(${text.id})`;
           const metadata = meta(text.metadata);
-          const line = lineOf(text.metadata) ?? lineOf(text);
+          const line = lineOf(text.metadataSource?.source) ??
+            lineOf(text.source);
           const push = (message: string) =>
             violations.push({ rule, path, locus, message, line });
           for (const message of keyViolations(metadata, textSchema)) {
@@ -234,13 +241,14 @@ export const rules: Rule[] = [
       for (const { path, doc } of compiled(workFiles(files))) {
         if (!isStub(path, doc)) continue;
         const metadata = meta(doc.metadata);
-        const line = lineOf(doc.metadata) ?? lineOf(doc);
+        const line = lineOf(doc.metadataSource?.source) ?? lineOf(doc.source);
         if (doc.blocks.length > 0 || doc.children.length > 0) {
           violations.push({
             rule,
             path,
             message: "a stub holds metadata only (no text/sections)",
-            line: lineOf(doc.children[0]) ?? lineOf(doc.blocks[0]),
+            line: lineOf(doc.children[0]?.source) ??
+              lineOf(doc.blocks[0]?.source),
           });
         }
         const canonical = metadata.canonical;
@@ -282,7 +290,8 @@ export const rules: Rule[] = [
                 path,
                 locus: `(${text.id} {#${block.id}})`,
                 message,
-                line: lineOf(block.metadata) ?? lineOf(block),
+                line: lineOf(block.metadataSource?.source) ??
+                  lineOf(block.source),
               });
             }
           }
@@ -306,7 +315,8 @@ export const rules: Rule[] = [
                 path,
                 locus: `(${text.id})`,
                 message: `unknown author "${slug}"`,
-                line: lineOf(text.metadata) ?? lineOf(text),
+                line: lineOf(text.metadataSource?.source) ??
+                  lineOf(text.source),
               });
             }
           }
@@ -319,7 +329,8 @@ export const rules: Rule[] = [
                   path,
                   locus: `(${text.id}) {#${block.id}}`,
                   message: `unknown author "${slug}"`,
-                  line: lineOf(block.metadata) ?? lineOf(block),
+                  line: lineOf(block.metadataSource?.source) ??
+                    lineOf(block.source),
                 });
               }
             }
@@ -341,7 +352,7 @@ export const rules: Rule[] = [
           rule: "root IDs match file paths",
           path,
           message: `root ID is "${doc.id}", expected "${expectedId(path)}"`,
-          line: lineOf(doc),
+          line: lineOf(doc.source),
         })),
   },
   {
@@ -364,7 +375,7 @@ export const rules: Rule[] = [
               path,
               message:
                 `heading "${segment}" should be a bare segment (no dots)`,
-              line: lineOf(text),
+              line: lineOf(text.source),
             });
           }
         }
@@ -392,7 +403,7 @@ export const rules: Rule[] = [
               path,
               locus: `(${text.id})`,
               message: `unresolvable borrowed child "${ref}"`,
-              line: lineOf(text),
+              line: lineOf(text.source),
             });
           }
         }
@@ -578,7 +589,7 @@ export const rules: Rule[] = [
                   path,
                   locus: `(${text.id})`,
                   message,
-                  line: lineOf(block),
+                  line: lineOf(block.source),
                 });
               }
             }
@@ -604,10 +615,8 @@ export const rules: Rule[] = [
         for (const { text } of allTexts(doc)) {
           const overrides = Object.entries(overridesOf(text.metadata));
           if (overrides.length === 0) continue;
-          const map = text.metadata?.dictionary;
-          const line = (typeof map === "object" && !Array.isArray(map)
-            ? lineOf(map)
-            : undefined) ?? lineOf(text.metadata) ?? lineOf(text);
+          const line = lineOf(text.metadataSource?.nested?.dictionary) ??
+            lineOf(text.metadataSource?.source) ?? lineOf(text.source);
           for (const [surface, value] of overrides) {
             const message = overrideViolation(surface, value, dictionary);
             if (message !== undefined) {
@@ -669,7 +678,7 @@ export const loadCorpus = async (
     for await (const path of walk(fs, `${root}/data`, top)) {
       const text = await fs.readFile(`${root}/data/${path}`);
       if (text === null) continue;
-      const [doc, errors] = compile(text);
+      const { document: doc, errors } = compileWithPositions(text);
       files.push({ path, text, doc, errors });
     }
   }
@@ -743,14 +752,14 @@ const walk = async function* (
   }
 };
 
-/** Metadata viewed as plain entries (drops Markit's symbol-keyed ranges). */
+/** Metadata viewed as plain entries (folds the absent case to `{}`). */
 const meta = (value: unknown): Record<string, unknown> =>
   (value ?? {}) as Record<string, unknown>;
 
-/** The 1-based line a node starts on, via Markit's symbol-keyed ranges. */
-const lineOf = (
-  node: { [startLine]: number } | undefined,
-): number | undefined => (node === undefined ? undefined : node[startLine] + 1);
+/** The 1-based line a source range starts on (ranges come from
+ * `compileWithPositions` — see `loadCorpus`). */
+const lineOf = (source: SourceRange | undefined): number | undefined =>
+  source === undefined ? undefined : source.start.line + 1;
 
 const authorFiles = (files: CorpusFile[]): CorpusFile[] =>
   files.filter((f) => f.path.startsWith("authors/"));

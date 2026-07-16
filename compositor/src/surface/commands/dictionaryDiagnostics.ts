@@ -19,7 +19,7 @@
  */
 
 import * as vscode from "vscode";
-import { compile } from "@jsr/earlytexts__markit";
+import { compileWithPositions } from "@jsr/earlytexts__markit";
 import { type EntryValue, shardOf } from "@earlytexts/corpus";
 import {
   scanUnaccounted,
@@ -34,6 +34,7 @@ import {
   addTargetTitle,
   entryActionTitle,
   entryWords,
+  fuseActionTitle,
   unaccountedMessage,
   unattestedLemmaMessage,
   unattestedRejectMessage,
@@ -261,7 +262,7 @@ export const createDictionaryController = (
       return;
     }
     const source = document.getText();
-    const [doc] = compile(source);
+    const { document: doc } = compileWithPositions(source);
     const words = scanUnaccounted(source, doc, dictionary);
     scanned.set(document.uri.fsPath, words);
     collection.set(
@@ -362,6 +363,31 @@ export const createDictionaryController = (
             wordRange(w).isEqual(diagnostic.range),
           );
           if (word === undefined) continue;
+          // The ~ fusion first (and preferred): the run is a registered
+          // multi-word unit, so joining it in the source is the right fix —
+          // curating the fragment would paper over it.
+          if (word.fuse !== undefined) {
+            const fuse = new vscode.CodeAction(
+              fuseActionTitle(word.fuse),
+              vscode.CodeActionKind.QuickFix,
+            );
+            fuse.diagnostics = [diagnostic];
+            fuse.isPreferred = true;
+            fuse.edit = new vscode.WorkspaceEdit();
+            for (const gap of word.fuse.gaps) {
+              fuse.edit.replace(
+                document.uri,
+                new vscode.Range(
+                  gap.startLine,
+                  gap.startColumn,
+                  gap.endLine,
+                  gap.endColumn,
+                ),
+                "~",
+              );
+            }
+            actions.push(fuse);
+          }
           for (const { kind } of actionsFor()) {
             const fix = new vscode.CodeAction(
               entryActionTitle(word.surface, kind),

@@ -7,7 +7,7 @@
  */
 
 import { expect, test } from "vitest";
-import { compile } from "@jsr/earlytexts__markit";
+import { compileWithPositions } from "@jsr/earlytexts__markit";
 import { buildCatalogue } from "@earlytexts/corpus";
 import { corpus, CORPUS_ROOT, memoryCorpus } from "@earlytexts/corpus/test";
 import {
@@ -207,7 +207,7 @@ const laHints = (): Hints =>
 
 /** Compile `source` and scan it. */
 const scan = (source: string, hints: Hints): MarkupSuggestion[] => {
-  const [doc] = compile(source);
+  const { document: doc } = compileWithPositions(source);
   return scanSource(source, doc, hints);
 };
 
@@ -264,6 +264,23 @@ test("scan: character-mode spans fold into their words", () => {
   assertEquals(scanBody("Then c{ae}dem happened.", laHints()).map(brief), [
     "language:la c{ae}dem",
   ]);
+});
+
+test("scan: character-mode spans at a word's edges are taken in whole", () => {
+  // Compiled positions point at a braced span's content; the match must
+  // widen over the braces, or the proposed markup would split them.
+  const hints = emptyHints({
+    languages: new Map([
+      [
+        "la",
+        { strong: new Set(["aesopus", "economy"]), weak: new Set<string>() },
+      ],
+    ]),
+  });
+  assertEquals(
+    scanBody("Then {AE}sopus met econom{y/} here.", hints).map((s) => s.text),
+    ["{AE}sopus", "econom{y/}"],
+  );
 });
 
 test("scan: page breaks and editorial marks are word-transparent", () => {

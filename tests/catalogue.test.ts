@@ -9,6 +9,8 @@
 import { expect } from "@std/expect";
 import { test } from "@std/testing/bdd";
 import { buildCatalogue } from "../src/catalogue/compile.ts";
+import { serializeCatalogue } from "../src/catalogue/serialize.ts";
+import { compileWithPositions } from "@earlytexts/markit";
 import type { CorpusFs } from "../src/ports.ts";
 import { corpus, CORPUS_ROOT, memoryCorpus } from "../src/test.ts";
 
@@ -387,4 +389,34 @@ test("catalogue: a corpus FS whose stat throws still resolves via the walk", asy
   };
   const warnings = await warningsFor(files, flaky);
   assert(Array.isArray(warnings));
+});
+
+test("catalogue: position-compiled documents serialise identically to plain ones", async () => {
+  // The compositor hands buildCatalogue documents compiled with positions (its
+  // one compile pass also feeds validation); the serialised catalogue it writes
+  // back must be byte-identical to the canonical, plain-compiled build —
+  // serializeCatalogue strips the positions on the way out.
+  const files = base().build();
+  const plain = await buildCatalogue(memoryCorpus(files), CORPUS_ROOT);
+  const precompiled = new Map(
+    Object.entries(files)
+      .filter(([path]) => path.endsWith(".mit"))
+      .map(([path, text]) => [path, compileWithPositions(text).document]),
+  );
+  const positioned = await buildCatalogue(
+    memoryCorpus(files),
+    CORPUS_ROOT,
+    precompiled,
+  );
+
+  const a = serializeCatalogue(plain.catalogue, plain.warnings, CORPUS_ROOT);
+  const b = serializeCatalogue(
+    positioned.catalogue,
+    positioned.warnings,
+    CORPUS_ROOT,
+  );
+  expect(Object.fromEntries(b.documents)).toEqual(
+    Object.fromEntries(a.documents),
+  );
+  expect(b.catalogue).toEqual(a.catalogue);
 });

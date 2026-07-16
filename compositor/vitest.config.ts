@@ -4,12 +4,9 @@ import path from "node:path";
 // Mirrors esbuild.mjs: the corpus is the sibling package in this repo, resolved
 // straight to its TypeScript source rather than an installed package. Markit
 // stays external (JSR's npm compatibility layer); aliasing the corpus's own
-// "@earlytexts/markit" import to that installed copy keeps `scanSource` (our
-// hints.ts) reading the very blocks `buildCatalogue` (the corpus) and `compile`
-// (a test) produced — markit tags blocks with Symbol()s (startLine/endLine)
-// that only compare equal within one instance. No dedupe is needed; if Vite
-// ever splits the copy into two module records, reinstate
-// `resolve.dedupe: ["@jsr/earlytexts__markit"]` here.
+// "@earlytexts/markit" import to that installed copy keeps a single markit
+// throughout. (Since markit 4 source positions are plain properties, a second
+// copy would no longer break anything — one instance is now just tidiness.)
 export default defineConfig({
   resolve: {
     alias: {
