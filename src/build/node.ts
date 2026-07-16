@@ -10,7 +10,7 @@
  */
 
 import { promises as fs } from "node:fs";
-import type { CorpusFsWrite } from "./ports.ts";
+import type { CorpusFsWrite } from "../fs/ports.ts";
 
 export const nodeCorpusFs: CorpusFsWrite = {
   readFile: async (path) => {

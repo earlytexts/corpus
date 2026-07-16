@@ -9,8 +9,13 @@
  */
 
 import type { Block, MarkitDocument, Token } from "@earlytexts/markit";
-import type { Register } from "./types.ts";
-import { blockTokens, exemptionOf, fold, isRomanNumeral } from "../words.ts";
+import type { Register } from "../dictionary/types.ts";
+import {
+  blockTokens,
+  exemptionOf,
+  fold,
+  isRomanNumeral,
+} from "../dictionary/words.ts";
 
 /**
  * How a token is accounted for — "at least one of" a dictionary entry,

@@ -1,21 +1,26 @@
 /**
- * In-memory corpus authoring for the tests. A corpus is just a map of paths to
- * `.mit` text — no fixture files on disk. `corpus()` is a fluent builder for one;
- * `memoryCorpus` turns a file map into the `CorpusFs` the catalogue build walks;
- * `buildCatalogue` (re-exported) compiles that map into the in-memory catalogue.
+ * The corpus test harness: in-memory corpus authoring for the tests, not part of
+ * the corpus's own source logic (hence tests/, not src/). A corpus is just a map
+ * of paths to `.mit` text — no fixture files on disk. `corpus()` is a fluent
+ * builder for one; `memoryCorpus` turns a file map into the `CorpusFs` the
+ * catalogue build walks; `buildCatalogue` (re-exported) compiles that map into
+ * the in-memory catalogue.
+ *
  * Both the corpus's own tests and the computer's (which compile these maps into
  * `catalogue/`) import this harness, so the fixture format lives in one place —
  * and it is the computer's one remaining door onto the compiler, now that its
  * production build shells out to the corpus checkout rather than importing it.
+ * That shared use is why it is published, as the `@earlytexts/corpus/test`
+ * subpath — the one published file outside `src/` (see deno.json).
  */
 
-import type { CorpusFs } from "./ports.ts";
-import { normalizePath } from "./paths.ts";
+import type { CorpusFs } from "../src/fs/ports.ts";
+import { normalizePath } from "../src/fs/paths.ts";
 
 // The catalogue compiler, for building a fixture corpus map into a catalogue in
 // memory. (Writing it to disk — writeCatalogue, nodeCorpusFs — is the corpus's
 // own build/deploy concern and stays off the published surface.)
-export { buildCatalogue } from "./catalogue/compile.ts";
+export { buildCatalogue } from "../src/catalogue/compile.ts";
 
 /** The root every corpus path hangs off (an arbitrary absolute prefix). */
 export const CORPUS_ROOT = "/corpus";

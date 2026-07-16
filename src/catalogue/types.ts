@@ -12,7 +12,7 @@
  *
  * Each entity is its shared `…Meta` base plus the one field that differs
  * between the layers: a live document/object graph in memory, a key or
- * reference on the wire. The filesystem ports these run on live in ../ports.ts.
+ * reference on the wire. The filesystem ports these run on live in ../fs/ports.ts.
  */
 
 import type { MarkitDocument } from "@earlytexts/markit";

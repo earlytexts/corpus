@@ -31,7 +31,7 @@
     // installed JSR npm-compat package.
     "paths": {
       "@earlytexts/corpus": ["../src/index.ts"],
-      "@earlytexts/corpus/test": ["../src/test.ts"],
+      "@earlytexts/corpus/test": ["../tests/harness.ts"],
       "@earlytexts/markit": [
         "./node_modules/@jsr/earlytexts__markit/_dist/src/index.d.ts"
       ]

@@ -16,7 +16,7 @@ import {
   readDictionaryShards,
   shardDictionary,
 } from "../src/dictionary/shards.ts";
-import { nodeCorpusFs } from "../src/fs.ts";
+import { nodeCorpusFs } from "../src/build/node.ts";
 import { corpusRoot } from "./lib.ts";
 
 const check = Deno.args.includes("--check");

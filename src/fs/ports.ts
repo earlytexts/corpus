@@ -3,7 +3,8 @@
  * catalogue's *data* types (catalogue/types.ts) so that "the shape of the data"
  * and "how we reach the disk" version independently — and so the catalogue types
  * and the dictionary (which both need a port) don't have to import each other.
- * The disk-backed implementation is fs.ts; the tests bring an in-memory one.
+ * The disk-backed implementation is ../build/node.ts; the tests bring an
+ * in-memory one.
  */
 
 /** A directory entry as the corpus walk sees it (Deno.DirEntry-compatible,

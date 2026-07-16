@@ -5,17 +5,18 @@
   "description": "The wire contract for the Early Text Centre's compiled corpus catalogue: read-side types, (de)serialisation, word semantics, and dictionary resolution, plus an in-memory corpus builder for tests.",
   "exports": {
     "./wire": "./src/wire.ts",
-    "./test": "./src/test.ts"
+    "./test": "./tests/harness.ts"
   },
   "publish": {
-    "include": ["src/", "README.md", "LICENSE.md", "deno.json"],
-    "exclude": [
-      "src/index.ts",
-      "src/build.ts",
-      "src/fs.ts",
-      "src/catalogue/write.ts",
-      "src/validation/",
-      "src/dictionary/account.ts"
+    "include": [
+      "README.md",
+      "LICENSE.md",
+      "deno.json",
+      "src/wire.ts",
+      "tests/harness.ts",
+      "src/fs/",
+      "src/dictionary/",
+      "src/catalogue/"
     ]
   },
   "imports": {

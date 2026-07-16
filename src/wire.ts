@@ -19,7 +19,7 @@ export * from "./catalogue/deserialize.ts";
 // Word semantics on top of Markit's tokenizer — folding, the roman-numeral
 // class, exemption policy, the both-versions token stream — so the computer
 // and Compositor share one definition of "a word".
-export * from "./words.ts";
+export * from "./dictionary/words.ts";
 
 // The dictionary's wire types — the shape of `catalogue/dictionary.json` (the
 // register expanded: explicit spelling + lemma per word per reading) — plus

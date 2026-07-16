@@ -14,8 +14,8 @@
  */
 
 import type { RawDictionary, RawEntry, RawReading } from "./types.ts";
-import type { CorpusFs, DirEntry } from "../ports.ts";
-import { fold, isWord } from "../words.ts";
+import type { CorpusFs, DirEntry } from "../fs/ports.ts";
+import { fold, isWord } from "./words.ts";
 
 /** Read the dictionary shard files under `<root>/data/dictionary`, raw text
  * by file name, sorted. A corpus without the directory has an empty map. */
