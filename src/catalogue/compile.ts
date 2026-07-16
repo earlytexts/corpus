@@ -39,6 +39,12 @@ import {
   YEAR,
 } from "../paths.ts";
 
+/**
+ * Scan the corpus under `corpusDir`, compile every Markit file, and organise the
+ * results into the in-memory `Catalogue` (authors → works → editions, with
+ * borrowed children composed and cascading metadata resolved). Returns the
+ * catalogue and any non-fatal build warnings.
+ */
 export const buildCatalogue = async (
   fs: CorpusFs,
   corpusDir: string,

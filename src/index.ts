@@ -1,15 +1,19 @@
 /**
- * Public entry point for consuming the corpus's logic as a library (the
- * Compositor VSCode extension bundles this). The authoring surface — one door
- * to everything the Compositor needs to build and validate the corpus — so it
- * re-exports the two focused subpaths (`build` and `wire`) that the computer
- * imports in isolation, and adds validation on top. Read-side suggestion logic
+ * In-repo entry point for consuming the corpus's logic as a library: the
+ * Compositor VSCode extension bundles this from source (it lives inside the
+ * corpus package, so it never goes via the published tarball). The authoring
+ * surface — one door to everything the Compositor needs to build and validate
+ * the corpus: the build functions, the validation rules, the dictionary
+ * authoring logic, and the wire contract on top. Read-side suggestion logic
  * (markup hints) is the Compositor's own; it does not live here.
  *
- * Ordered by altitude: the build surface first (also exported alone as
- * `@earlytexts/corpus/build`), then the validation rules, then the wire
- * contract (also `@earlytexts/corpus/wire`, all the computer's app code may
- * import), then the foundations both build on.
+ * Not a published export: the package ships only `wire` (the computer's
+ * read-side) and `test` (the fixture harness). This barrel is the wider surface
+ * the Compositor pulls from the checkout directly.
+ *
+ * Ordered by altitude: the build surface first, then the validation rules, then
+ * the wire contract (also published as `@earlytexts/corpus/wire`, which the
+ * computer's app code imports), then the foundations both build on.
  */
 
 // The build surface: scan data/, compile, compose, write catalogue/, plus the

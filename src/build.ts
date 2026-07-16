@@ -4,9 +4,12 @@
  * everything a host needs to *produce* the catalogue — and nothing about
  * authoring rules (validation, hints) or reading it back (that's `wire`).
  *
- * The computer imports this subpath (`@earlytexts/corpus/build`) for its Deno
- * build wrapper — the one place its build seam touches the corpus compiler —
- * while its application code stays fenced to `@earlytexts/corpus/wire`.
+ * In-repo barrel only: it is re-exported from `index.ts` for the Compositor
+ * (which bundles the corpus from source), and mirrors `scripts/build.ts`. It is
+ * no longer a published subpath — the computer builds the catalogue by running
+ * the corpus checkout's own `deno task build`, and only reaches for the
+ * compiler itself (`buildCatalogue`, via `@earlytexts/corpus/test`) to compile
+ * fixtures in its tests.
  */
 
 // The catalogue build: scan data/, compile, compose, write catalogue/.

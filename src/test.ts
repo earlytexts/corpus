@@ -1,13 +1,21 @@
 /**
  * In-memory corpus authoring for the tests. A corpus is just a map of paths to
  * `.mit` text — no fixture files on disk. `corpus()` is a fluent builder for one;
- * `memoryCorpus` turns a file map into the `CorpusFs` the catalogue build walks.
+ * `memoryCorpus` turns a file map into the `CorpusFs` the catalogue build walks;
+ * `buildCatalogue` (re-exported) compiles that map into the in-memory catalogue.
  * Both the corpus's own tests and the computer's (which compile these maps into
- * `catalogue/`) import this harness, so the fixture format lives in one place.
+ * `catalogue/`) import this harness, so the fixture format lives in one place —
+ * and it is the computer's one remaining door onto the compiler, now that its
+ * production build shells out to the corpus checkout rather than importing it.
  */
 
 import type { CorpusFs } from "./ports.ts";
 import { normalizePath } from "./paths.ts";
+
+// The catalogue compiler, for building a fixture corpus map into a catalogue in
+// memory. (Writing it to disk — writeCatalogue, nodeCorpusFs — is the corpus's
+// own build/deploy concern and stays off the published surface.)
+export { buildCatalogue } from "./catalogue/compile.ts";
 
 /** The root every corpus path hangs off (an arbitrary absolute prefix). */
 export const CORPUS_ROOT = "/corpus";
@@ -76,6 +84,8 @@ type CorpusBuilder = {
   build: () => Record<string, string>;
 };
 
+/** Start a fresh, empty corpus builder. Chain `author`/`work`/`edition` (or
+ * `file`) calls, then `build()` for the path → text map. */
 export const corpus = (): CorpusBuilder => {
   const files: Record<string, string> = {};
   const builder: CorpusBuilder = {

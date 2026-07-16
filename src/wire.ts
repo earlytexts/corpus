@@ -4,10 +4,12 @@
  * catalogue types, `serializeCatalogue`, and `loadCatalogue` — and nothing
  * about authoring (scanning, compiling, validating, hints).
  *
- * The computer imports this subpath (`@earlytexts/corpus/wire`) instead of
- * the full library, so the corpus/computer boundary — the computer reads
- * `catalogue/`, it never scans or compiles `.mit` — is enforced by the import
- * graph rather than by convention.
+ * The computer's application code imports this subpath
+ * (`@earlytexts/corpus/wire`) and nothing wider, so the corpus/computer
+ * boundary — the computer reads `catalogue/`, it never scans or compiles
+ * `.mit` — is enforced by the import graph rather than by convention. (Its
+ * tests reach the compiler through `@earlytexts/corpus/test`, to build
+ * fixtures; those are the package's only two exports.)
  */
 
 export * from "./catalogue/types.ts";
