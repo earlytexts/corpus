@@ -43,6 +43,10 @@ import {
   createCurationView,
   type CurationView,
 } from "./surface/curationView.ts";
+import {
+  createDictionaryPanel,
+  type DictionaryPanel,
+} from "./surface/dictionaryPanel.ts";
 
 /** The first workspace folder that looks like the corpus (has data/authors),
  * honouring the compositor.corpusRoot setting. */
@@ -84,6 +88,11 @@ export const activate = async (
   context.subscriptions.push({ dispose: () => dictionary.dispose() });
 
   const curation: CurationView = createCurationView(() => model, context);
+
+  const dictionaryPanel: DictionaryPanel = createDictionaryPanel(
+    () => model,
+    context,
+  );
 
   const tree = createCorpusTree(() => model);
   const view = vscode.window.createTreeView("compositor.corpusBrowser", {
@@ -157,6 +166,7 @@ export const activate = async (
       model.onDidChange(() => suggestions.onCorpusChanged()),
       model.onDidChange(() => dictionary.onCorpusChanged()),
       model.onDidChange(() => curation.onCorpusChanged()),
+      model.onDidChange(() => dictionaryPanel.onCorpusChanged()),
     );
     registerDiagnostics(model, context);
     updateView();

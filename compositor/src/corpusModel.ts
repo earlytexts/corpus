@@ -29,6 +29,7 @@ import {
   type Work,
   writeCatalogue,
 } from "@earlytexts/corpus";
+import { reloadKind } from "./lib/reloadKind.ts";
 
 export type CorpusState = {
   catalogue: Catalogue;
@@ -60,8 +61,16 @@ export const createCorpusModel = (root: string): CorpusModel => {
   /** Changes that arrived mid-load, replayed afterwards. undefined = idle. */
   let queuedFull = false;
   let queuedPaths: Set<string> | undefined;
-  /** The catalogue/ write-back chain (see load); serialises overlapping writes. */
-  let catalogueWrite = Promise.resolve();
+  /**
+   * The catalogue awaiting write-back, and whether the writer is draining it.
+   * A newer load *replaces* the pending catalogue rather than queuing behind it,
+   * so a burst of edits can never pin more than the one in flight plus the
+   * latest — the write-back (a ~60MB `catalogue/` rewrite) used to stack a full
+   * catalogue per edit here, which is what ran the extension host out of memory.
+   */
+  let pendingCatalogue:
+    { catalogue: Catalogue; warnings: string[] } | undefined;
+  let draining = false;
 
   /**
    * Seed the tree from the compiled `catalogue/` (written by the corpus build or by
@@ -99,6 +108,32 @@ export const createCorpusModel = (root: string): CorpusModel => {
       }
     } catch {
       // no compiled catalogue (or a stale/partial one): wait for the full load
+    }
+  };
+
+  /** Write the pending catalogue back to `catalogue/`, then any that superseded
+   * it while the write ran — one writer, latest-wins, so overlapping loads can't
+   * stack catalogues in memory. A failed write only costs the cache. */
+  const drainCatalogueWrites = async (): Promise<void> => {
+    if (draining) return;
+    draining = true;
+    try {
+      while (pendingCatalogue !== undefined) {
+        const next = pendingCatalogue;
+        pendingCatalogue = undefined;
+        try {
+          await writeCatalogue(
+            nodeCorpusFs,
+            root,
+            next.catalogue,
+            next.warnings,
+          );
+        } catch {
+          // the next load will refresh the cache
+        }
+      }
+    } finally {
+      draining = false;
     }
   };
 
@@ -152,14 +187,11 @@ export const createCorpusModel = (root: string): CorpusModel => {
       );
       state = { catalogue, warnings, violations };
       // Refresh the compiled catalogue/ in the background (next startup's instant
-      // tree, and the computer's dev input). Writes are chained so overlapping
-      // loads can never interleave inside catalogue/; a failure only costs the cache.
-      catalogueWrite = catalogueWrite
-        .then(() => writeCatalogue(nodeCorpusFs, root, catalogue, warnings))
-        .then(
-          () => {},
-          () => {},
-        );
+      // tree, and the computer's dev input). The latest catalogue supersedes any
+      // still-unwritten one (drainCatalogueWrites), so rapid edits can't pin more
+      // than one extra generation; a failure only costs the cache.
+      pendingCatalogue = { catalogue, warnings };
+      void drainCatalogueWrites();
     } catch (error) {
       state = undefined;
       const message = error instanceof Error ? error.message : String(error);
@@ -180,18 +212,27 @@ export const createCorpusModel = (root: string): CorpusModel => {
   };
 
   /** Watcher events, debounced into one load. A change to a .mit file reloads
-   * just that file; anything else (directory create/delete/rename) is a
-   * structural change, handled with a full reload. */
+   * just that file; a dictionary shard revalidates without recompiling any
+   * documents (they stay valid — see reloadKind); anything else (directory
+   * create/delete/rename, a non-.mit metadata file) is structural and forces a
+   * full reload. A bare revalidate leaves both pending flags clear: load(false,
+   * <no paths>) reuses the compiled files and just re-runs validation and the
+   * catalogue build, both of which re-read the dictionary from disk. */
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pendingFull = false;
   let pendingPaths = new Set<string>();
   const onEvent = (uri: vscode.Uri): void => {
     const path = uri.fsPath;
-    if (path.endsWith(".mit") && path.startsWith(`${root}/data/`)) {
-      pendingPaths.add(path.slice(`${root}/data/`.length));
-    } else {
+    const rel = path.startsWith(`${root}/data/`)
+      ? path.slice(`${root}/data/`.length)
+      : undefined;
+    const kind = rel === undefined ? "full" : reloadKind(rel);
+    if (kind === "recompile") {
+      pendingPaths.add(rel!);
+    } else if (kind === "full") {
       pendingFull = true;
     }
+    // "revalidate": nothing to flag — the debounced load below revalidates.
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
       const full = pendingFull;

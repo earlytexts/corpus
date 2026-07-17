@@ -8,6 +8,8 @@
 import { expect, test } from "vitest";
 import {
   actionsFor,
+  removeEntriesText,
+  removeEntryText,
   upsertEntriesText,
   upsertEntryText,
 } from "../src/lib/dictionaryEdits.ts";
@@ -64,6 +66,31 @@ test("upsertEntriesText rolls back nothing — a malformed value throws", () => 
   expect(() =>
     upsertEntriesText("", [{ surface: "x", value: "=a!b" }]),
   ).toThrow();
+});
+
+test("removes an entry, keeping the rest sorted", () => {
+  const before = '{\n  "and": null,\n  "apple": null\n}\n';
+  expect(removeEntryText(before, "and")).toBe('{\n  "apple": null\n}\n');
+});
+
+test("removing the last entry leaves a canonical empty shard", () => {
+  expect(removeEntryText('{\n  "wombat": null\n}\n', "wombat")).toBe("{}\n");
+});
+
+test("removing an absent surface is a no-op", () => {
+  const before = '{\n  "apple": null\n}\n';
+  expect(removeEntryText(before, "and")).toBe(before);
+});
+
+test("removing from an absent (empty) shard yields a canonical empty shard", () => {
+  expect(removeEntryText("", "wombat")).toBe("{}\n");
+});
+
+test("removes several entries from one shard at once", () => {
+  const before = '{\n  "and": null,\n  "ant": null,\n  "apple": null\n}\n';
+  expect(removeEntriesText(before, ["and", "apple"])).toBe(
+    '{\n  "ant": null\n}\n',
+  );
 });
 
 test("offers the add actions for an unknown surface", () => {

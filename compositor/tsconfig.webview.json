@@ -1,0 +1,13 @@
+{
+  // The dictionary panel's front-end runs in a webview (a browser), not node:
+  // DOM lib, no node types. It imports only lib/dictionaryPanel.ts (vscode- and
+  // corpus-free), so this pass stays small and never pulls in the extension's
+  // node-typed modules. esbuild bundles it (src/webview → dist/webview.js).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": []
+  },
+  "include": ["src/webview"],
+  "exclude": []
+}

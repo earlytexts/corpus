@@ -1,8 +1,6 @@
 {
-  "e": null,
-  "e'en": null,
-  "e'er": null,
-  "ea": null,
+  "e'en": "even",
+  "e'er": "ever",
   "each": null,
   "eager": null,
   "eagerly": null,
@@ -770,6 +768,7 @@
   "events": "=event",
   "eventual": null,
   "eventually": null,
+  "ever": null,
   "everlasting": null,
   "everlastingly": null,
   "evermore": null,

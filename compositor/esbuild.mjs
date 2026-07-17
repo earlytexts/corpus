@@ -3,6 +3,14 @@ import path from "node:path";
 
 const watch = process.argv.includes("--watch");
 
+const alias = {
+  "@earlytexts/corpus": path.resolve(import.meta.dirname, "../src/index.ts"),
+  "@earlytexts/markit": path.resolve(
+    import.meta.dirname,
+    "node_modules/@jsr/earlytexts__markit/src/index.js",
+  ),
+};
+
 const buildOptions = {
   entryPoints: ["src/extension.ts"],
   bundle: true,
@@ -25,20 +33,36 @@ const buildOptions = {
   // one markit instance. (Since markit 4 source positions are plain
   // properties, a second copy would no longer break anything — one instance
   // is now just bundle tidiness.)
-  alias: {
-    "@earlytexts/corpus": path.resolve(import.meta.dirname, "../src/index.ts"),
-    "@earlytexts/markit": path.resolve(
-      import.meta.dirname,
-      "node_modules/@jsr/earlytexts__markit/src/index.js",
-    ),
-  },
+  alias,
+};
+
+// The dictionary panel's front-end: a browser bundle (not node/CommonJS),
+// loaded by the webview via a <script> tag. It imports only the vscode-free
+// view helpers (lib/dictionaryPanel.ts), so the corpus/markit aliases go unused
+// here — kept for symmetry, and in case a future import needs them.
+const webviewOptions = {
+  entryPoints: ["src/webview/main.ts"],
+  bundle: true,
+  outfile: "dist/webview.js",
+  format: "iife",
+  platform: "browser",
+  target: "es2020",
+  sourcemap: true,
+  minify: false,
+  alias,
 };
 
 if (watch) {
-  const ctx = await esbuild.context(buildOptions);
-  await ctx.watch();
+  const contexts = await Promise.all([
+    esbuild.context(buildOptions),
+    esbuild.context(webviewOptions),
+  ]);
+  await Promise.all(contexts.map((ctx) => ctx.watch()));
   console.log("Watching for changes...");
 } else {
-  await esbuild.build(buildOptions);
+  await Promise.all([
+    esbuild.build(buildOptions),
+    esbuild.build(webviewOptions),
+  ]);
   console.log("Build complete.");
 }

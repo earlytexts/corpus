@@ -1,4 +1,6 @@
 {
+  "'tis": "it is",
+  "'twill": "it will",
   "tabernacle": null,
   "tabernacles": "=tabernacle",
   "table": null,
@@ -262,7 +264,6 @@
   "them": "=they",
   "theme": null,
   "themes": "=theme",
-  "themselves": "null",
   "then": null,
   "thence": null,
   "thenceforth": null,
@@ -343,6 +344,7 @@
   "thistles": "=thistle",
   "thither": null,
   "tho": "though",
+  "tho'": "though",
   "thong": null,
   "thorn": null,
   "thorns": "=thorn",
