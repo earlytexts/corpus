@@ -1,6 +1,7 @@
 {
   "rabbinical": null,
   "rabbit": null,
+  "rabbits": "=rabbit",
   "rabble": null,
   "rabbles": "=rabble",
   "rabid": null,
@@ -9,7 +10,6 @@
   "racers": "=racer",
   "races": "=race",
   "rack": null,
-  "rack's": null,
   "racked": "=rack",
   "racket": null,
   "rackets": "=racket",

@@ -1,5 +1,4 @@
 {
-  "f": null,
   "fable": null,
   "fables": "=fable",
   "fabric": null,
@@ -16,7 +15,7 @@
   "facilitates": "=facilitate",
   "facilitating": "=facilitate",
   "facility": null,
-  "facing": null,
+  "facing": "=face",
   "fact": null,
   "faction": null,
   "factions": "=faction",
