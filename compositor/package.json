@@ -14,7 +14,7 @@
   "main": "./dist/extension.cjs",
   "scripts": {
     "build": "node esbuild.mjs",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "fmt": "prettier --write .",
@@ -68,6 +68,12 @@
           "id": "compositor.curation",
           "name": "Dictionary Curation",
           "contextualTitle": "Dictionary Curation"
+        },
+        {
+          "id": "compositor.dictionaryPanel",
+          "name": "Dictionary",
+          "type": "webview",
+          "contextualTitle": "Dictionary"
         }
       ]
     },

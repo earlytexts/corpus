@@ -67,3 +67,31 @@ export const upsertEntriesText = (
   }
   return shardDictionary(dictionary).get(shard) ?? "{}\n";
 };
+
+/**
+ * The new canonical text of a surface's shard after removing its entry —
+ * the inverse of `upsertEntryText`, used by the dictionary panel's remove
+ * actions (delete a lemma, a form, a variant). Removing an absent surface is a
+ * no-op; emptying the last entry leaves a canonical empty shard (`{}\n`).
+ * Whether the removal orphans anything (a form whose lemma is gone) is corpus
+ * validation's business, reported live after the write.
+ */
+export const removeEntryText = (shardText: string, surface: string): string =>
+  removeEntriesText(shardText, [surface]);
+
+/**
+ * The new canonical text of a shard after removing several entries at once —
+ * every `surface` must belong to this one shard. Same contract as
+ * `removeEntryText`.
+ */
+export const removeEntriesText = (
+  shardText: string,
+  surfaces: string[],
+): string => {
+  const shard = shardOf(surfaces[0]);
+  const { dictionary } = parseDictionary(
+    new Map([[shard, shardText.trim() === "" ? "{}" : shardText]]),
+  );
+  for (const surface of surfaces) delete dictionary[surface];
+  return shardDictionary(dictionary).get(shard) ?? "{}\n";
+};

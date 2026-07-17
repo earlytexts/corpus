@@ -37,5 +37,8 @@
       ]
     }
   },
-  "include": ["src", "test"]
+  // src/webview is the panel front-end: browser (DOM), no node — typechecked
+  // separately by tsconfig.webview.json so this pass keeps node's lib/globals.
+  "include": ["src", "test"],
+  "exclude": ["src/webview"]
 }

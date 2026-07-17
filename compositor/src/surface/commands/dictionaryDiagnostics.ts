@@ -44,6 +44,11 @@ import {
   resolveLemmaTarget,
   resolveSpellingTarget,
 } from "../../lib/dictionaryResolve.ts";
+import {
+  readShardText,
+  updateShards,
+  writeShardText,
+} from "../dictionaryShardIO.ts";
 import type { CorpusModel } from "../../corpusModel.ts";
 
 const SOURCE = "compositor-dictionary";
@@ -203,39 +208,30 @@ const confirmUnattestedLemma = async (target: string): Promise<boolean> =>
     "Add as modern word",
   )) === "Add as modern word";
 
-/** Write a cascade's decisions, one write per shard. Every shard's new text is
- * computed first, so a malformed value throws before anything is written. */
-const writeDecisions = async (
-  root: string,
-  decisions: Decisions,
-): Promise<void> => {
-  const byShard = new Map<string, { surface: string; value: EntryValue }[]>();
-  for (const [surface, value] of decisions) {
-    const shard = shardOf(surface);
-    const group = byShard.get(shard) ?? [];
-    group.push({ surface, value });
-    byShard.set(shard, group);
-  }
-  const writes: { uri: vscode.Uri; data: Uint8Array }[] = [];
-  for (const [shard, entries] of byShard) {
-    const uri = vscode.Uri.file(`${root}/data/dictionary/${shard}`);
-    let current = "";
-    try {
-      current = new TextDecoder().decode(
-        await vscode.workspace.fs.readFile(uri),
-      );
-    } catch {
-      // no shard yet — a fresh one is written below
+/** Write a cascade's decisions, one write per shard, as a single unit
+ * serialized against every other dictionary edit (else a concurrent edit's read
+ * can land mid-write and wipe a shard). Every shard's new text is computed
+ * first, so a malformed value throws before anything is written. */
+const writeDecisions = (root: string, decisions: Decisions): Promise<void> =>
+  updateShards(async () => {
+    const byShard = new Map<string, { surface: string; value: EntryValue }[]>();
+    for (const [surface, value] of decisions) {
+      const shard = shardOf(surface);
+      const group = byShard.get(shard) ?? [];
+      group.push({ surface, value });
+      byShard.set(shard, group);
     }
-    writes.push({
-      uri,
-      data: new TextEncoder().encode(upsertEntriesText(current, entries)),
-    });
-  }
-  for (const { uri, data } of writes) {
-    await vscode.workspace.fs.writeFile(uri, data);
-  }
-};
+    const writes: { shard: string; text: string }[] = [];
+    for (const [shard, entries] of byShard) {
+      writes.push({
+        shard,
+        text: upsertEntriesText(await readShardText(root, shard), entries),
+      });
+    }
+    for (const { shard, text } of writes) {
+      await writeShardText(root, shard, text);
+    }
+  });
 
 export type DictionaryController = {
   /** The scanned words of a document, for the code-action provider. */
