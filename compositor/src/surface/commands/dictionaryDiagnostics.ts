@@ -4,10 +4,11 @@
  * contributor can walk them (F8) and curate each with a quick fix.
  *
  * The finding is dictionaryScan.ts's (the corpus's `accountTokens` rule located
- * back in the source); this module is its editor surface. It is off by default
- * and gated behind the `compositor.flagUnaccountedWords` setting, because until
- * the register is backfilled almost every word is unaccounted — the overlay is
- * a curation tool, not an everyday distraction. The setting is flipped from the
+ * back in the source); this module is its editor surface. It is on by default
+ * and gated behind the `compositor.flagUnaccountedWords` setting: while the
+ * register is still being backfilled the overlay is a curation tool, so it can
+ * be turned off when the volume of unaccounted words is more noise than help.
+ * The setting is flipped from the
  * one "Suggest Markup & Flag Unaccounted Words" command (alongside the markup
  * overlay); turning it on lights this up, turning it off takes it back down.
  *
@@ -60,7 +61,7 @@ const isMit = (document: vscode.TextDocument): boolean =>
   document.uri.scheme === "file" && document.uri.fsPath.endsWith(".mit");
 
 const enabled = (): boolean =>
-  vscode.workspace.getConfiguration("compositor").get<boolean>(SETTING, false);
+  vscode.workspace.getConfiguration("compositor").get<boolean>(SETTING, true);
 
 const wordRange = (word: UnaccountedWord): vscode.Range =>
   new vscode.Range(word.line, word.startColumn, word.line, word.endColumn);

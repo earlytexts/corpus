@@ -53,7 +53,7 @@ const isMit = (document: vscode.TextDocument): boolean =>
   document.uri.scheme === "file" && document.uri.fsPath.endsWith(".mit");
 
 const enabled = (): boolean =>
-  vscode.workspace.getConfiguration("compositor").get<boolean>(SETTING, false);
+  vscode.workspace.getConfiguration("compositor").get<boolean>(SETTING, true);
 
 const suggestionRange = (suggestion: MarkupSuggestion): vscode.Range =>
   new vscode.Range(

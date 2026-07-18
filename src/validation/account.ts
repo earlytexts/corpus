@@ -1,8 +1,9 @@
 /**
  * The accounting rule: given a document and the register (any dictionary shape —
  * only membership is read), classify every token of every text as accounted for
- * by at least one of a dictionary entry, exempting markup, or a mechanical
- * class — or `"unaccounted"`, the only violation. Tokens come from Markit's
+ * by at least one of a dictionary entry, the possessive rule (a registered base
+ * plus `'s`), exempting markup, or a mechanical class — or `"unaccounted"`, the
+ * only violation. Tokens come from Markit's
  * tokenizer, both versions united (`blockTokens` — a deleted word is still a
  * printed word). This one pure function is both the corpus coverage validation
  * and the Compositor's live squiggle engine.
@@ -15,19 +16,23 @@ import {
   exemptionOf,
   fold,
   isRomanNumeral,
+  possessiveBase,
 } from "../dictionary/words.ts";
 
 /**
- * How a token is accounted for — "at least one of" a dictionary entry,
- * exempting markup, or a mechanical class; "unaccounted" is the only
- * violation. A token both mechanical and registered reports its dictionary
- * status (`I` with an entry for "i" is that entry, not a numeral). A
+ * How a token is accounted for — "at least one of" a dictionary entry, the
+ * possessive rule, exempting markup, or a mechanical class; "unaccounted" is
+ * the only violation. A token both mechanical and registered reports its
+ * dictionary status (`I` with an entry for "i" is that entry, not a numeral). A
  * `~`-fused multi-word unit is one token whose folded surface is its
  * dictionary key ("a priori"); a `[w:]`-marked token is accounted like any
- * other, by its own entry (which the word-markup validation requires).
+ * other, by its own entry (which the word-markup validation requires). A
+ * possessive whose base is registered but which has no entry of its own is
+ * `"possessive"`, not `"registered"` — the base carries it, not an entry.
  */
 export type TokenStatus =
   | "registered" // has a dictionary entry for its folded surface
+  | "possessive" // no entry, but its base has one (`bishop's` → `bishop`)
   | "exempt" // inside person / place / org / citation / language markup
   | "mechanical" // contains digits, or reads as a roman numeral
   | "unaccounted";
@@ -81,6 +86,8 @@ const statusOf = (
 ): TokenStatus => {
   if (exemptionOf(token) !== undefined) return "exempt";
   if (folded in register) return "registered";
+  const base = possessiveBase(folded);
+  if (base !== undefined && base in register) return "possessive";
   if (/\p{N}/u.test(token.text) || isRomanNumeral(token.text)) {
     return "mechanical";
   }
@@ -89,8 +96,8 @@ const statusOf = (
 
 export type Coverage = {
   total: number;
-  /** Accounted for by any route: a dictionary entry, exempting markup, or a
-   * mechanical class. */
+  /** Accounted for by any route: a dictionary entry, the possessive rule,
+   * exempting markup, or a mechanical class. */
   accounted: number;
   unaccounted: number;
 };

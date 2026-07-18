@@ -40,10 +40,6 @@ import {
 import { configureDiagnostics } from "./surface/commands/configureDiagnostics.ts";
 import { runSetup } from "./git/setup.ts";
 import {
-  createCurationView,
-  type CurationView,
-} from "./surface/curationView.ts";
-import {
   createDictionaryPanel,
   type DictionaryPanel,
 } from "./surface/dictionaryPanel.ts";
@@ -86,8 +82,6 @@ export const activate = async (
     context,
   );
   context.subscriptions.push({ dispose: () => dictionary.dispose() });
-
-  const curation: CurationView = createCurationView(() => model, context);
 
   const dictionaryPanel: DictionaryPanel = createDictionaryPanel(
     () => model,
@@ -165,7 +159,6 @@ export const activate = async (
       model.onDidChange(updateView),
       model.onDidChange(() => suggestions.onCorpusChanged()),
       model.onDidChange(() => dictionary.onCorpusChanged()),
-      model.onDidChange(() => curation.onCorpusChanged()),
       model.onDidChange(() => dictionaryPanel.onCorpusChanged()),
     );
     registerDiagnostics(model, context);

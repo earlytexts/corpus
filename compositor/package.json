@@ -2,7 +2,7 @@
   "name": "compositor",
   "publisher": "earlytexts",
   "displayName": "Early Text Compositor",
-  "version": "0.12.1",
+  "version": "0.12.2",
   "description": "A VSCode extension for contributing to the Early Text Corpus",
   "license": "MIT",
   "repository": {
@@ -63,11 +63,6 @@
           "id": "compositor.corpusBrowser",
           "name": "Corpus",
           "contextualTitle": "Early Text Corpus"
-        },
-        {
-          "id": "compositor.curation",
-          "name": "Dictionary Curation",
-          "contextualTitle": "Dictionary Curation"
         },
         {
           "id": "compositor.dictionaryPanel",
@@ -146,21 +141,6 @@
         "icon": "$(diff)"
       },
       {
-        "command": "compositor.curateModern",
-        "title": "Add to Dictionary (Modern Word)",
-        "category": "Compositor"
-      },
-      {
-        "command": "compositor.curateRespell",
-        "title": "Add to Dictionary as a Respelling…",
-        "category": "Compositor"
-      },
-      {
-        "command": "compositor.curateLemma",
-        "title": "Add to Dictionary with a Lemma…",
-        "category": "Compositor"
-      },
-      {
         "command": "compositor.compareWithNext",
         "title": "Compare with Next Edition",
         "category": "Compositor",
@@ -235,21 +215,6 @@
           "command": "compositor.copyDocId",
           "when": "view == compositor.corpusBrowser && viewItem =~ /work|edition|borrowed/",
           "group": "compositor@5"
-        },
-        {
-          "command": "compositor.curateModern",
-          "when": "view == compositor.curation && viewItem == curationUnaccounted",
-          "group": "compositor@1"
-        },
-        {
-          "command": "compositor.curateRespell",
-          "when": "view == compositor.curation && viewItem == curationUnaccounted",
-          "group": "compositor@2"
-        },
-        {
-          "command": "compositor.curateLemma",
-          "when": "view == compositor.curation && viewItem == curationUnaccounted",
-          "group": "compositor@3"
         }
       ],
       "editor/context": [
@@ -293,18 +258,6 @@
         {
           "command": "compositor.compareWithNext",
           "when": "false"
-        },
-        {
-          "command": "compositor.curateModern",
-          "when": "false"
-        },
-        {
-          "command": "compositor.curateRespell",
-          "when": "false"
-        },
-        {
-          "command": "compositor.curateLemma",
-          "when": "false"
         }
       ]
     },
@@ -318,13 +271,13 @@
         },
         "compositor.flagUnaccountedWords": {
           "type": "boolean",
-          "default": false,
-          "description": "Squiggle words the dictionary does not yet account for (unknown surfaces, as warnings) in open editions. Off by default: until the register is backfilled, most words are unaccounted, so this is a curation aid rather than an everyday diagnostic."
+          "default": true,
+          "description": "Squiggle words the dictionary does not yet account for (unknown surfaces, as warnings) in open editions. On by default: a curation aid for backfilling the register; turn it off if the volume of unaccounted words is more noise than help."
         },
         "compositor.suggestMarkup": {
           "type": "boolean",
-          "default": false,
-          "description": "Squiggle likely people, places, organisations, citations, and foreign text (as hints) in open editions, each with a quick fix to wrap it in the corresponding markup. Off by default: it is an enrichment aid, mined from the markup the corpus already carries."
+          "default": true,
+          "description": "Squiggle likely people, places, organisations, citations, and foreign text (as hints) in open editions, each with a quick fix to wrap it in the corresponding markup. On by default: an enrichment aid, mined from the markup the corpus already carries."
         }
       }
     }

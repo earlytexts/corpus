@@ -24,6 +24,7 @@ import {
   shardOf,
 } from "@earlytexts/corpus";
 import { dictionaryViews } from "../lib/dictionaryViews.ts";
+import { curationRows } from "../lib/curation.ts";
 import { removeEntryText, upsertEntryText } from "../lib/dictionaryEdits.ts";
 import {
   type EntryEdit,
@@ -36,14 +37,27 @@ import type { CorpusModel } from "../corpusModel.ts";
 
 const VIEW_ID = "compositor.dictionaryPanel";
 
-/** What the webview posts back. `ready` requests the initial data; the rest are
- * the four single-surface edits (three adds and a remove). */
+/** The curation command the editor quick-fixes register (its full resolution
+ * cascade): the Curation tab drives the very same one the old tree view did. */
+const ENTRY_COMMAND = "compositor.dictionaryEntry";
+
+/** How many unaccounted surfaces the Curation tab carries — the most frequent,
+ * the ones worth curating first (paged client-side). Until the register is
+ * backfilled the backlog is most of the vocabulary, so it is capped to keep the
+ * posted payload small; the true total travels alongside for the tab's note. */
+const MAX_CURATION = 2000;
+
+/** What the webview posts back. `ready` requests the initial data; then the four
+ * single-surface edits (three adds and a remove); then the Curation tab's two —
+ * `curate` (delegates to the quick-fix cascade) and `openExample`. */
 type Incoming =
   | { type: "ready" }
   | { type: "addLemma"; lemma: string }
   | { type: "addForm"; lemma: string; form: string }
   | { type: "addVariant"; surface: string; spelling: string }
-  | { type: "removeEntry"; surface: string };
+  | { type: "removeEntry"; surface: string }
+  | { type: "curate"; surface: string; kind: "modern" | "respell" | "lemma" }
+  | { type: "openExample"; path: string; line: number };
 
 export type DictionaryPanel = {
   /** The corpus reloaded (or a shard was written elsewhere): re-derive. */
@@ -56,19 +70,52 @@ export const createDictionaryPanel = (
 ): DictionaryPanel => {
   let view: vscode.WebviewView | undefined;
 
-  /** Read the shards, derive both views, and post them to the webview. */
+  /** The Curation tab's rows, cached per catalogue. Deriving them walks the
+   * whole corpus (the accounting rule over every edition), so it must not re-run
+   * on every visibility flip or edit — only when the catalogue itself changes.
+   * The lemma/variant views come from disk instead, so they stay live between
+   * catalogue rebuilds; curation lags one rebuild behind, as the old tree did. */
+  let curationCache:
+    { catalogue: unknown; rows: ReturnType<typeof curationRows> } | undefined;
+  const curation = (): ReturnType<typeof curationRows> => {
+    const catalogue = getModel()?.state?.catalogue;
+    if (catalogue === undefined) return { rows: [], total: 0 };
+    if (curationCache?.catalogue !== catalogue) {
+      curationCache = {
+        catalogue,
+        rows: curationRows(catalogue, MAX_CURATION),
+      };
+    }
+    return curationCache.rows;
+  };
+
+  /** Read the shards, derive the two views, tally the curation backlog, and post
+   * all three to the webview. */
   const refresh = async (): Promise<void> => {
     if (view === undefined || !view.visible) return;
     const root = getModel()?.root;
     if (root === undefined) {
-      void view.webview.postMessage({ type: "data", variants: [], lemmas: [] });
+      void view.webview.postMessage({
+        type: "data",
+        variants: [],
+        lemmas: [],
+        curation: [],
+        curationTotal: 0,
+      });
       return;
     }
     const { dictionary } = parseDictionary(
       await readDictionaryShards(nodeCorpusFs, root),
     );
     const { variants, lemmas } = dictionaryViews(dictionary);
-    void view.webview.postMessage({ type: "data", variants, lemmas });
+    const { rows, total } = curation();
+    void view.webview.postMessage({
+      type: "data",
+      variants,
+      lemmas,
+      curation: rows,
+      curationTotal: total,
+    });
   };
 
   /** Run one edit against the corpus root, then re-derive; surface any error
@@ -109,6 +156,26 @@ export const createDictionaryPanel = (
         return;
       case "removeEntry":
         void edit((root) => removeEntry(root, message.surface));
+        return;
+      case "curate":
+        // The Curation tab reuses the editor quick-fix's full resolution
+        // cascade (prompts for a respelling/lemma target, resolves it all the
+        // way down): the command writes the shard, the model reloads, and
+        // onCorpusChanged re-derives — so the curated surface drops off the tab.
+        void vscode.commands.executeCommand(
+          ENTRY_COMMAND,
+          message.surface,
+          message.kind,
+        );
+        return;
+      case "openExample":
+        void vscode.commands.executeCommand(
+          "vscode.open",
+          vscode.Uri.file(message.path),
+          {
+            selection: new vscode.Range(message.line, 0, message.line, 0),
+          },
+        );
         return;
     }
   };
@@ -254,7 +321,21 @@ input {
 }
 .head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
 .surface { font-weight: 600; }
+button.link {
+  font-weight: 600;
+  color: var(--vscode-textLink-foreground);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+button.link:hover { background: transparent; text-decoration: underline; }
 .arrow { opacity: 0.6; }
+.count-tag {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+.curate { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .tag {
   font-size: 0.8em;
   opacity: 0.65;

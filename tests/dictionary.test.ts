@@ -18,6 +18,7 @@ import {
   fold,
   isRomanNumeral,
   isWord,
+  possessiveBase,
 } from "../src/dictionary/words.ts";
 import type {
   Dictionary,
@@ -102,6 +103,17 @@ test("words: strict roman numerals", () => {
   expect(isRomanNumeral("civil")).toBe(false);
   expect(isRomanNumeral("")).toBe(false);
   expect(isRomanNumeral("1739")).toBe(false);
+});
+
+test("words: the possessive base strips a trailing clitic", () => {
+  expect(possessiveBase("bishop's")).toBe("bishop");
+  expect(possessiveBase("bishop’s")).toBe("bishop"); // curly apostrophe too
+  expect(possessiveBase("it's")).toBe("it");
+  // Not a possessive: no `'s`, a bare plural, or nothing left once stripped.
+  expect(possessiveBase("bishop")).toBeUndefined();
+  expect(possessiveBase("bishops")).toBeUndefined();
+  expect(possessiveBase("lookin'")).toBeUndefined();
+  expect(possessiveBase("'s")).toBeUndefined();
 });
 
 /** The first block of a compiled one-block document. */
@@ -698,6 +710,28 @@ test("dictionary: accountTokens covers a document's sections too", () => {
   expect(errors).toEqual([]);
   expect(accountTokens(doc, register).map((a) => `${a.textId}:${a.status}`))
     .toEqual(["t:registered", "t.s:unaccounted"]);
+});
+
+test("dictionary: a possessive is accounted when its base is registered", () => {
+  const { document: doc, errors } = compile(
+    "# t\n\n{#1}\nvertue's reward and zzz's folly.\n",
+  );
+  expect(errors).toEqual([]);
+  // "vertue" is registered, so "vertue's" accounts by the possessive rule
+  // without an entry of its own; "zzz" is not, so "zzz's" is unaccounted.
+  expect(accountTokens(doc, register).map((a) => `${a.text}:${a.status}`))
+    .toEqual([
+      "vertue's:possessive",
+      "reward:unaccounted",
+      "and:unaccounted",
+      "zzz's:unaccounted",
+      "folly:unaccounted",
+    ]);
+  expect(coverageOf(accountTokens(doc, register))).toEqual({
+    total: 5,
+    accounted: 1, // the possessive counts as accounted
+    unaccounted: 4,
+  });
 });
 
 /* --------------------------- validation rules -------------------------- */

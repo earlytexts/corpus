@@ -88,6 +88,21 @@ export const fold = (text: string): string =>
     .map((word) => (word === "I" ? "I" : word.toLowerCase()))
     .join(" ");
 
+/** The base of a possessive: the folded surface with a trailing possessive
+ * clitic (`'s` / `’s`) stripped, or `undefined` when it has none (or stripping
+ * would leave nothing). The possessive rule both consumers share: a regular
+ * possessive needs no entry of its own — `xxx's` is accounted for, and reads
+ * with `xxx`'s lemma, whenever `xxx` is registered. It is only a *fallback*, so
+ * an explicit `xxx's` entry still wins — which is how a contraction (`it's` is
+ * *it is*, not the possessive of `it`) or a possessive with its own lemma keeps
+ * its authored reading. Operates on folded surfaces (both apostrophe glyphs). */
+export const possessiveBase = (surface: string): string | undefined => {
+  const match = /['’]s$/u.exec(surface);
+  return match !== null && match.index > 0
+    ? surface.slice(0, match.index)
+    : undefined;
+};
+
 /** Whether a string is exactly one word: letters and apostrophes (no digits),
  * with the two things a token may carry beyond that — a period before a letter
  * (`i.e`) and internal spaces (a fixed multi-word unit, `~`-fused in the texts
