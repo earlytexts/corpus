@@ -1,6 +1,6 @@
 {
   "name": "@earlytexts/corpus",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "license": "MIT",
   "description": "The wire contract for the Early Text Centre's compiled corpus catalogue: read-side types, (de)serialisation, word semantics, and dictionary resolution, plus an in-memory corpus builder for tests.",
   "exports": {

@@ -29,8 +29,18 @@ type LemmaRow = {
   forms: string[];
   letter: string;
 };
-type Data = { variants: VariantRow[]; lemmas: LemmaRow[] };
-type Tab = "lemmas" | "variants";
+type CurationRow = {
+  surface: string;
+  count: number;
+  letter: string;
+  example?: { path: string; line: number };
+};
+type Data = {
+  variants: VariantRow[];
+  lemmas: LemmaRow[];
+  curation: CurationRow[];
+};
+type Tab = "lemmas" | "variants" | "curation";
 type State = { tab: Tab; letter: string; pageIndex: number };
 
 type VsCodeApi = {
@@ -45,7 +55,10 @@ const vscode = acquireVsCodeApi();
 const PAGE_SIZE = 50;
 const LETTERS = ["all", ..."abcdefghijklmnopqrstuvwxyz", "other"];
 
-let data: Data = { variants: [], lemmas: [] };
+let data: Data = { variants: [], lemmas: [], curation: [] };
+/** The untruncated size of the curation backlog (the panel posts only the most
+ * frequent `data.curation`); the Curation tab's note reports it. */
+let curationTotal = 0;
 let { tab, letter, pageIndex } = vscode.getState() ?? {
   tab: "lemmas" as Tab,
   letter: "all",
@@ -74,7 +87,8 @@ const render = (): void => {
   renderLetters();
   renderAdd();
   if (tab === "lemmas") renderView(data.lemmas, lemmaRow);
-  else renderView(data.variants, variantRow);
+  else if (tab === "variants") renderView(data.variants, variantRow);
+  else renderView(data.curation, curationRow);
 };
 
 /** Filter the active view to the chosen letter, page it, and render the page's
@@ -98,6 +112,7 @@ const renderTabs = (): void => {
   tabsEl.replaceChildren(
     tabButton("lemmas", "Lemmas"),
     tabButton("variants", "Variants"),
+    tabButton("curation", "Curation"),
   );
 };
 
@@ -133,7 +148,7 @@ const renderAdd = (): void => {
       sendAdd(input, () => post({ type: "addLemma", lemma: input.value }));
     addEl.replaceChildren(input, button("Add lemma", "", submit));
     onEnter(input, submit);
-  } else {
+  } else if (tab === "variants") {
     const surface = textInput("Archaic spelling");
     const spelling = textInput("Modern spelling(s)");
     const submit = () =>
@@ -147,6 +162,20 @@ const renderAdd = (): void => {
     addEl.replaceChildren(surface, spelling, button("Add variant", "", submit));
     onEnter(surface, submit);
     onEnter(spelling, submit);
+  } else {
+    // Curation has no add field — its rows carry the actions. Instead the header
+    // reports the backlog, noting when only the most-frequent slice is shown.
+    const shown = data.curation.length;
+    addEl.replaceChildren(
+      div(
+        "count",
+        curationTotal > shown
+          ? `The ${shown} most frequent of ${curationTotal} unaccounted surfaces — biggest wins first.`
+          : `${curationTotal} unaccounted ${
+              curationTotal === 1 ? "surface" : "surfaces"
+            } to curate.`,
+      ),
+    );
   }
 };
 
@@ -206,6 +235,34 @@ const lemmaRow = (row: LemmaRow): HTMLElement => {
   const formadd = div("formadd");
   formadd.append(input, button("Add form", "ghost", submit));
   return block("row", [head, forms, formadd]);
+};
+
+/** A backlog surface: its folded form (a link that opens one attested
+ * occurrence in context, when one is known), its corpus-wide count, and the
+ * three ways to account for it — each delegating to the editor quick-fix's full
+ * resolution cascade (Modern outright; Respell…/Lemma… prompt for a target). */
+const curationRow = (row: CurationRow): HTMLElement => {
+  const head = div("head");
+  const example = row.example;
+  head.append(
+    example === undefined
+      ? span("surface", row.surface)
+      : button(row.surface, "link", () =>
+          post({ type: "openExample", path: example.path, line: example.line }),
+        ),
+    span("count-tag", `×${row.count}`),
+  );
+  const curate = (kind: "modern" | "respell" | "lemma", label: string) =>
+    button(label, "ghost", () =>
+      post({ type: "curate", surface: row.surface, kind }),
+    );
+  const actions = div("curate");
+  actions.append(
+    curate("modern", "Modern"),
+    curate("respell", "Respell…"),
+    curate("lemma", "Lemma…"),
+  );
+  return block("row", [head, actions]);
 };
 
 const variantRow = (row: VariantRow): HTMLElement => {
@@ -296,9 +353,16 @@ const block = (
 document.body.append(tabsEl, lettersEl, addEl, rowsEl, pagerEl);
 
 window.addEventListener("message", (event: MessageEvent) => {
-  const message = event.data as { type: string } & Partial<Data>;
+  const message = event.data as { type: string } & Partial<Data> & {
+      curationTotal?: number;
+    };
   if (message.type === "data") {
-    data = { variants: message.variants ?? [], lemmas: message.lemmas ?? [] };
+    data = {
+      variants: message.variants ?? [],
+      lemmas: message.lemmas ?? [],
+      curation: message.curation ?? [],
+    };
+    curationTotal = message.curationTotal ?? data.curation.length;
     render();
   }
 });

@@ -8,7 +8,7 @@
 import { expect, test } from "vitest";
 import { buildCatalogue } from "@earlytexts/corpus";
 import { CORPUS_ROOT, corpus, memoryCorpus } from "@earlytexts/corpus/test";
-import { curationList } from "../src/lib/curation.ts";
+import { curationList, curationRows } from "../src/lib/curation.ts";
 
 const fixture = () =>
   corpus()
@@ -33,13 +33,10 @@ const fixture = () =>
     .file("data/dictionary/t.json", '{\n  "the": null\n}\n')
     .build();
 
-const list = async () => {
-  const { catalogue } = await buildCatalogue(
-    memoryCorpus(fixture()),
-    CORPUS_ROOT,
-  );
-  return curationList(catalogue);
-};
+const built = async () =>
+  (await buildCatalogue(memoryCorpus(fixture()), CORPUS_ROOT)).catalogue;
+
+const list = async () => curationList(await built());
 
 test("ranks unknown surfaces by frequency, then alphabetically", async () => {
   const entries = await list();
@@ -62,4 +59,19 @@ test("attaches an attested occurrence to open in context", async () => {
 test("accounted words never appear", async () => {
   const entries = await list();
   expect(entries.some((e) => e.surface === "the")).toBe(false);
+});
+
+test("curationRows tags each surface with its shard letter", async () => {
+  const { rows } = curationRows(await built(), 10);
+  expect(rows.map((r) => [r.surface, r.letter])).toEqual([
+    ["wombat", "w"],
+    ["and", "a"],
+    ["sleep", "s"],
+  ]);
+});
+
+test("curationRows caps to the most frequent and reports the true total", async () => {
+  const { rows, total } = curationRows(await built(), 1);
+  expect(total).toBe(3); // wombat, and, sleep
+  expect(rows.map((r) => r.surface)).toEqual(["wombat"]); // the single biggest win
 });

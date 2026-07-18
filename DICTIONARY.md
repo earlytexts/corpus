@@ -86,7 +86,7 @@ What collapses onto a shared lemma:
 - **Verb forms onto the plain form**:
   - _increases_, _increased_, _increasing_ → **increase**
   - _makes_, _made_, _making_ → **make**
-  - _am_, _is_, _was_, _were_, _been_, _being_ → **be**
+  - _am_, _is_, are_, _was_, _were_, _been_, _being_ → **be**
 - **Modals onto the plain form**:
   - _can_, _could_ → **can**
   - _will_, _would_ → **will**
@@ -101,10 +101,26 @@ What collapses onto a shared lemma:
   - _us_, _our_ → **we**
   - _them_, _their_ → **they**
 - **Possessives (genitives) onto the base noun**:
-  - _king's_, _kings'_ → **king**
-  - _man's_, _men's_ → **man**
+  - _king's_ → **king**
+  - _man's_ → **man**
 
-  (The apostrophe is part of the token, so `king's` is a surface in its own right; it lemmatises to `king`. The bare possessive `its` is a special case — see [Ambiguity](#ambiguity).)
+  The apostrophe is part of the token, so `king's` is a surface in its own
+  right. But a regular singular possessive needs **no entry of its own**: the
+  _possessive rule_ says that whenever `xxx` is registered, `xxx's` is accounted
+  for and reads with `xxx`'s lemma (`bishop's` → **bishop**). The rule is only a
+  fallback — an explicit `xxx's` entry always wins — so the cases that must
+  differ still can:
+
+  - **Contractions**, where `'s` is _is_/_has_, not a genitive: `it's`, `he's`,
+    `that's`, `there's` keep explicit entries (and readings) and are never
+    lemmatised to the base pronoun. (The bare possessive `its` is a further
+    special case — see [Ambiguity](#ambiguity).)
+  - A possessive whose base is **not** registered, or which should carry a
+    **different** lemma, is written out explicitly.
+
+  What the rule does _not_ cover, so these still need explicit entries when they
+  occur: the bare-apostrophe plural possessive (`kings'`, `ladies'`) and
+  irregular possessives whose base is a distinct surface (`men's` → **man**).
 
 What stays apart, with its own lemma:
 

@@ -16,6 +16,7 @@
 
 import type { MarkitDocument } from "@jsr/earlytexts__markit";
 import { accountTokens, type Catalogue } from "@earlytexts/corpus";
+import { letterOf } from "./dictionaryViews.ts";
 
 export type CurationEntry = {
   /** The folded surface — the dictionary key it is (or would be) filed under. */
@@ -24,6 +25,27 @@ export type CurationEntry = {
   count: number;
   /** One attested occurrence, to open in context: source path and 0-based line. */
   example?: { path: string; line: number };
+};
+
+/** A curation entry as the dictionary panel's third tab consumes it: the same
+ * ranked surface, plus the shard letter it buckets under so the panel's shared
+ * A–Z filter narrows it like the other two tabs. */
+export type CurationRow = CurationEntry & { letter: string };
+
+/** The curation worklist shaped for the panel: the `max` most frequent surfaces
+ * as `CurationRow`s (with their letter), and the untruncated `total` so the
+ * panel can say how many of the backlog it is showing. */
+export const curationRows = (
+  catalogue: Catalogue,
+  max: number,
+): { rows: CurationRow[]; total: number } => {
+  const all = curationList(catalogue);
+  return {
+    total: all.length,
+    rows: all
+      .slice(0, max)
+      .map((entry) => ({ ...entry, letter: letterOf(entry.surface) })),
+  };
 };
 
 export const curationList = (catalogue: Catalogue): CurationEntry[] => {
