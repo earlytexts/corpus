@@ -31,7 +31,10 @@ test("REPRO: possessive whose base is registered", () => {
 
   // What the compositor's scan flags:
   const found = scanUnaccounted(source, document, d);
-  console.log("scanUnaccounted:", found.map((w) => `${w.display}=>${w.surface}`));
+  console.log(
+    "scanUnaccounted:",
+    found.map((w) => `${w.display}=>${w.surface}`),
+  );
 });
 
 test("REPRO: possessive base registered, straight vs curly apostrophe", () => {
