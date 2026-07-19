@@ -70,27 +70,12 @@ export const createDictionaryPanel = (
 ): DictionaryPanel => {
   let view: vscode.WebviewView | undefined;
 
-  /** The Curation tab's rows, cached per catalogue. Deriving them walks the
-   * whole corpus (the accounting rule over every edition), so it must not re-run
-   * on every visibility flip or edit — only when the catalogue itself changes.
-   * The lemma/variant views come from disk instead, so they stay live between
-   * catalogue rebuilds; curation lags one rebuild behind, as the old tree did. */
-  let curationCache:
-    { catalogue: unknown; rows: ReturnType<typeof curationRows> } | undefined;
-  const curation = (): ReturnType<typeof curationRows> => {
-    const catalogue = getModel()?.state?.catalogue;
-    if (catalogue === undefined) return { rows: [], total: 0 };
-    if (curationCache?.catalogue !== catalogue) {
-      curationCache = {
-        catalogue,
-        rows: curationRows(catalogue, MAX_CURATION),
-      };
-    }
-    return curationCache.rows;
-  };
-
   /** Read the shards, derive the two views, tally the curation backlog, and post
-   * all three to the webview. */
+   * all three to the webview. Curation applies the freshly-read register to the
+   * model's token index (a membership test over the distinct surfaces — cheap
+   * enough to re-run on every refresh), so a shard write re-ranks the backlog
+   * immediately; only the counts themselves wait for the first full load (the
+   * index is empty until then). */
   const refresh = async (): Promise<void> => {
     if (view === undefined || !view.visible) return;
     const root = getModel()?.root;
@@ -108,7 +93,11 @@ export const createDictionaryPanel = (
       await readDictionaryShards(nodeCorpusFs, root),
     );
     const { variants, lemmas } = dictionaryViews(dictionary);
-    const { rows, total } = curation();
+    const { rows, total } = curationRows(
+      getModel()?.state?.tokenIndex ?? new Map(),
+      dictionary,
+      MAX_CURATION,
+    );
     void view.webview.postMessage({
       type: "data",
       variants,

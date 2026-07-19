@@ -1,10 +1,13 @@
 /**
  * The in-memory corpus shared by the tree view, the diagnostics, and the
  * commands: one compile pass feeds both the validation rules and the catalogue
- * build (which reuses the compiled documents instead of compiling again). A
- * filesystem watcher keeps it fresh — saving a .mit file recompiles just that
- * file, then re-runs validation and recomposes the catalogue, so a reload
- * costs a couple of seconds rather than the ~20s of a cold start.
+ * build (which reuses the compiled documents instead of compiling again), and
+ * computes each file's register-independent derivations (formatting verdict,
+ * marked tokens, surface tallies) so no later reload re-tokenizes or
+ * re-formats an unchanged file. A filesystem watcher keeps it fresh — saving a
+ * .mit file recompiles just that file, and saving a dictionary shard reuses
+ * every compiled file and the token index outright, so either reload costs
+ * well under a second rather than the ~10s of a cold start.
  *
  * The cold start itself is masked by the corpus's compiled `catalogue/`: if it is
  * present the tree shows from it immediately (no violations yet — serialised
@@ -20,6 +23,7 @@ import {
   type Catalogue,
   catalogueReader,
   type CorpusFile,
+  deriveFile,
   loadCatalogue,
   loadCorpus,
   nodeCorpusFs,
@@ -28,7 +32,9 @@ import {
   type Violation,
   type Work,
   writeCatalogue,
+  writeCatalogueDictionary,
 } from "@earlytexts/corpus";
+import { buildTokenIndex, type TokenIndex } from "./lib/curation.ts";
 import { reloadKind } from "./lib/reloadKind.ts";
 
 export type CorpusState = {
@@ -36,6 +42,11 @@ export type CorpusState = {
   /** Catalogue-build warnings (unresolved children, missing authors, …). */
   warnings: string[];
   violations: Violation[];
+  /** The corpus-wide candidate tally per folded surface (see lib/curation.ts)
+   * — merged from the files' per-compile summaries, reused untouched across
+   * dictionary-only reloads, and empty until the first full load (the
+   * catalogue cache carries no token data). */
+  tokenIndex: TokenIndex;
 };
 
 export type CorpusModel = {
@@ -67,10 +78,17 @@ export const createCorpusModel = (root: string): CorpusModel => {
    * so a burst of edits can never pin more than the one in flight plus the
    * latest — the write-back (a ~60MB `catalogue/` rewrite) used to stack a full
    * catalogue per edit here, which is what ran the extension host out of memory.
+   * `full` records whether any superseded generation had changed documents: a
+   * dictionary-only load may replace a pending full write, but must not demote
+   * it — the documents it superseded still need writing.
    */
   let pendingCatalogue:
-    { catalogue: Catalogue; warnings: string[] } | undefined;
+    { catalogue: Catalogue; warnings: string[]; full: boolean } | undefined;
   let draining = false;
+  /** Whether a full write has landed this session. Until one has, `catalogue/`
+   * may be a previous session's (or missing), so a dictionary-only write —
+   * which leaves `documents/` untouched — is promoted to a full one. */
+  let fullWritten = false;
 
   /**
    * Seed the tree from the compiled `catalogue/` (written by the corpus build or by
@@ -103,7 +121,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
         }
       }
       if (state === undefined) {
-        state = { catalogue, warnings, violations: [] };
+        state = { catalogue, warnings, violations: [], tokenIndex: new Map() };
         emitter.fire();
       }
     } catch {
@@ -113,7 +131,11 @@ export const createCorpusModel = (root: string): CorpusModel => {
 
   /** Write the pending catalogue back to `catalogue/`, then any that superseded
    * it while the write ran — one writer, latest-wins, so overlapping loads can't
-   * stack catalogues in memory. A failed write only costs the cache. */
+   * stack catalogues in memory. A dictionary-only generation refreshes just
+   * `catalogue.json` and `dictionary.json` (the documents on disk are already
+   * current) — the difference between a ~60MB rewrite and a sub-second one. A
+   * failed write only costs the cache (and, for a full one, leaves the next
+   * dictionary-only write promoted until a full write lands). */
   const drainCatalogueWrites = async (): Promise<void> => {
     if (draining) return;
     draining = true;
@@ -122,12 +144,22 @@ export const createCorpusModel = (root: string): CorpusModel => {
         const next = pendingCatalogue;
         pendingCatalogue = undefined;
         try {
-          await writeCatalogue(
-            nodeCorpusFs,
-            root,
-            next.catalogue,
-            next.warnings,
-          );
+          if (next.full || !fullWritten) {
+            await writeCatalogue(
+              nodeCorpusFs,
+              root,
+              next.catalogue,
+              next.warnings,
+            );
+            fullWritten = true;
+          } else {
+            await writeCatalogueDictionary(
+              nodeCorpusFs,
+              root,
+              next.catalogue,
+              next.warnings,
+            );
+          }
         } catch {
           // the next load will refresh the cache
         }
@@ -145,7 +177,13 @@ export const createCorpusModel = (root: string): CorpusModel => {
       return;
     }
     const { document: doc, errors } = compileWithPositions(text);
-    files.set(path, { path, text, doc, errors });
+    files.set(path, {
+      path,
+      text,
+      doc,
+      errors,
+      derived: deriveFile(text, doc),
+    });
   };
 
   const load = async (full: boolean, paths?: Set<string>): Promise<void> => {
@@ -158,6 +196,11 @@ export const createCorpusModel = (root: string): CorpusModel => {
     }
     loading = true;
     emitter.fire();
+    // Whether any *documents* change in this load. A dictionary-only reload
+    // (full=false, no paths) reuses the compiled files, the token index, and —
+    // via the write-back — the serialised documents on disk.
+    const docsChanged =
+      full || files.size === 0 || (paths !== undefined && paths.size > 0);
     try {
       if (full || files.size === 0) {
         files.clear();
@@ -185,12 +228,24 @@ export const createCorpusModel = (root: string): CorpusModel => {
         root,
         precompiled,
       );
-      state = { catalogue, warnings, violations };
+      // The token index survives dictionary-only reloads untouched — it is
+      // register-independent, and rebuilding it is the merge of every file's
+      // summary. (Until the first full load completes, docsChanged is always
+      // true, so a cache-seeded state's empty index is never carried forward.)
+      const tokenIndex =
+        docsChanged || state === undefined
+          ? buildTokenIndex(files.values(), root)
+          : state.tokenIndex;
+      state = { catalogue, warnings, violations, tokenIndex };
       // Refresh the compiled catalogue/ in the background (next startup's instant
       // tree, and the computer's dev input). The latest catalogue supersedes any
       // still-unwritten one (drainCatalogueWrites), so rapid edits can't pin more
       // than one extra generation; a failure only costs the cache.
-      pendingCatalogue = { catalogue, warnings };
+      pendingCatalogue = {
+        catalogue,
+        warnings,
+        full: docsChanged || (pendingCatalogue?.full ?? false),
+      };
       void drainCatalogueWrites();
     } catch (error) {
       state = undefined;

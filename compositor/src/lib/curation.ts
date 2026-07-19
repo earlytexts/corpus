@@ -1,21 +1,22 @@
 /**
  * The curation worklist: every surface the dictionary does not yet account for
  * (no entry), corpus-wide, ranked so a contributor can burn the backlog down
- * highest-impact first. The decision is the corpus's `accountTokens` rule (the
- * same one the editor squiggles use); this tallies its verdict over the whole
- * catalogue and attaches, for each surface, one place it is attested so the
- * curator can see it in context before deciding.
- *
- * Counting walks each edition's document once. A borrowed edition is the very
- * same document object wherever it is spliced in (the catalogue build shares,
- * not copies), so keying by document dedupes it; its blocks are counted under
- * its own edition (its own file), and only a collection's *inline* sections —
- * children that are not themselves editions — are folded into the collection.
- * Vscode-free, so it is unit-tested against a built catalogue directly.
+ * highest-impact first. The counting never walks a document: each file's
+ * register-independent surface summary is derived once per compile (the
+ * corpus's `deriveFile`) and merged here into one corpus-wide token index; the
+ * register is applied at the end as a membership test, mirroring the corpus's
+ * accounting rule (`statusOf` in account.ts) — a surface is accounted when it
+ * or its possessive base has an entry, and its exempt/mechanical occurrences
+ * were never candidates to begin with. So a dictionary edit re-ranks the
+ * backlog in milliseconds, against the index the corpus model already holds.
+ * Vscode-free, so it is unit-tested against loaded files directly.
  */
 
-import type { MarkitDocument } from "@jsr/earlytexts__markit";
-import { accountTokens, type Catalogue } from "@earlytexts/corpus";
+import {
+  type CorpusFile,
+  possessiveBase,
+  type Register,
+} from "@earlytexts/corpus";
 import { letterOf } from "./dictionaryViews.ts";
 
 export type CurationEntry = {
@@ -32,14 +33,46 @@ export type CurationEntry = {
  * A–Z filter narrows it like the other two tabs. */
 export type CurationRow = CurationEntry & { letter: string };
 
+/** The corpus-wide tally of candidate occurrences per folded surface —
+ * register-independent, so it survives every dictionary edit unchanged. */
+export type TokenIndex = Map<
+  string,
+  { count: number; example?: { path: string; line: number } }
+>;
+
+/** Merge the files' surface summaries into one corpus-wide index. `root` is
+ * the corpus root, absolutising each surface's first-attestation path so the
+ * panel can open it directly. */
+export const buildTokenIndex = (
+  files: Iterable<CorpusFile>,
+  root: string,
+): TokenIndex => {
+  const index: TokenIndex = new Map();
+  for (const file of files) {
+    for (const [surface, summary] of file.derived.surfaces) {
+      const entry = index.get(surface) ?? { count: 0 };
+      entry.count += summary.candidates;
+      if (entry.example === undefined) {
+        entry.example = {
+          path: `${root}/data/${file.path}`,
+          line: summary.line ?? 0,
+        };
+      }
+      index.set(surface, entry);
+    }
+  }
+  return index;
+};
+
 /** The curation worklist shaped for the panel: the `max` most frequent surfaces
  * as `CurationRow`s (with their letter), and the untruncated `total` so the
  * panel can say how many of the backlog it is showing. */
 export const curationRows = (
-  catalogue: Catalogue,
+  index: TokenIndex,
+  register: Register,
   max: number,
 ): { rows: CurationRow[]; total: number } => {
-  const all = curationList(catalogue);
+  const all = curationList(index, register);
   return {
     total: all.length,
     rows: all
@@ -48,46 +81,27 @@ export const curationRows = (
   };
 };
 
-export const curationList = (catalogue: Catalogue): CurationEntry[] => {
-  // Every edition document → its source path (borrowed children share the key).
-  const editions = new Map<MarkitDocument, string | undefined>();
-  for (const author of catalogue.authors) {
-    for (const work of author.works) {
-      for (const edition of work.editions) {
-        editions.set(edition.document, catalogue.sources.get(edition.document));
-      }
-    }
-  }
-
-  type Tally = { count: number; example?: { path: string; line: number } };
-  const tallies = new Map<string, Tally>();
-  for (const [document, path] of editions) {
-    // Count this edition's own text: its blocks and its inline sections, but
-    // not the editions it borrows (each is counted under its own key).
-    const own: MarkitDocument = {
-      ...document,
-      children: document.children.filter((child) => !editions.has(child)),
-    };
-    for (const token of accountTokens(own, catalogue.dictionary)) {
-      if (token.status !== "unaccounted") continue;
-      const tally = tallies.get(token.folded) ?? { count: 0 };
-      tally.count++;
-      if (tally.example === undefined && path !== undefined) {
-        tally.example = { path, line: token.block.source?.start.line ?? 0 };
-      }
-      tallies.set(token.folded, tally);
-    }
-  }
-
-  return [...tallies.entries()]
-    .map(([surface, tally]) => ({
+export const curationList = (
+  index: TokenIndex,
+  register: Register,
+): CurationEntry[] =>
+  [...index.entries()]
+    .filter(([surface]) => !accounted(surface, register))
+    .map(([surface, { count, example }]) => ({
       surface,
-      count: tally.count,
-      ...(tally.example !== undefined ? { example: tally.example } : {}),
+      count,
+      ...(example !== undefined ? { example } : {}),
     }))
     .sort(
       (a, b) =>
         // Most frequent first, then alphabetical — the order to curate in.
         b.count - a.count || a.surface.localeCompare(b.surface),
     );
+
+/** The register-dependent half of the accounting rule: an entry for the
+ * surface, or for its possessive base (`bishop's` → `bishop`). */
+const accounted = (surface: string, register: Register): boolean => {
+  if (surface in register) return true;
+  const base = possessiveBase(surface);
+  return base !== undefined && base in register;
 };

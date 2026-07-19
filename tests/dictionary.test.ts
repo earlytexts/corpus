@@ -55,7 +55,10 @@ import {
 } from "../src/validation/rules.ts";
 import { corpus, CORPUS_ROOT, memoryCorpus } from "./harness.ts";
 import { buildCatalogue } from "../src/catalogue/compile.ts";
-import { writeCatalogue } from "../src/build/write.ts";
+import {
+  writeCatalogue,
+  writeCatalogueDictionary,
+} from "../src/build/write.ts";
 import {
   catalogueReader,
   loadCatalogue,
@@ -1199,6 +1202,45 @@ test("catalogue: the expanded dictionary round-trips through catalogue/", async 
   delete files[`${CORPUS_ROOT}/catalogue/dictionary.json`];
   const older = await loadCatalogue(catalogueReader(fs), CORPUS_ROOT);
   expect(older.catalogue.dictionary).toEqual({});
+});
+
+test("catalogue: writeCatalogueDictionary refreshes the dictionary and warnings, nothing else", async () => {
+  const files = fixture("Text.", {
+    "data/dictionary/t.json": '{\n  "the": null\n}\n',
+  });
+  const fs = writableCorpus(files);
+  const first = await buildCatalogue(fs, CORPUS_ROOT);
+  await writeCatalogue(fs, CORPUS_ROOT, first.catalogue, first.warnings);
+  const documentsBefore = Object.fromEntries(
+    Object.entries(files).filter(([path]) =>
+      path.startsWith(`${CORPUS_ROOT}/catalogue/documents/`)
+    ),
+  );
+  expect(Object.keys(documentsBefore).length).toBeGreaterThan(0);
+
+  // A dictionary edit: rebuild and write only the dictionary-dependent files.
+  files[`${CORPUS_ROOT}/data/dictionary/t.json`] =
+    '{\n  "text": null,\n  "the": null\n}\n';
+  const second = await buildCatalogue(fs, CORPUS_ROOT);
+  await writeCatalogueDictionary(
+    fs,
+    CORPUS_ROOT,
+    second.catalogue,
+    second.warnings,
+  );
+  const loaded = await loadCatalogue(catalogueReader(fs), CORPUS_ROOT);
+  expect(loaded.catalogue.dictionary).toEqual({
+    text: entry([w("text")]),
+    the: entry([w("the")]),
+  });
+  // The documents were untouched — same files, byte for byte.
+  expect(
+    Object.fromEntries(
+      Object.entries(files).filter(([path]) =>
+        path.startsWith(`${CORPUS_ROOT}/catalogue/documents/`)
+      ),
+    ),
+  ).toEqual(documentsBefore);
 });
 
 test("dictionary: readDictionaryShards reads only the shard files", async () => {

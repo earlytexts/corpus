@@ -35,11 +35,15 @@ import type {
  * the dictionary.json text — the dictionary already lives expanded in memory
  * (explicit spelling + lemma per word per reading), so its wire form is a
  * plain stringify and consumers never parse the entry micro-syntax.
+ * `skipDocuments` leaves the documents map empty (their keys still serialise
+ * into the structure) — the dictionary-only write path, where the documents
+ * on disk are already current and stringifying them is the bulk of the cost.
  */
 export const serializeCatalogue = (
   catalogue: Catalogue,
   warnings: string[],
   root: string,
+  skipDocuments = false,
 ): {
   catalogue: CatalogueFile;
   documents: Map<string, string>;
@@ -63,7 +67,9 @@ export const serializeCatalogue = (
   const serializeEdition = (work: Work, edition: Edition): CatalogueEdition => {
     const { document, ...meta } = edition;
     const docKey = docKeyOf(work, edition);
-    documents.set(docKey, JSON.stringify(serializeDoc(document, docKeys)));
+    if (!skipDocuments) {
+      documents.set(docKey, JSON.stringify(serializeDoc(document, docKeys)));
+    }
     return {
       ...meta,
       docKey,

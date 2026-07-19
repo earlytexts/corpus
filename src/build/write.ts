@@ -45,3 +45,29 @@ export const writeCatalogue = async (
   }
   return serialized;
 };
+
+/**
+ * Refresh only the parts of `catalogue/` a dictionary edit can change —
+ * `catalogue.json` (its warnings may mention dropped entries) and
+ * `dictionary.json` — leaving `documents/` untouched. Only sound over a
+ * `catalogue/` whose documents are already current, i.e. after a full
+ * `writeCatalogue` of the same compiled documents; the caller owns that
+ * guarantee (see the Compositor's corpusModel).
+ */
+export const writeCatalogueDictionary = async (
+  fs: CorpusFsWrite,
+  root: string,
+  catalogue: Catalogue,
+  warnings: string[],
+): Promise<void> => {
+  const real = await fs.realPath(root);
+  const serialized = serializeCatalogue(catalogue, warnings, real, true);
+  await fs.writeFile(
+    `${real}/catalogue/catalogue.json`,
+    JSON.stringify(serialized.catalogue),
+  );
+  await fs.writeFile(
+    `${real}/catalogue/dictionary.json`,
+    serialized.dictionary,
+  );
+};

@@ -28,6 +28,7 @@ export * from "./build/node.ts";
 // accounting rule (coverage) they and the Compositor's squiggle engine share.
 export * from "./validation/rules.ts";
 export * from "./validation/account.ts";
+export * from "./validation/derive.ts";
 
 // The dictionary: the curated register of surface forms — the `[w:]`/override
 // resolution, the shard micro-syntax, and expansion with its register-level

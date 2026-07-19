@@ -115,6 +115,12 @@ export const isWord = (text: string): boolean => wordRe.test(text);
 const wordAtom = String.raw`['’]*\p{L}(?:['’\p{L}]|\.(?=\p{L}))*`;
 const wordRe = new RegExp(`^${wordAtom}(?: ${wordAtom})*$`, "u");
 
+/** Whether a token belongs to the mechanical class of the accounting rule:
+ * it contains a digit, or reads as a roman numeral. Mechanical status never
+ * depends on the register, so it can be derived once per compile. */
+export const isMechanical = (text: string): boolean =>
+  /\p{N}/u.test(text) || isRomanNumeral(text);
+
 /** Whether a token reads as a strict roman numeral (case-insensitive) — a
  * mechanical class of the accounting rule. Short numerals are also ordinary
  * words (`I`, `mix`), which is why accounting is "at least one of". Lower-cases

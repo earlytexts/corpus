@@ -77,16 +77,19 @@ export const activate = async (
   );
   context.subscriptions.push({ dispose: () => suggestions.dispose() });
 
-  const dictionary: DictionaryController = createDictionaryController(
-    () => model,
-    context,
-  );
-  context.subscriptions.push({ dispose: () => dictionary.dispose() });
-
   const dictionaryPanel: DictionaryPanel = createDictionaryPanel(
     () => model,
     context,
   );
+
+  const dictionary: DictionaryController = createDictionaryController(
+    () => model,
+    context,
+    // A curation cascade's entries are on disk the moment it completes: re-rank
+    // the panel now rather than after the watcher's debounced reload.
+    () => dictionaryPanel.onCorpusChanged(),
+  );
+  context.subscriptions.push({ dispose: () => dictionary.dispose() });
 
   const tree = createCorpusTree(() => model);
   const view = vscode.window.createTreeView("compositor.corpusBrowser", {
