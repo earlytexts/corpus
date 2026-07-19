@@ -245,10 +245,31 @@ export type DictionaryController = {
 export const createDictionaryController = (
   getModel: () => CorpusModel | undefined,
   context: vscode.ExtensionContext,
+  /** Called after a curation cascade lands its entries (the shards are on disk
+   * by then) — the dictionary panel hangs its immediate re-rank off this,
+   * rather than waiting for the corpus watcher's debounced reload. */
+  onEntriesWritten?: () => void,
 ): DictionaryController => {
   const collection = vscode.languages.createDiagnosticCollection(SOURCE);
   /** The last scan of each open document, keyed by path. */
   const scanned = new Map<string, UnaccountedWord[]>();
+
+  /** Publish one document's findings to the Problems panel. */
+  const publish = (uri: vscode.Uri, words: UnaccountedWord[]): void => {
+    collection.set(
+      uri,
+      words.map((word) => {
+        const diagnostic = new vscode.Diagnostic(
+          wordRange(word),
+          unaccountedMessage(word),
+          vscode.DiagnosticSeverity.Warning,
+        );
+        diagnostic.source = SOURCE;
+        diagnostic.code = word.surface;
+        return diagnostic;
+      }),
+    );
+  };
 
   /** Scan one document and publish its diagnostics (or clear them, when the
    * overlay is off or the corpus has no dictionary yet). */
@@ -262,19 +283,20 @@ export const createDictionaryController = (
     const { document: doc } = compileWithPositions(source);
     const words = scanUnaccounted(source, doc, dictionary);
     scanned.set(document.uri.fsPath, words);
-    collection.set(
-      document.uri,
-      words.map((word) => {
-        const diagnostic = new vscode.Diagnostic(
-          wordRange(word),
-          unaccountedMessage(word),
-          vscode.DiagnosticSeverity.Warning,
-        );
-        diagnostic.source = SOURCE;
-        diagnostic.code = word.surface;
-        return diagnostic;
-      }),
-    );
+    publish(document.uri, words);
+  };
+
+  /** Optimistically drop the squiggles a just-written entry accounts for —
+   * these entries *are* the edit, not a prediction. Exact surfaces only: a
+   * possessive whose base was just registered waits for the model's reload
+   * and re-scan, which follows within a second and confirms the rest. */
+  const clearSurfaces = (surfaces: ReadonlySet<string>): void => {
+    for (const [path, words] of scanned) {
+      const kept = words.filter((word) => !surfaces.has(word.surface));
+      if (kept.length === words.length) continue;
+      scanned.set(path, kept);
+      publish(vscode.Uri.file(path), kept);
+    }
   };
 
   /** Forget a document's findings and clear its squiggles. */
@@ -316,7 +338,8 @@ export const createDictionaryController = (
    * prompts for its target and, if that target is itself unregistered, cascades
    * (adding an attested one, refusing an unattested spelling, confirming an
    * unattested citation form). The decisions land across their shards in one
-   * pass; the corpus watcher reloads and the squiggles clear on re-scan. */
+   * pass; their squiggles clear immediately (clearSurfaces) and the corpus
+   * watcher's reload re-scans to confirm. */
   const runEntry = async (
     surface: string,
     kind: EntryAction["kind"],
@@ -341,6 +364,8 @@ export const createDictionaryController = (
     }
     try {
       await writeDecisions(root, decisions);
+      clearSurfaces(new Set(decisions.keys()));
+      onEntriesWritten?.();
     } catch (error) {
       void vscode.window.showErrorMessage(
         `Compositor: ${error instanceof Error ? error.message : String(error)}`,

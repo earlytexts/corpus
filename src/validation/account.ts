@@ -15,7 +15,7 @@ import {
   blockTokens,
   exemptionOf,
   fold,
-  isRomanNumeral,
+  isMechanical,
   possessiveBase,
 } from "../dictionary/words.ts";
 
@@ -88,9 +88,7 @@ const statusOf = (
   if (folded in register) return "registered";
   const base = possessiveBase(folded);
   if (base !== undefined && base in register) return "possessive";
-  if (/\p{N}/u.test(token.text) || isRomanNumeral(token.text)) {
-    return "mechanical";
-  }
+  if (isMechanical(token.text)) return "mechanical";
   return "unaccounted";
 };
 
