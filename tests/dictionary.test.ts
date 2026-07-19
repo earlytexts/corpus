@@ -339,6 +339,14 @@ test("dictionary: a multi-word key's identity reading is one word per part", () 
   );
 });
 
+test("dictionary: an identity lemma of a different word-count stays one unit", () => {
+  // A two-word surface whose explicit lemma is a single word can't pair word by
+  // word, so it collapses to a single spelling/lemma pair rather than splitting.
+  expect(expandDictionary({ "a priori": raw(id("apriori")) })).toEqual({
+    "a priori": entry([w("a priori", "apriori")]),
+  });
+});
+
 test("dictionary: expansion is best-effort where the register dangles", () => {
   const dictionary: RawDictionary = {
     olde: raw(see("vertue")), // target has no identity reading
@@ -558,6 +566,7 @@ test("dictionary: keys shard by their first letter, ignoring non-letters", () =>
   expect(shardOf("'em")).toBe("e.json");
   expect(shardOf("I")).toBe("i.json"); // the capitalised pronoun shards with the i-words
   expect(shardOf("œconomy")).toBe("other.json");
+  expect(shardOf("123")).toBe("other.json"); // no letters at all
 });
 
 test("dictionary: shardDictionary writes canonical, sorted, one-entry-per-line shards", () => {
@@ -1118,6 +1127,59 @@ test("catalogue: overrides ride each document's metadata through catalogue/", as
   const loaded = await loadCatalogue(catalogueReader(fs), CORPUS_ROOT);
   const doc = loaded.catalogue.byAuthor.get("a")!.works[0].editions[0].document;
   expect(overridesOf(doc.metadata)).toEqual({ then: "than" });
+});
+
+test("catalogue: loading a corpus that was never built throws", async () => {
+  await expect(
+    loadCatalogue(catalogueReader(memoryCorpus({})), CORPUS_ROOT),
+  ).rejects.toThrow("no compiled catalogue");
+});
+
+test("catalogue: loading a catalogue whose document is missing throws", async () => {
+  const files = overrideFixture("{#1}\nText.\n");
+  const fs = writableCorpus(files);
+  const { catalogue, warnings } = await buildCatalogue(fs, CORPUS_ROOT);
+  await writeCatalogue(fs, CORPUS_ROOT, catalogue, warnings);
+  for (const key of Object.keys(files)) {
+    if (key.includes("/catalogue/documents/")) delete files[key];
+  }
+  await expect(
+    loadCatalogue(catalogueReader(fs), CORPUS_ROOT),
+  ).rejects.toThrow("missing document");
+});
+
+test("catalogue: a borrowed child round-trips as the one shared instance", async () => {
+  // The 1710 edition borrows the 1700 text (`## <a.w.1700>`); through the
+  // catalogue it serialises as a `{ __ref }` and loads back as the very same
+  // object as the 1700 edition's own document — one instance, spliced twice.
+  const files = corpus()
+    .author("a", { forename: "Ann", surname: "Aa" })
+    .work("a", "w", { title: "W", breadcrumb: "W", canonical: "1700" })
+    .edition(
+      "a",
+      "w",
+      "1700",
+      { imported: true, title: "W", breadcrumb: "W", published: [1700] },
+      '## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nText.',
+    )
+    .edition(
+      "a",
+      "w",
+      "1710",
+      { imported: true, title: "W", breadcrumb: "W", published: [1710] },
+      "## <a.w.1700>",
+    )
+    .build();
+  const fs = writableCorpus(files);
+  const { catalogue, warnings } = await buildCatalogue(fs, CORPUS_ROOT);
+  await writeCatalogue(fs, CORPUS_ROOT, catalogue, warnings);
+
+  const editions = (await loadCatalogue(catalogueReader(fs), CORPUS_ROOT))
+    .catalogue.byAuthor.get("a")!.works[0].editions;
+  const own = editions.find((e) => e.slug === "1700")!.document;
+  const borrowed =
+    editions.find((e) => e.slug === "1710")!.document.children[0];
+  expect(borrowed).toBe(own);
 });
 
 test("validate: the coverage report counts per work and corpus-wide", async () => {

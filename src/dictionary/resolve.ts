@@ -21,6 +21,13 @@ export const readingSpelling = (reading: Reading): string =>
 export const readingLemma = (reading: Reading): string =>
   reading.map((word) => word.lemma).join(" ");
 
+/** The multi-word surfaces of a register — its keys with an internal space,
+ * the fixed units the texts mark with `~` (`a~priori`). */
+export const multiWordSurfaces = (
+  register: Record<string, unknown>,
+): Set<string> =>
+  new Set(Object.keys(register).filter((key) => key.includes(" ")));
+
 /**
  * How one `[w:surface=value]` occurrence violates the dictionary, if it does.
  * A surface is always exactly one token (Markit enforces this at compile time;
@@ -37,13 +44,6 @@ export const wordMarkupViolation = (
   dictionary: Dictionary,
 ): string | undefined =>
   selectionViolation(surface, value, dictionary, "[w:] markup is");
-
-/** The multi-word surfaces of a register — its keys with an internal space,
- * the fixed units the texts mark with `~` (`a~priori`). */
-export const multiWordSurfaces = (
-  register: Record<string, unknown>,
-): Set<string> =>
-  new Set(Object.keys(register).filter((key) => key.includes(" ")));
 
 /**
  * A text's `[metadata.dictionary]` map: surface → the reading its unmarked
