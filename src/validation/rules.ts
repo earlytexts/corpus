@@ -14,6 +14,7 @@ import {
   compileWithPositions,
   type MarkitDocument,
   type MarkitError,
+  type MetadataSource,
   type SourceRange,
 } from "@earlytexts/markit";
 import type { CorpusFs } from "../fs/ports.ts";
@@ -146,7 +147,7 @@ const authorFilesMatchSchema: Rule = {
     const violations: RuleViolation[] = [];
     for (const { path, doc } of compiled(authorFiles(files))) {
       const metadata = meta(doc.metadata);
-      const line = lineOf(doc.metadataSource?.source) ?? lineOf(doc.source);
+      const line = metaLine(doc);
       const push = (message: string, at = line) =>
         violations.push({ path, message, line: at });
       for (const message of keyViolations(metadata, authorSchema)) {
@@ -194,8 +195,7 @@ const textsMatchSchema: Rule = {
         }
         const locus = `(${text.id})`;
         const metadata = meta(text.metadata);
-        const line = lineOf(text.metadataSource?.source) ??
-          lineOf(text.source);
+        const line = metaLine(text);
         const push = (message: string) =>
           violations.push({ path, locus, message, line });
         for (const message of keyViolations(metadata, textSchema)) {
@@ -218,21 +218,13 @@ const textsMatchSchema: Rule = {
         } else if (!("authors" in metadata)) {
           push(`missing "authors"`);
         }
-        if ("canonical" in metadata && !stub) {
-          push(`"canonical" belongs only on a work's index.mit stub`);
-        }
-        if ("standalone" in metadata && !stub) {
-          push(`"standalone" belongs only on a work's index.mit stub`);
-        }
-        // A stub is metadata-only: it prints no tokens, so overrides would
-        // mean nothing there.
-        if ("dictionary" in metadata && stub) {
-          push(`"dictionary" does not belong on a work's index.mit stub`);
-        }
-        // A work's first-publication year is derived from its editions,
-        // never set on the stub.
-        if ("published" in metadata && stub) {
-          push(`"published" is derived from editions, not set on the stub`);
+        // Each stub-sensitive key belongs on exactly one side of the stub
+        // divide: `canonical`/`standalone` are the stub's own identity and
+        // belong only there; `dictionary` overrides and the derived `published`
+        // year mean nothing on a metadata-only stub and belong only off it. A
+        // key on the wrong side is a placement violation.
+        for (const { key, onStub, message } of stubKeyPlacement) {
+          if (key in metadata && stub !== onStub) push(message);
         }
       }
     }
@@ -247,7 +239,7 @@ const workStubsNameCanonical: Rule = {
     for (const { path, doc } of compiled(workFiles(files))) {
       if (!isStub(path, doc)) continue;
       const metadata = meta(doc.metadata);
-      const line = lineOf(doc.metadataSource?.source) ?? lineOf(doc.source);
+      const line = metaLine(doc);
       if (doc.blocks.length > 0 || doc.children.length > 0) {
         violations.push({
           path,
@@ -293,8 +285,7 @@ const blockMetadataMatchesSchema: Rule = {
               path,
               locus: `(${text.id} {#${block.id}})`,
               message,
-              line: lineOf(block.metadataSource?.source) ??
-                lineOf(block.source),
+              line: metaLine(block),
             });
           }
         }
@@ -317,8 +308,7 @@ const everyAuthorsSlugKnown: Rule = {
               path,
               locus: `(${text.id})`,
               message: `unknown author "${slug}"`,
-              line: lineOf(text.metadataSource?.source) ??
-                lineOf(text.source),
+              line: metaLine(text),
             });
           }
         }
@@ -330,8 +320,7 @@ const everyAuthorsSlugKnown: Rule = {
                 path,
                 locus: `(${text.id}) {#${block.id}}`,
                 message: `unknown author "${slug}"`,
-                line: lineOf(block.metadataSource?.source) ??
-                  lineOf(block.source),
+                line: metaLine(block),
               });
             }
           }
@@ -599,8 +588,7 @@ const dictionaryOverridesSelect: Rule = {
       for (const { text } of allTexts(doc)) {
         const overrides = Object.entries(overridesOf(text.metadata));
         if (overrides.length === 0) continue;
-        const line = lineOf(text.metadataSource?.nested?.dictionary) ??
-          lineOf(text.metadataSource?.source) ?? lineOf(text.source);
+        const line = metaLine(text, "dictionary");
         for (const [surface, value] of overrides) {
           const message = overrideViolation(surface, value, dictionary);
           if (message !== undefined) {
@@ -783,6 +771,19 @@ const meta = (value: unknown): Record<string, unknown> =>
 const lineOf = (source: SourceRange | undefined): number | undefined =>
   source === undefined ? undefined : source.start.line + 1;
 
+/** The line a metadata violation anchors to on a text or content block: the
+ * `[metadata.<key>]` sub-block when `key` is given and present, else the whole
+ * `[metadata]` block, else the node's own opening line. Prefers the metadata
+ * range because that is where the reader fixes the violation. */
+const metaLine = (
+  node: { metadataSource?: MetadataSource; source?: SourceRange },
+  key?: string,
+): number | undefined =>
+  (key === undefined
+    ? undefined
+    : lineOf(node.metadataSource?.nested?.[key])) ??
+    lineOf(node.metadataSource?.source) ?? lineOf(node.source);
+
 const authorFiles = (files: CorpusFile[]): CorpusFile[] =>
   files.filter((f) => f.path.startsWith("authors/"));
 
@@ -816,6 +817,33 @@ const coverageLine = (coverage: Coverage): string => {
 /** A work stub: `index.mit` carrying a `canonical` pointer, metadata only. */
 const isStub = (path: string, doc: { metadata?: unknown }): boolean =>
   path.endsWith("/index.mit") && "canonical" in meta(doc.metadata);
+
+/** Which side of the stub divide each stub-sensitive metadata key belongs on
+ * (see `textsMatchSchema`): `onStub` true for a key that belongs only on the
+ * work stub, false for one that belongs only off it. `message` is the violation
+ * raised when the key appears on the wrong side. */
+const stubKeyPlacement: { key: string; onStub: boolean; message: string }[] = [
+  {
+    key: "canonical",
+    onStub: true,
+    message: `"canonical" belongs only on a work's index.mit stub`,
+  },
+  {
+    key: "standalone",
+    onStub: true,
+    message: `"standalone" belongs only on a work's index.mit stub`,
+  },
+  {
+    key: "dictionary",
+    onStub: false,
+    message: `"dictionary" does not belong on a work's index.mit stub`,
+  },
+  {
+    key: "published",
+    onStub: false,
+    message: `"published" is derived from editions, not set on the stub`,
+  },
+];
 
 /** Slugs named by an `authors` value (text or block level), if any. */
 const authorsOf = (value: unknown): string[] =>

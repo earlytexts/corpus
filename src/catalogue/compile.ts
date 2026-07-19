@@ -272,15 +272,15 @@ const makeEdition = (
 };
 
 const makeAuthor = (slug: string, doc: MarkitDocument | null): Author => {
-  const title = doc === null ? undefined : metaString(doc, "title");
-  const birth = doc === null ? undefined : metaNumber(doc, "birth");
-  const death = doc === null ? undefined : metaNumber(doc, "death");
-  const nationality = doc === null ? undefined : metaString(doc, "nationality");
-  const sex = doc === null ? undefined : metaString(doc, "sex");
+  const title = metaString(doc, "title");
+  const birth = metaNumber(doc, "birth");
+  const death = metaNumber(doc, "death");
+  const nationality = metaString(doc, "nationality");
+  const sex = metaString(doc, "sex");
   return {
     slug,
-    forename: doc === null ? "" : (metaString(doc, "forename") ?? ""),
-    surname: doc === null ? slug : (metaString(doc, "surname") ?? slug),
+    forename: metaString(doc, "forename") ?? "",
+    surname: metaString(doc, "surname") ?? slug,
     // As in makeEdition: no undefined-valued properties, so authors spread
     // cleanly into their serialised form.
     ...(title !== undefined ? { title } : {}),
@@ -377,23 +377,35 @@ const resolveChildren = async (
 
 /* ---------------------------- metadata readers ------------------------- */
 
-const metaString = (doc: MarkitDocument, key: string): string | undefined => {
-  const value = doc.metadata?.[key];
+const metaString = (
+  doc: MarkitDocument | null,
+  key: string,
+): string | undefined => {
+  const value = doc?.metadata?.[key];
   return typeof value === "string" ? value : undefined;
 };
 
-const metaNumber = (doc: MarkitDocument, key: string): number | undefined => {
-  const value = doc.metadata?.[key];
+const metaNumber = (
+  doc: MarkitDocument | null,
+  key: string,
+): number | undefined => {
+  const value = doc?.metadata?.[key];
   return typeof value === "number" ? value : undefined;
 };
 
-const metaBoolean = (doc: MarkitDocument, key: string): boolean | undefined => {
-  const value = doc.metadata?.[key];
+const metaBoolean = (
+  doc: MarkitDocument | null,
+  key: string,
+): boolean | undefined => {
+  const value = doc?.metadata?.[key];
   return typeof value === "boolean" ? value : undefined;
 };
 
-const metaArray = (doc: MarkitDocument, key: string): (string | number)[] => {
-  const value = doc.metadata?.[key];
+const metaArray = (
+  doc: MarkitDocument | null,
+  key: string,
+): (string | number)[] => {
+  const value = doc?.metadata?.[key];
   if (Array.isArray(value)) return value as (string | number)[];
   if (typeof value === "string" || typeof value === "number") return [value];
   return [];

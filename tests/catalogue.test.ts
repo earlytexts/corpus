@@ -420,3 +420,102 @@ test("catalogue: position-compiled documents serialise identically to plain ones
   );
   expect(b.catalogue).toEqual(a.catalogue);
 });
+
+test("catalogue: optional author and edition fields are carried through", async () => {
+  // An author with every optional field, and an edition with a scalar
+  // `published`/`authors` and its source metadata: each optional key is set
+  // only when present, and a bare scalar coerces to a one-element list.
+  const files = corpus()
+    .author("a", {
+      forename: "Ann",
+      surname: "Aa",
+      title: "Dr",
+      birth: 1600,
+      death: 1670,
+      nationality: "English",
+      sex: "Female",
+    })
+    .work("a", "w", { title: "W", breadcrumb: "W", canonical: "1700" })
+    .edition(
+      "a",
+      "w",
+      "1700",
+      {
+        imported: true,
+        title: "W",
+        breadcrumb: "W",
+        published: 1700,
+        authors: "a",
+        sourceUrl: "http://example.test/w",
+        sourceDesc: "A source note",
+      },
+      '## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nText.',
+    )
+    .build();
+  const catalogue = await catalogueFor(files);
+  const author = catalogue.byAuthor.get("a")!;
+  expect(author.title).toBe("Dr");
+  expect(author.birth).toBe(1600);
+  expect(author.death).toBe(1670);
+  expect(author.nationality).toBe("English");
+  expect(author.sex).toBe("Female");
+  const edition = author.works[0].editions[0];
+  expect(edition.published).toEqual([1700]); // scalar coerced to a list
+  expect(edition.sourceUrl).toBe("http://example.test/w");
+  expect(edition.sourceDesc).toBe("A source note");
+});
+
+test("catalogue: a malformed published value degrades to no years", async () => {
+  // `published` should be a year list; a stray non-scalar yields an empty one
+  // rather than throwing (the build tolerates broken metadata).
+  const files = base()
+    .edition(
+      "a",
+      "w",
+      "1710",
+      { imported: true, title: "W", breadcrumb: "W", published: true },
+      '## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nText.',
+    )
+    .build();
+  const catalogue = await catalogueFor(files);
+  const edition = catalogue.byAuthor.get("a")!.works[0].editions.find((e) =>
+    e.slug === "1710"
+  )!;
+  expect(edition.published).toEqual([]);
+});
+
+test("catalogue: a co-authored work serialises once, not per author", async () => {
+  // The joint work is the same object under both authors; serialize walks it
+  // once (the seenWorks guard skips the second sighting) and emits one entry.
+  const files = base()
+    .author("b", { forename: "Ben", surname: "Bb" })
+    .work("a-b", "joint", {
+      title: "Joint",
+      breadcrumb: "Joint",
+      authors: ["a", "b"],
+      canonical: "1700",
+    })
+    .edition(
+      "a-b",
+      "joint",
+      "1700",
+      {
+        imported: true,
+        title: "Joint",
+        breadcrumb: "Joint",
+        authors: ["a", "b"],
+        published: [1700],
+      },
+      '## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nJoint text.',
+    )
+    .build();
+  const { catalogue, warnings } = await buildCatalogue(
+    memoryCorpus(files),
+    CORPUS_ROOT,
+  );
+  const serialized = serializeCatalogue(catalogue, warnings, CORPUS_ROOT);
+  expect(Object.keys(serialized.catalogue.works)).toContain("a-b/joint");
+  expect(
+    Object.keys(serialized.catalogue.works).filter((k) => k === "a-b/joint"),
+  ).toHaveLength(1);
+});

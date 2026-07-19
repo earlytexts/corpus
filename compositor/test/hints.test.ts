@@ -133,6 +133,63 @@ test("hints: people come from person spans and author metadata", async () => {
   assert(hasPhrase(hints.people, "locke"));
 });
 
+test("hints: markup inside a list and its nested list is mined", async () => {
+  const files = corpus()
+    .author("a", { forename: "A", surname: "Aa" })
+    .work("a", "w", { title: "W", breadcrumb: "W", canonical: "1700" })
+    .edition(
+      "a",
+      "w",
+      "1700",
+      { imported: false, title: "W", breadcrumb: "W", published: [1700] },
+      "{#1}\nNames follow.\n\n- Meet [p:Mr Tully] here\n- Then [p:Dr Locke]\n" +
+        "  - Under [p:Sir Bacon]\n",
+    )
+    .build();
+  const { catalogue } = await buildCatalogue(memoryCorpus(files), CORPUS_ROOT);
+  const hints = buildHints(catalogue);
+  assert(hasPhrase(hints.people, "mr", "tully"));
+  assert(hasPhrase(hints.people, "dr", "locke"));
+  assert(hasPhrase(hints.people, "sir", "bacon")); // from the nested list
+});
+
+test("hints: markup inside a table cell is mined", async () => {
+  const files = corpus()
+    .author("a", { forename: "A", surname: "Aa" })
+    .work("a", "w", { title: "W", breadcrumb: "W", canonical: "1700" })
+    .edition(
+      "a",
+      "w",
+      "1700",
+      { imported: false, title: "W", breadcrumb: "W", published: [1700] },
+      "{#1}\nA table:\n\n| Meet [p:Mr Tully] here | and [p:Dr Locke] |\n",
+    )
+    .build();
+  const { catalogue } = await buildCatalogue(memoryCorpus(files), CORPUS_ROOT);
+  const hints = buildHints(catalogue);
+  assert(hasPhrase(hints.people, "mr", "tully"));
+  assert(hasPhrase(hints.people, "dr", "locke"));
+});
+
+test("hints: a mined span keeps the text of its nested markup", async () => {
+  // The person's name carries a nested language span; its words are still mined
+  // (the inline-text flattening descends into the nested content).
+  const files = corpus()
+    .author("cicero", { forename: "Marcus", surname: "Cicero" })
+    .work("cicero", "w", { title: "W", breadcrumb: "W", canonical: "1700" })
+    .edition(
+      "cicero",
+      "w",
+      "1700",
+      { imported: false, title: "W", breadcrumb: "W", published: [1700] },
+      "{#1}\nWith [p:Mr $la:Tully$] himself.",
+    )
+    .build();
+  const { catalogue } = await buildCatalogue(memoryCorpus(files), CORPUS_ROOT);
+  const hints = buildHints(catalogue);
+  assert(hasPhrase(hints.people, "mr", "tully"));
+});
+
 test("hints: places and orgs are mined from their spans (no metadata seed)", async () => {
   const hints = await fixtureHints();
   assert(hasPhrase(hints.places, "rome")); // [l:Rome]
@@ -177,6 +234,13 @@ test("hints: foldWord folds case, marks, ligatures, and apostrophes", () => {
   assertEquals(foldWord("vestrûm"), "vestrum");
   assertEquals(foldWord("'tis-"), "tis");
   assertEquals(foldWord("λόγος"), "λογος");
+});
+
+test("hints: phraseLexicon dedups repeated phrases and keeps longest first", () => {
+  const lexicon = phraseLexicon(["John Locke", "John Locke", "John"]);
+  // "John Locke" is added once despite the repeat; both hang off the "john"
+  // head, the longer sequence first.
+  assertEquals(lexicon.get("john"), [["john", "locke"], ["john"]]);
 });
 
 /* ------------------------------ scanSource ----------------------------- */
@@ -280,6 +344,15 @@ test("scan: character-mode spans at a word's edges are taken in whole", () => {
   assertEquals(
     scanBody("Then {AE}sopus met econom{y/} here.", hints).map((s) => s.text),
     ["{AE}sopus", "econom{y/}"],
+  );
+});
+
+test("scan: an escaped brace is not read as a span boundary", () => {
+  // The `\{` is a literal brace, skipped by the brace scanner, so the token
+  // beside it widens over nothing and matches on its own.
+  assertEquals(
+    scanBody("The word quod \\{here\\} stands.", laHints()).map(brief),
+    ["language:la quod"],
   );
 });
 
@@ -475,4 +548,17 @@ test("scan: suggestions are sorted by source position", () => {
   });
   const suggestions = scanBody("First quod holds; then Hume writes.", hints);
   assertEquals(suggestions.map(brief), ["language:la quod", "person Hume"]);
+});
+
+test("scan: co-located suggestions of different types sort by type", () => {
+  const hints = emptyHints({
+    people: phraseLexicon(["Hume"]),
+    citations: phraseLexicon(["Hume"]),
+  });
+  // "Hume" matches as both a person and a citation over the same span; the
+  // position sort ties on every coordinate and falls through to the type key.
+  assertEquals(scanBody("Then Hume wrote.", hints).map(brief), [
+    "citation Hume",
+    "person Hume",
+  ]);
 });

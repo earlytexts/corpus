@@ -39,7 +39,7 @@ export const expandDictionary = (raw: RawDictionary): Dictionary =>
     ) => [surface, expandEntry(surface, entry, raw)]),
   );
 
-export const expandEntry = (
+const expandEntry = (
   surface: string,
   entry: RawEntry,
   raw: RawDictionary,
