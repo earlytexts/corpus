@@ -13,14 +13,13 @@
 import * as vscode from "vscode";
 import { type CorpusModel, createCorpusModel } from "./corpusModel.ts";
 import { createCorpusTree } from "./surface/corpusTree.ts";
-import { authorPath, type TreeNode } from "./lib/nodes.ts";
+import { authorPath, type TreeNode, workDocId } from "./lib/nodes.ts";
 import { registerDiagnostics } from "./surface/diagnostics.ts";
 import { nodeCorpusFs } from "@earlytexts/corpus";
 import {
   newAuthor,
   newEdition,
   newWork,
-  workDocId,
 } from "./surface/commands/scaffolds.ts";
 import { fixFormatting } from "./surface/commands/fixFormatting.ts";
 import { insertBorrowedRef } from "./surface/commands/insertBorrowedRef.ts";
