@@ -34,6 +34,7 @@ import {
   writeCatalogue,
   writeCatalogueDictionary,
 } from "@earlytexts/corpus";
+import { createCatalogueWriteBack } from "./lib/catalogueWriteBack.ts";
 import { buildTokenIndex, type TokenIndex } from "./lib/curation.ts";
 import { reloadKind } from "./lib/reloadKind.ts";
 
@@ -72,23 +73,16 @@ export const createCorpusModel = (root: string): CorpusModel => {
   /** Changes that arrived mid-load, replayed afterwards. undefined = idle. */
   let queuedFull = false;
   let queuedPaths: Set<string> | undefined;
-  /**
-   * The catalogue awaiting write-back, and whether the writer is draining it.
-   * A newer load *replaces* the pending catalogue rather than queuing behind it,
-   * so a burst of edits can never pin more than the one in flight plus the
-   * latest — the write-back (a ~60MB `catalogue/` rewrite) used to stack a full
-   * catalogue per edit here, which is what ran the extension host out of memory.
-   * `full` records whether any superseded generation had changed documents: a
-   * dictionary-only load may replace a pending full write, but must not demote
-   * it — the documents it superseded still need writing.
-   */
-  let pendingCatalogue:
-    { catalogue: Catalogue; warnings: string[]; full: boolean } | undefined;
-  let draining = false;
-  /** Whether a full write has landed this session. Until one has, `catalogue/`
-   * may be a previous session's (or missing), so a dictionary-only write —
-   * which leaves `documents/` untouched — is promoted to a full one. */
-  let fullWritten = false;
+  /** The background `catalogue/` refresh — a latest-wins drainer that keeps a
+   * burst of edits from stacking full catalogues in memory (see its module). */
+  const writeBack = createCatalogueWriteBack(
+    async (catalogue, warnings) => {
+      await writeCatalogue(nodeCorpusFs, root, catalogue, warnings);
+    },
+    async (catalogue, warnings) => {
+      await writeCatalogueDictionary(nodeCorpusFs, root, catalogue, warnings);
+    },
+  );
 
   /**
    * Seed the tree from the compiled `catalogue/` (written by the corpus build or by
@@ -126,46 +120,6 @@ export const createCorpusModel = (root: string): CorpusModel => {
       }
     } catch {
       // no compiled catalogue (or a stale/partial one): wait for the full load
-    }
-  };
-
-  /** Write the pending catalogue back to `catalogue/`, then any that superseded
-   * it while the write ran — one writer, latest-wins, so overlapping loads can't
-   * stack catalogues in memory. A dictionary-only generation refreshes just
-   * `catalogue.json` and `dictionary.json` (the documents on disk are already
-   * current) — the difference between a ~60MB rewrite and a sub-second one. A
-   * failed write only costs the cache (and, for a full one, leaves the next
-   * dictionary-only write promoted until a full write lands). */
-  const drainCatalogueWrites = async (): Promise<void> => {
-    if (draining) return;
-    draining = true;
-    try {
-      while (pendingCatalogue !== undefined) {
-        const next = pendingCatalogue;
-        pendingCatalogue = undefined;
-        try {
-          if (next.full || !fullWritten) {
-            await writeCatalogue(
-              nodeCorpusFs,
-              root,
-              next.catalogue,
-              next.warnings,
-            );
-            fullWritten = true;
-          } else {
-            await writeCatalogueDictionary(
-              nodeCorpusFs,
-              root,
-              next.catalogue,
-              next.warnings,
-            );
-          }
-        } catch {
-          // the next load will refresh the cache
-        }
-      }
-    } finally {
-      draining = false;
     }
   };
 
@@ -239,14 +193,9 @@ export const createCorpusModel = (root: string): CorpusModel => {
       state = { catalogue, warnings, violations, tokenIndex };
       // Refresh the compiled catalogue/ in the background (next startup's instant
       // tree, and the computer's dev input). The latest catalogue supersedes any
-      // still-unwritten one (drainCatalogueWrites), so rapid edits can't pin more
-      // than one extra generation; a failure only costs the cache.
-      pendingCatalogue = {
-        catalogue,
-        warnings,
-        full: docsChanged || (pendingCatalogue?.full ?? false),
-      };
-      void drainCatalogueWrites();
+      // still-unwritten one, so rapid edits can't pin more than one extra
+      // generation; a failure only costs the cache.
+      writeBack.enqueue(catalogue, warnings, docsChanged);
     } catch (error) {
       state = undefined;
       const message = error instanceof Error ? error.message : String(error);
@@ -258,11 +207,11 @@ export const createCorpusModel = (root: string): CorpusModel => {
       emitter.fire();
     }
     if (queuedFull || queuedPaths !== undefined) {
-      const full = queuedFull;
-      const paths = queuedPaths;
+      const nextFull = queuedFull;
+      const nextPaths = queuedPaths;
       queuedFull = false;
       queuedPaths = undefined;
-      await load(full, paths);
+      await load(nextFull, nextPaths);
     }
   };
 
