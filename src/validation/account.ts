@@ -23,7 +23,8 @@ import {
  * How a token is accounted for — "at least one of" a dictionary entry, the
  * possessive rule, exempting markup, or a mechanical class; "unaccounted" is
  * the only violation. A token both mechanical and registered reports its
- * dictionary status (`I` with an entry for "i" is that entry, not a numeral). A
+ * dictionary status (the pronoun `I`, whose entry the register holds, is
+ * "registered", not a numeral). A
  * `~`-fused multi-word unit is one token whose folded surface is its
  * dictionary key ("a priori"); a `[w:]`-marked token is accounted like any
  * other, by its own entry (which the word-markup validation requires). A
