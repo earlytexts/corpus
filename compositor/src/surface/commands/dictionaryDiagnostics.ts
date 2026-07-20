@@ -50,18 +50,12 @@ import {
   updateShards,
   writeShardText,
 } from "../dictionaryShardIO.ts";
+import { createOverlay } from "../overlay.ts";
 import type { CorpusModel } from "../../corpusModel.ts";
 
 const SOURCE = "compositor-dictionary";
 const SETTING = "flagUnaccountedWords";
 const ENTRY_COMMAND = "compositor.dictionaryEntry";
-const RESCAN_DEBOUNCE_MS = 300;
-
-const isMit = (document: vscode.TextDocument): boolean =>
-  document.uri.scheme === "file" && document.uri.fsPath.endsWith(".mit");
-
-const enabled = (): boolean =>
-  vscode.workspace.getConfiguration("compositor").get<boolean>(SETTING, true);
 
 const wordRange = (word: UnaccountedWord): vscode.Range =>
   new vscode.Range(word.line, word.startColumn, word.line, word.endColumn);
@@ -234,150 +228,33 @@ const writeDecisions = (root: string, decisions: Decisions): Promise<void> =>
     }
   });
 
-export type DictionaryController = {
-  /** The scanned words of a document, for the code-action provider. */
-  wordsOf: (document: vscode.TextDocument) => UnaccountedWord[];
-  /** The corpus reloaded (or a shard was saved): re-scan what's shown. */
-  onCorpusChanged: () => void;
-  dispose: () => void;
-};
-
-export const createDictionaryController = (
-  getModel: () => CorpusModel | undefined,
-  context: vscode.ExtensionContext,
-  /** Called after a curation cascade lands its entries (the shards are on disk
-   * by then) — the dictionary panel hangs its immediate re-rank off this,
-   * rather than waiting for the corpus watcher's debounced reload. */
-  onEntriesWritten?: () => void,
-): DictionaryController => {
-  const collection = vscode.languages.createDiagnosticCollection(SOURCE);
-  /** The last scan of each open document, keyed by path. */
-  const scanned = new Map<string, UnaccountedWord[]>();
-
-  /** Publish one document's findings to the Problems panel. */
-  const publish = (uri: vscode.Uri, words: UnaccountedWord[]): void => {
-    collection.set(
-      uri,
-      words.map((word) => {
-        const diagnostic = new vscode.Diagnostic(
-          wordRange(word),
-          unaccountedMessage(word),
-          vscode.DiagnosticSeverity.Warning,
-        );
-        diagnostic.source = SOURCE;
-        diagnostic.code = word.surface;
-        return diagnostic;
-      }),
+/** Render unaccounted words as warning diagnostics under this overlay's source,
+ * carrying the surface as the code so the code-action provider can find them. */
+const unaccountedDiagnostics = (
+  words: UnaccountedWord[],
+): vscode.Diagnostic[] =>
+  words.map((word) => {
+    const diagnostic = new vscode.Diagnostic(
+      wordRange(word),
+      unaccountedMessage(word),
+      vscode.DiagnosticSeverity.Warning,
     );
-  };
+    diagnostic.source = SOURCE;
+    diagnostic.code = word.surface;
+    return diagnostic;
+  });
 
-  /** Scan one document and publish its diagnostics (or clear them, when the
-   * overlay is off or the corpus has no dictionary yet). */
-  const scan = (document: vscode.TextDocument): void => {
-    const dictionary = getModel()?.state?.catalogue.dictionary;
-    if (!enabled() || dictionary === undefined || !isMit(document)) {
-      drop(document);
-      return;
-    }
-    const source = document.getText();
-    const { document: doc } = compileWithPositions(source);
-    const words = scanUnaccounted(source, doc, dictionary);
-    scanned.set(document.uri.fsPath, words);
-    publish(document.uri, words);
-  };
-
-  /** Optimistically drop the squiggles a just-written entry accounts for —
-   * these entries *are* the edit, not a prediction. Exact surfaces only: a
-   * possessive whose base was just registered waits for the model's reload
-   * and re-scan, which follows within a second and confirms the rest. */
-  const clearSurfaces = (surfaces: ReadonlySet<string>): void => {
-    for (const [path, words] of scanned) {
-      const kept = words.filter((word) => !surfaces.has(word.surface));
-      if (kept.length === words.length) continue;
-      scanned.set(path, kept);
-      publish(vscode.Uri.file(path), kept);
-    }
-  };
-
-  /** Forget a document's findings and clear its squiggles. */
-  const drop = (document: vscode.TextDocument): void => {
-    if (!scanned.has(document.uri.fsPath)) return;
-    scanned.delete(document.uri.fsPath);
-    collection.delete(document.uri);
-  };
-
-  /** Re-scan every open edition (or clear everything when off). */
-  const refresh = (): void => {
-    if (!enabled()) {
-      scanned.clear();
-      collection.clear();
-      return;
-    }
-    for (const document of vscode.workspace.textDocuments) {
-      if (isMit(document)) scan(document);
-    }
-  };
-
-  // Re-scan on edits to an open edition, debounced per document.
-  const timers = new Map<string, ReturnType<typeof setTimeout>>();
-  const onEdit = (document: vscode.TextDocument): void => {
-    if (!enabled() || !isMit(document)) return;
-    const key = document.uri.fsPath;
-    clearTimeout(timers.get(key));
-    timers.set(
-      key,
-      setTimeout(() => {
-        timers.delete(key);
-        scan(document);
-      }, RESCAN_DEBOUNCE_MS),
-    );
-  };
-
-  /** Curate one surface, resolving every target it references all the way down
-   * before writing, so the register is never left invalid. A respelling/lemma
-   * prompts for its target and, if that target is itself unregistered, cascades
-   * (adding an attested one, refusing an unattested spelling, confirming an
-   * unattested citation form). The decisions land across their shards in one
-   * pass; their squiggles clear immediately (clearSurfaces) and the corpus
-   * watcher's reload re-scans to confirm. */
-  const runEntry = async (
-    surface: string,
-    kind: EntryAction["kind"],
-  ): Promise<void> => {
-    const model = getModel();
-    if (model === undefined || model.state === undefined) return;
-    const { root, state } = model;
-    const dictionary = state.catalogue.dictionary;
-    if (dictionary === undefined) return;
-    const vocabulary = corpusVocabulary(state.catalogue);
-    const decisions: Decisions = new Map();
-    const step = await addEntry(surface, kind, {
-      decisions,
-      inDictionary: (word) =>
-        decisions.has(word) || Object.hasOwn(dictionary, word),
-      inCorpus: (word) => vocabulary.has(word),
-    });
-    if (step === "cancel") return;
-    if (typeof step === "object") {
-      void vscode.window.showErrorMessage(`Compositor: ${step.rejected}`);
-      return;
-    }
-    try {
-      await writeDecisions(root, decisions);
-      clearSurfaces(new Set(decisions.keys()));
-      onEntriesWritten?.();
-    } catch (error) {
-      void vscode.window.showErrorMessage(
-        `Compositor: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  };
-
-  const provider = vscode.languages.registerCodeActionsProvider(
+/** The quick fixes for a squiggled surface: a ~ fusion (preferred) when the run
+ * is a registered multi-word unit, then the curation actions that dispatch to
+ * the resolution cascade via ENTRY_COMMAND. */
+const unaccountedProvider = (
+  itemsOf: (document: vscode.TextDocument) => UnaccountedWord[],
+): vscode.Disposable =>
+  vscode.languages.registerCodeActionsProvider(
     { scheme: "file", pattern: "**/*.mit" },
     {
       provideCodeActions: (document, _range, ctx) => {
-        const words = scanned.get(document.uri.fsPath) ?? [];
+        const words = itemsOf(document);
         const actions: vscode.CodeAction[] = [];
         for (const diagnostic of ctx.diagnostics) {
           if (diagnostic.source !== SOURCE) continue;
@@ -430,25 +307,94 @@ export const createDictionaryController = (
     { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
   );
 
+export type DictionaryController = {
+  /** The scanned words of a document, for the code-action provider. */
+  wordsOf: (document: vscode.TextDocument) => UnaccountedWord[];
+  /** The corpus reloaded (or a shard was saved): re-scan what's shown. */
+  onCorpusChanged: () => void;
+  dispose: () => void;
+};
+
+export const createDictionaryController = (
+  getModel: () => CorpusModel | undefined,
+  context: vscode.ExtensionContext,
+  /** Called after a curation cascade lands its entries (the shards are on disk
+   * by then) — the dictionary panel hangs its immediate re-rank off this,
+   * rather than waiting for the corpus watcher's debounced reload. */
+  onEntriesWritten?: () => void,
+): DictionaryController => {
+  const overlay = createOverlay(context, {
+    setting: SETTING,
+    source: SOURCE,
+    prepare: () => getModel()?.state?.catalogue.dictionary,
+    scan: (document, dictionary) => {
+      const source = document.getText();
+      const { document: doc } = compileWithPositions(source);
+      return scanUnaccounted(source, doc, dictionary);
+    },
+    diagnostics: unaccountedDiagnostics,
+    provider: unaccountedProvider,
+  });
+
+  /** Optimistically drop the squiggles a just-written entry accounts for —
+   * these entries *are* the edit, not a prediction. Exact surfaces only: a
+   * possessive whose base was just registered waits for the model's reload
+   * and re-scan, which follows within a second and confirms the rest. */
+  const clearSurfaces = (surfaces: ReadonlySet<string>): void => {
+    for (const [path, words] of overlay.scanned) {
+      const kept = words.filter((word) => !surfaces.has(word.surface));
+      if (kept.length === words.length) continue;
+      overlay.publish(vscode.Uri.file(path), kept);
+    }
+  };
+
+  /** Curate one surface, resolving every target it references all the way down
+   * before writing, so the register is never left invalid. A respelling/lemma
+   * prompts for its target and, if that target is itself unregistered, cascades
+   * (adding an attested one, refusing an unattested spelling, confirming an
+   * unattested citation form). The decisions land across their shards in one
+   * pass; their squiggles clear immediately (clearSurfaces) and the corpus
+   * watcher's reload re-scans to confirm. */
+  const runEntry = async (
+    surface: string,
+    kind: EntryAction["kind"],
+  ): Promise<void> => {
+    const model = getModel();
+    if (model === undefined || model.state === undefined) return;
+    const { root, state } = model;
+    const dictionary = state.catalogue.dictionary;
+    if (dictionary === undefined) return;
+    const vocabulary = corpusVocabulary(state.catalogue);
+    const decisions: Decisions = new Map();
+    const step = await addEntry(surface, kind, {
+      decisions,
+      inDictionary: (word) =>
+        decisions.has(word) || Object.hasOwn(dictionary, word),
+      inCorpus: (word) => vocabulary.has(word),
+    });
+    if (step === "cancel") return;
+    if (typeof step === "object") {
+      void vscode.window.showErrorMessage(`Compositor: ${step.rejected}`);
+      return;
+    }
+    try {
+      await writeDecisions(root, decisions);
+      clearSurfaces(new Set(decisions.keys()));
+      onEntriesWritten?.();
+    } catch (error) {
+      void vscode.window.showErrorMessage(
+        `Compositor: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  };
+
   context.subscriptions.push(
-    collection,
-    provider,
     vscode.commands.registerCommand(ENTRY_COMMAND, runEntry),
-    vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration(`compositor.${SETTING}`)) refresh();
-    }),
-    vscode.window.onDidChangeActiveTextEditor((editor) => {
-      if (editor !== undefined) scan(editor.document);
-    }),
-    vscode.workspace.onDidChangeTextDocument((e) => onEdit(e.document)),
-    vscode.workspace.onDidCloseTextDocument(drop),
-    { dispose: () => timers.forEach(clearTimeout) },
   );
-  refresh();
 
   return {
-    wordsOf: (document) => scanned.get(document.uri.fsPath) ?? [],
-    onCorpusChanged: refresh,
-    dispose: () => collection.dispose(),
+    wordsOf: overlay.itemsOf,
+    onCorpusChanged: () => void overlay.refresh(),
+    dispose: overlay.dispose,
   };
 };
