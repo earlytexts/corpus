@@ -623,7 +623,9 @@ const words = (text: string): string[] => {
   return out;
 };
 
-/** Build a phrase lexicon from display texts (folded internally). */
+/** Build a phrase lexicon from display texts (folded internally).
+ * Exported for tests only — production builds its lexicons through `addPhrase`
+ * directly (see `buildHints`); this is not part of the module's contract. */
 export const phraseLexicon = (texts: string[]): PhraseLexicon => {
   const lexicon: PhraseLexicon = new Map();
   for (const text of texts) addPhrase(lexicon, text);

@@ -13,6 +13,7 @@
 import * as vscode from "vscode";
 import { type CorpusModel, createCorpusModel } from "./corpusModel.ts";
 import { createCorpusTree } from "./surface/corpusTree.ts";
+import { registerDoubleClickOpen } from "./surface/doubleClickOpen.ts";
 import { authorPath, type TreeNode, workDocId } from "./lib/nodes.ts";
 import { registerDiagnostics } from "./surface/diagnostics.ts";
 import { nodeCorpusFs } from "@earlytexts/corpus";
@@ -65,6 +66,17 @@ const findCorpusRoot = async (): Promise<string | undefined> => {
   return undefined;
 };
 
+/** The tree view's status message for the model's current phase, or undefined
+ * to fall back to the view's welcome content (package.json viewsWelcome). */
+const viewMessage = (model: CorpusModel | undefined): string | undefined =>
+  model === undefined
+    ? undefined
+    : model.loading
+      ? "Loading the corpus…"
+      : model.state === undefined
+        ? "The corpus failed to load."
+        : undefined;
+
 export const activate = async (
   context: vscode.ExtensionContext,
 ): Promise<void> => {
@@ -99,14 +111,7 @@ export const activate = async (
     tree.refresh();
     // With no model, leave message and badge unset so the view's welcome
     // content (package.json viewsWelcome) shows instead.
-    view.message =
-      model === undefined
-        ? undefined
-        : model.loading
-          ? "Loading the corpus…"
-          : model.state === undefined
-            ? "The corpus failed to load."
-            : undefined;
+    view.message = viewMessage(model);
     const problems = model?.state?.violations.length ?? 0;
     view.badge =
       problems === 0
@@ -117,38 +122,7 @@ export const activate = async (
           };
   };
   context.subscriptions.push(view);
-
-  // Double-click on an author or work opens its metadata. Tree views have no
-  // double-click event, so we synthesise one: authors and works carry no
-  // command, so a single click toggles the branch (firing an expand or collapse
-  // event); a double-click toggles it twice, landing it back where it began and
-  // giving us two events on the same node in quick succession. Editions carry
-  // their own open command and are untouched by this.
-  const DOUBLE_CLICK_MS = 500;
-  let lastToggle: { node: TreeNode; at: number } | undefined;
-  const openMetadata = (node: TreeNode): void => {
-    const uri =
-      node.kind === "author"
-        ? vscode.Uri.file(authorPath(model!.root, node.author))
-        : node.kind === "work"
-          ? vscode.Uri.file(`${node.work.dir}/index.mit`)
-          : undefined;
-    if (uri !== undefined) void vscode.window.showTextDocument(uri);
-  };
-  const onToggle = (node: TreeNode): void => {
-    if (node.kind !== "author" && node.kind !== "work") return;
-    const now = Date.now();
-    if (lastToggle?.node === node && now - lastToggle.at < DOUBLE_CLICK_MS) {
-      lastToggle = undefined;
-      openMetadata(node);
-      return;
-    }
-    lastToggle = { node, at: now };
-  };
-  context.subscriptions.push(
-    view.onDidExpandElement((e) => onToggle(e.element)),
-    view.onDidCollapseElement((e) => onToggle(e.element)),
-  );
+  context.subscriptions.push(...registerDoubleClickOpen(view, () => model));
 
   /** Look for the corpus and attach the model to it; true if attached. */
   const attach = async (): Promise<boolean> => {
@@ -158,10 +132,14 @@ export const activate = async (
     model = createCorpusModel(root);
     context.subscriptions.push(
       { dispose: () => model?.dispose() },
-      model.onDidChange(updateView),
-      model.onDidChange(() => suggestions.onCorpusChanged()),
-      model.onDidChange(() => dictionary.onCorpusChanged()),
-      model.onDidChange(() => dictionaryPanel.onCorpusChanged()),
+      // One fan-out on each corpus change: refresh the view and let every
+      // overlay re-rank against the new state.
+      model.onDidChange(() => {
+        updateView();
+        suggestions.onCorpusChanged();
+        dictionary.onCorpusChanged();
+        dictionaryPanel.onCorpusChanged();
+      }),
     );
     registerDiagnostics(model, context);
     updateView();
@@ -192,6 +170,9 @@ export const activate = async (
     // data/authors). No build step is needed: the model compiles in memory, and
     // its first load writes catalogue/.
     command("compositor.setup", () => runSetup()),
+    // Refresh and Validate are two menu labels for the one action: a reload
+    // recompiles the corpus and re-runs validation, so there is nothing to
+    // separate them beyond the wording contributors expect to find.
     command("compositor.refresh", () => withModel((m) => m.reload())),
     command("compositor.validate", () => withModel((m) => m.reload())),
     command("compositor.fixFormatting", () => withModel(fixFormatting)),

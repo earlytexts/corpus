@@ -52,11 +52,11 @@ export const serializeCatalogue = (
   // Map every edition document to its key, so a borrowed child (which is another
   // edition's document instance) serialises as a ref rather than an inlined copy.
   const docKeys = new WeakMap<MarkitDocument, string>();
-  const seenWorks = new Set<Work>();
+  const docKeyedWorks = new Set<Work>();
   for (const author of catalogue.authors) {
     for (const work of author.works) {
-      if (seenWorks.has(work)) continue;
-      seenWorks.add(work);
+      if (docKeyedWorks.has(work)) continue;
+      docKeyedWorks.add(work);
       for (const edition of work.editions) {
         docKeys.set(edition.document, docKeyOf(work, edition));
       }
@@ -78,11 +78,11 @@ export const serializeCatalogue = (
   };
 
   const works: Record<string, CatalogueWork> = {};
-  seenWorks.clear();
+  const serializedWorks = new Set<Work>();
   for (const author of catalogue.authors) {
     for (const work of author.works) {
-      if (seenWorks.has(work)) continue;
-      seenWorks.add(work);
+      if (serializedWorks.has(work)) continue;
+      serializedWorks.add(work);
       const { editions, ...meta } = work;
       works[`${work.hostSlug}/${work.slug}`] = {
         ...meta,
