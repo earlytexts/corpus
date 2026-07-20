@@ -17,11 +17,14 @@
  * flips, the active editor changes, on edits (debounced), and whenever the
  * corpus model reloads (a save may have added a dictionary entry). The
  * dictionary itself comes from the loaded catalogue.
+ *
+ * Curating a squiggle runs the resolution cascade (lib/dictionaryCascade.ts):
+ * this module supplies only the editor prompts it drives and writes the
+ * resulting decisions across their shards.
  */
 
 import * as vscode from "vscode";
 import { compileWithPositions } from "@jsr/earlytexts__markit";
-import { type EntryValue, shardOf } from "@earlytexts/corpus";
 import {
   scanUnaccounted,
   type UnaccountedWord,
@@ -32,19 +35,20 @@ import {
   upsertEntriesText,
 } from "../../lib/dictionaryEdits.ts";
 import {
+  addEntry,
+  type CascadePrompts,
+  type Decisions,
+  groupDecisionsByShard,
+} from "../../lib/dictionaryCascade.ts";
+import {
   addTargetTitle,
   entryActionTitle,
   entryWords,
   fuseActionTitle,
   unaccountedMessage,
   unattestedLemmaMessage,
-  unattestedRejectMessage,
 } from "../../lib/dictionaryEntryText.ts";
-import {
-  corpusVocabulary,
-  resolveLemmaTarget,
-  resolveSpellingTarget,
-} from "../../lib/dictionaryResolve.ts";
+import { corpusVocabulary } from "../../lib/dictionaryResolve.ts";
 import {
   readShardText,
   updateShards,
@@ -59,6 +63,8 @@ const ENTRY_COMMAND = "compositor.dictionaryEntry";
 
 const wordRange = (word: UnaccountedWord): vscode.Range =>
   new vscode.Range(word.line, word.startColumn, word.line, word.endColumn);
+
+/* ------------------- the cascade's editor prompts ----------------------- */
 
 /** Ask for the modern spelling (respell) or lemma of a surface, folded to the
  * register's key form. One word, or space-separated words for an expansion
@@ -84,89 +90,6 @@ const promptWords = async (
   if (input === undefined) return undefined;
   const words = entryWords(input);
   return words.length === 0 ? undefined : words.join(" ");
-};
-
-/* -------------------------- the resolution cascade ---------------------- */
-
-/** The entries a cascade has decided to write, folded surface → value. */
-type Decisions = Map<string, EntryValue>;
-
-/** What a target is measured against: the entries decided so far (plus the
- * loaded register), and the corpus vocabulary. */
-type ResolveCtx = {
-  decisions: Decisions;
-  inDictionary: (word: string) => boolean;
-  inCorpus: (word: string) => boolean;
-};
-
-/** How a step ended: written, abandoned (a cancelled prompt), or refused (an
- * unattested respelling target — carrying the message to show). */
-type Step = "ok" | "cancel" | { rejected: string };
-
-/**
- * Decide one entry, resolving whatever it references first (so the write never
- * leaves the register invalid). `modern` bottoms out immediately; a respelling
- * resolves each target spelling, a lemma its citation form — recursing until
- * every target is registered, added here, refused, or the contributor cancels.
- */
-const addEntry = async (
-  surface: string,
-  kind: EntryAction["kind"],
-  ctx: ResolveCtx,
-): Promise<Step> => {
-  if (kind === "modern") {
-    ctx.decisions.set(surface, null);
-    return "ok";
-  }
-  const target = await promptWords(surface, kind);
-  if (target === undefined) return "cancel";
-  if (kind === "lemma") {
-    const step = await resolveLemma(target, ctx);
-    if (step !== "ok") return step;
-    ctx.decisions.set(surface, `=${target}`);
-    return "ok";
-  }
-  for (const spelling of target.split(" ")) {
-    const step = await resolveSpelling(spelling, ctx);
-    if (step !== "ok") return step;
-  }
-  ctx.decisions.set(surface, target);
-  return "ok";
-};
-
-/** Resolve a respelling's target spelling: registered already, else added as a
- * modern word or a lemma (an attested spelling), else refused (unattested). */
-const resolveSpelling = async (
-  target: string,
-  ctx: ResolveCtx,
-): Promise<Step> => {
-  const resolution = resolveSpellingTarget(
-    target,
-    ctx.inDictionary,
-    ctx.inCorpus,
-  );
-  if (resolution.kind === "resolved") return "ok";
-  if (resolution.kind === "reject") {
-    return { rejected: unattestedRejectMessage(target) };
-  }
-  const kind = await pickAddKind(target, resolution.choices);
-  if (kind === undefined) return "cancel";
-  return addEntry(target, kind, ctx);
-};
-
-/** Resolve a stated lemma's citation form: registered already, else added as a
- * modern word — silently when attested, on confirmation when not (a citation
- * form may be unprinted). */
-const resolveLemma = async (target: string, ctx: ResolveCtx): Promise<Step> => {
-  const resolution = resolveLemmaTarget(target, ctx.inDictionary, ctx.inCorpus);
-  if (resolution.kind === "resolved") return "ok";
-  if (resolution.kind === "add") {
-    ctx.decisions.set(target, resolution.value);
-    return "ok";
-  }
-  if (!(await confirmUnattestedLemma(target))) return "cancel";
-  ctx.decisions.set(target, null);
-  return "ok";
 };
 
 /** Ask how to give a target its own entry — the choices are the only ones that
@@ -203,21 +126,21 @@ const confirmUnattestedLemma = async (target: string): Promise<boolean> =>
     "Add as modern word",
   )) === "Add as modern word";
 
+/** The editor prompts the resolution cascade drives (dictionaryCascade.ts). */
+const prompts: CascadePrompts = {
+  promptWords,
+  pickAddKind,
+  confirmUnattestedLemma,
+};
+
 /** Write a cascade's decisions, one write per shard, as a single unit
  * serialized against every other dictionary edit (else a concurrent edit's read
  * can land mid-write and wipe a shard). Every shard's new text is computed
  * first, so a malformed value throws before anything is written. */
 const writeDecisions = (root: string, decisions: Decisions): Promise<void> =>
   updateShards(async () => {
-    const byShard = new Map<string, { surface: string; value: EntryValue }[]>();
-    for (const [surface, value] of decisions) {
-      const shard = shardOf(surface);
-      const group = byShard.get(shard) ?? [];
-      group.push({ surface, value });
-      byShard.set(shard, group);
-    }
     const writes: { shard: string; text: string }[] = [];
-    for (const [shard, entries] of byShard) {
+    for (const [shard, entries] of groupDecisionsByShard(decisions)) {
       writes.push({
         shard,
         text: upsertEntriesText(await readShardText(root, shard), entries),
@@ -366,12 +289,17 @@ export const createDictionaryController = (
     if (dictionary === undefined) return;
     const vocabulary = corpusVocabulary(state.catalogue);
     const decisions: Decisions = new Map();
-    const step = await addEntry(surface, kind, {
-      decisions,
-      inDictionary: (word) =>
-        decisions.has(word) || Object.hasOwn(dictionary, word),
-      inCorpus: (word) => vocabulary.has(word),
-    });
+    const step = await addEntry(
+      surface,
+      kind,
+      {
+        decisions,
+        inDictionary: (word) =>
+          decisions.has(word) || Object.hasOwn(dictionary, word),
+        inCorpus: (word) => vocabulary.has(word),
+      },
+      prompts,
+    );
     if (step === "cancel") return;
     if (typeof step === "object") {
       void vscode.window.showErrorMessage(`Compositor: ${step.rejected}`);
