@@ -53,7 +53,7 @@ Normalisation also handles contractions: "'tis" is normalised to "it is", "we'll
 
 What counts as a variant spelling of the same word is presumed to be obvious and uncontroversial in almost every case. There are just two potential questions, decided here:
 
-- Archaic spellings that are arguably distinct forms (e.g. "thou", "thy", "hath", "doth") _are_ normalised to their modern equivalents ("you", "your", "has", "does"). This is a debatable but pragmatic choice. For the most part, we are assuming scholars will not be interested in this variety; if they are, they can operate on the level of the surface without normalisation.
+- Archaic forms that are arguably distinct words (e.g. "thou", "thy", "hath", "doth") are _not_ treated as variant spellings of their modern equivalents. Normalisation is reserved for orthographic variation of the same form ("vertue" / "virtue", "seem'd" / "seemed"); an archaic form keeps its own canonical spelling, and is instead _lemmatised_ onto the modern headword ("thou" and "thy" → **you**, "hath" → **have**, "doth" → **do** — see [Principles of Lemmatisation](#principles-of-lemmatisation)). This gives scholars both levels of the data: the printed distinction survives at the spelling level ("thou" never silently becomes "you"), while searches and statistics at the lemma level collapse it.
 - Sometimes it may be unclear _which_ of two spellings should be the canonical one (e.g. "enquiry" vs "inquiry", "grey" vs "gray"). It makes absolutely no difference downstream - what matters is simply the equivalence class. To prevent any wasted time agonising over the decision, the choice is made by an **external authority** and enforced by automated tests: the canonical spelling is the one that appears in a fixed, version-pinned modern reference word list (SCOWL, at British spelling — see [Automatic Validation](#automatic-validation)).
 
   The authority is deliberately external and fixed, which is what makes it a rule one never has to think about again. A rule that read the answer off the corpus itself — "the commoner spelling wins" — has two fatal defects: the answer would _change_ as more texts are added (tedious re-work for no gain), and it decides each spelling in isolation, so a lemma family could split (if "encrease" were commoner than "increase" but "increasing" commoner than "encreasing", the base and its inflection would disagree). An external list has neither defect: it does not move when the corpus grows, and it endorses "increase" and "increasing" from the same source, so a family stays coherent.
@@ -92,6 +92,12 @@ What collapses onto a shared lemma:
   - _will_, _would_ → **will**
   - _shall_, _should_ → **shall**
   - _may_, _might_ → **may**
+- **Archaic grammatical forms onto the modern headword** (keeping their own spelling — see [Principles of Normalisation](#principles-of-normalisation)):
+  - _thou_, _thee_, _thy_, _thine_, _ye_ → **you**
+  - _hath_, _hast_, _hadst_ → **have**
+  - _doth_, _dost_, _didst_ → **do**
+  - _art_, _wast_ → **be**; _wilt_, _wouldst_ → **will**
+  - _giveth_, _knowest_, and every other _-eth_ / _-est_ inflection → the plain form
 - **Comparisons onto the plain adjective or adverb** (_including irregular ones_):
   - _great_, _greater_, _greatest_ → **great**
   - _good_, _better_, _best_ → **good**
@@ -118,22 +124,36 @@ What collapses onto a shared lemma:
   - A possessive whose base is **not** registered, or which should carry a
     **different** lemma, is written out explicitly.
 
-  What the rule does _not_ cover, so these still need explicit entries when they
-  occur: the bare-apostrophe plural possessive (`kings'`, `ladies'`) and
-  irregular possessives whose base is a distinct surface (`men's` → **man**).
+  What the rule does _not_ cover, so it still needs an explicit entry when it
+  occurs: the bare-apostrophe plural possessive (`kings'`, `ladies'`). An
+  irregular possessive such as `men's` needs nothing special — the rule strips
+  the clitic to the registered surface `men`, which reads with its lemma
+  (**man**).
+
+  The rule keys on the apostrophe (`'s` / `’s`), which the hand-press era often
+  drops: `Mans`, `Mens`, `Womans` print the genitive without it. An
+  apostrophe-less possessive is therefore not caught by the rule and needs an
+  explicit entry — a normalisation onto its apostrophe canonical, which then
+  carries the lemma: `mans` → `"man's"`, `mens` → `"men's"` (both onto **man**),
+  `womans` → `"woman's"`, `childs` → `"child's"`. This is a small, closed set —
+  only nouns whose apostrophe-less genitive is unambiguous, which in practice
+  means the irregular plurals (a regular `kings` is the plural, not a
+  respellable possessive). The apostrophe canonical (`man's`) is a genuine
+  register entry like any other cross-reference target, even though the rule
+  would _also_ account for it were it printed with its apostrophe.
 
 What stays apart, with its own lemma:
 
 - **Adverbs made from adjectives** (the "-ly" words): _quick_ and _quickly_ are two words, two lemmas. Likewise _true_ / _truly_.
 - **Reflexive pronouns**: _himself_, _herself_, _themselves_ are their own headwords — **not** forms of _he_, _she_, _they_. They are compounds (_him_ + _self_) and behave as distinct words, and a reader searching for "he" would be surprised to be shown every "himself".
 - **Ordinals and cardinals**: _first_ is not a form of _one_, _second_ not a form of _two_. Each keeps its own lemma.
-- **Periphrastic comparison**: _more_ and _most_ are ordinary words in their own right, each its own lemma — they are not forms of anything.
+- **Periphrastic comparison and degree quantifiers**: _more_ and _most_ are ordinary words in their own right, each its own lemma — they are not forms of anything. The same goes for _less_ and _least_ (only _lesser_ collapses, onto **less**). The adjectives proper still collapse, however irregular (_better_, _best_ → **good**; _worse_, _worst_ → **bad**).
 - **Plurale tantum nouns**: _scissors_, _trousers_, _tidings_, _thanks_ are all plural-only words, and each keeps its own lemma. The singulars (_scissor_, _trouser_, _tiding_, _thank_) are either non-existent or belong to different lemmas (e.g. _thank_ the verb).
 
 Two other notes worth stating explicitly:
 
 - **A word that shifts between noun and verb keeps one lemma.** Because a lemma is a spelling and we do not record part of speech, _love_ the noun and _love_ the verb are the same lemma.
-- **Words that are lexicalised keep their own lemma even if built from another.** _People_ is treated as its own headword, not as a plural of _person_; _government_ as its own word, not merely a form of _govern_.
+- **Words that are lexicalised keep their own lemma even if built from another.** _People_ is treated as its own headword, not as a plural of _person_; _government_ as its own word, not merely a form of _govern_. Likewise _elder_ and _eldest_ (an elder, an elder brother) keep their own lemmas while _older_ and _oldest_ collapse onto **old**; and the lexicalised _-ing_ nouns — _evening_, _footing_, the arts of _engineering_ and _dialling_ — are their own headwords, not forms of the verbs they resemble. An _-ing_ form that is _not_ lexicalised reads as a form of its verb (_bringing_ → **bring**), with an own-lemma reading added only on corpus evidence (see [Principles of Ambiguity](#principles-of-ambiguity)).
 
 ## Ambiguity
 
@@ -144,6 +164,8 @@ Ambiguity is limited to lemmatisation only: the ambiguity inherent in the lemma 
 Ambiguity is not confined to lemma pairs of the same shape. The bare `its`, for example, is ambiguous between the possessive (default, lemma **it**) and the apostrophe-less contraction of "it is" — so its entry carries two readings, `["=it", "it is"]`, with the possessive first. (`it's`, with the apostrophe, is an unambiguous contraction of "it is".)
 
 Downstream, an ambiguous surface is counted as an instance of the _first_ lemma in its dictionary entry by default. The dictionary _should_ therefore list the most common lemma first — but this is an advisory convention, not a checked invariant: the true reading distribution of an unmarked surface is not mechanically knowable, so no test enforces it.
+
+There is one structural exception to "most common first". When an own-lemma reading is paired with a lemma statement over the same spelling (_better_ as a word in its own right vs as a form of **good**), the own-lemma reading must come first: a non-default reading is selected by its spelling or lemma string, and only the lemma statement has a distinct one. Where the other reading dominates an edition, the edition says so with a `[metadata.dictionary]` override.
 
 The default for an edition (or section within an edition) can be overridden by `[metadata.dictionary]` markup in the edition's metadata:
 
