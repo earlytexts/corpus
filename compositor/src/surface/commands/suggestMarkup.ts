@@ -10,7 +10,7 @@
  * dictionary-accounting half (commands/dictionaryDiagnostics.ts): unaccounted
  * words squiggle as warnings, markup candidates as hints. Both are off by
  * default and driven by their own boolean setting, flipped together from the
- * one "Suggest Markup & Flag Unaccounted Words" command — there is no per-kind
+ * one "Toggle Dictionary Accounting Hints" command — there is no per-kind
  * filter, so turning the overlay on flags every kind at once.
  *
  * How it hangs together (mirrors the dictionary overlay):

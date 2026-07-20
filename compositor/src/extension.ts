@@ -16,6 +16,7 @@ import { createCorpusTree } from "./surface/corpusTree.ts";
 import { registerDoubleClickOpen } from "./surface/doubleClickOpen.ts";
 import { authorPath, type TreeNode, workDocId } from "./lib/nodes.ts";
 import { registerDiagnostics } from "./surface/diagnostics.ts";
+import { registerHover } from "./surface/hover.ts";
 import { nodeCorpusFs } from "@earlytexts/corpus";
 import {
   newAuthor,
@@ -142,6 +143,7 @@ export const activate = async (
       }),
     );
     registerDiagnostics(model, context);
+    registerHover(model, context);
     updateView();
     return true;
   };

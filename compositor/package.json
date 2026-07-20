@@ -2,7 +2,7 @@
   "name": "compositor",
   "publisher": "earlytexts",
   "displayName": "Early Text Compositor",
-  "version": "0.12.3",
+  "version": "0.12.4",
   "description": "A VSCode extension for contributing to the Early Text Corpus",
   "license": "MIT",
   "repository": {
@@ -130,7 +130,7 @@
       },
       {
         "command": "compositor.configureDiagnostics",
-        "title": "Suggest Markup & Flag Unaccounted Words…",
+        "title": "Toggle Dictionary Accounting Hints…",
         "category": "Compositor",
         "icon": "$(lightbulb-sparkle)"
       },
@@ -278,6 +278,11 @@
           "type": "boolean",
           "default": true,
           "description": "Squiggle likely people, places, organisations, citations, and foreign text (as hints) in open editions, each with a quick fix to wrap it in the corresponding markup. On by default: an enrichment aid, mined from the markup the corpus already carries."
+        },
+        "compositor.showTokenHover": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a lemma-and-forms tooltip when you point at an accounted word in an open edition: the citation lemma the corpus files it under, its form within that lemma's paradigm, and any other readings (each a click away from being pinned). On by default: a curation aid for seeing how each token is accounted for."
         }
       }
     }
