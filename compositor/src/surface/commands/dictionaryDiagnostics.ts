@@ -8,9 +8,9 @@
  * and gated behind the `compositor.flagUnaccountedWords` setting: while the
  * register is still being backfilled the overlay is a curation tool, so it can
  * be turned off when the volume of unaccounted words is more noise than help.
- * The setting is flipped from the
- * one "Suggest Markup & Flag Unaccounted Words" command (alongside the markup
- * overlay); turning it on lights this up, turning it off takes it back down.
+ * The setting is flipped from the one "Toggle Dictionary Accounting Hints"
+ * command (alongside the markup overlay); turning it on lights this up, turning
+ * it off takes it back down.
  *
  * Lifecycle mirrors the markup-suggestion overlay (commands/suggestMarkup.ts):
  * the active edition is compiled and scanned on demand — when the setting
