@@ -16,6 +16,7 @@ import {
   type EntryValue,
   parseDictionary,
   parseEntry,
+  type RawDictionary,
   shardDictionary,
   shardOf,
 } from "@earlytexts/corpus";
@@ -56,16 +57,14 @@ export const upsertEntriesText = (
   shardText: string,
   entries: { surface: string; value: EntryValue }[],
 ): string => {
-  const shard = shardOf(entries[0].surface);
-  const { dictionary } = parseDictionary(
-    new Map([[shard, shardText.trim() === "" ? "{}" : shardText]]),
-  );
-  for (const { surface, value } of entries) {
-    const entry = parseEntry(surface, value);
-    if ("error" in entry) throw new Error(entry.error);
-    dictionary[surface] = entry;
-  }
-  return shardDictionary(dictionary).get(shard) ?? "{}\n";
+  if (entries.length === 0) throw new Error("upsertEntriesText: no entries");
+  return editShard(shardText, entries[0].surface, (dictionary) => {
+    for (const { surface, value } of entries) {
+      const entry = parseEntry(surface, value);
+      if ("error" in entry) throw new Error(entry.error);
+      dictionary[surface] = entry;
+    }
+  });
 };
 
 /**
@@ -88,10 +87,28 @@ export const removeEntriesText = (
   shardText: string,
   surfaces: string[],
 ): string => {
-  const shard = shardOf(surfaces[0]);
+  if (surfaces.length === 0) throw new Error("removeEntriesText: no surfaces");
+  return editShard(shardText, surfaces[0], (dictionary) => {
+    for (const surface of surfaces) delete dictionary[surface];
+  });
+};
+
+/**
+ * The parse/shard scaffolding both edit operations share: parse the single
+ * shard `shardText` belongs to (keyed off any of its surfaces via
+ * `shardKeySource`), let `mutate` add or delete entries in place, then
+ * re-serialise that shard to its canonical text. Localises the "empty shard
+ * reads as `{}`" and "`{}\n` fallback for an emptied shard" rules.
+ */
+const editShard = (
+  shardText: string,
+  shardKeySource: string,
+  mutate: (dictionary: RawDictionary) => void,
+): string => {
+  const shard = shardOf(shardKeySource);
   const { dictionary } = parseDictionary(
     new Map([[shard, shardText.trim() === "" ? "{}" : shardText]]),
   );
-  for (const surface of surfaces) delete dictionary[surface];
+  mutate(dictionary);
   return shardDictionary(dictionary).get(shard) ?? "{}\n";
 };

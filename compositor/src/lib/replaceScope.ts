@@ -8,6 +8,7 @@
 
 import type { Catalogue, Edition, Work } from "@earlytexts/corpus";
 import { normalizePath } from "@earlytexts/corpus";
+import { distinctWorks } from "./catalogueWalk.ts";
 import { editionPath } from "./nodes.ts";
 
 /** A replacement scope: a human label, a one-line description, and the edition
@@ -67,19 +68,12 @@ export const replaceScopes = (
 };
 
 /** Every work by any of `slugs`, each once, in author order. */
-const worksByAuthors = (catalogue: Catalogue, slugs: string[]): Work[] => {
-  const seen = new Set<Work>();
-  const works: Work[] = [];
-  for (const slug of slugs) {
-    const author = catalogue.byAuthor.get(slug);
-    for (const work of author?.works ?? []) {
-      if (seen.has(work)) continue;
-      seen.add(work);
-      works.push(work);
-    }
-  }
-  return works;
-};
+const worksByAuthors = (catalogue: Catalogue, slugs: string[]): Work[] =>
+  distinctWorks(
+    slugs
+      .map((slug) => catalogue.byAuthor.get(slug))
+      .filter((author) => author !== undefined),
+  );
 
 /** The edition source files of `works`, deduplicated, in a stable order. */
 const editionFiles = (catalogue: Catalogue, works: Work[]): string[] => {

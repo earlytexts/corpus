@@ -12,12 +12,12 @@ import { buildCatalogue } from "@earlytexts/corpus";
 import { corpus, CORPUS_ROOT, memoryCorpus } from "@earlytexts/corpus/test";
 import {
   buildHints,
-  foldWord,
   type Hints,
   type MarkupSuggestion,
   phraseLexicon,
   scanSource,
 } from "../src/lib/hints.ts";
+import { foldWord } from "../src/lib/sourceTokens.ts";
 
 /** @std/assert-style shims over vitest's expect, so the cases read unchanged. */
 const assert: (cond: unknown, msg?: string) => asserts cond = (cond, msg) => {

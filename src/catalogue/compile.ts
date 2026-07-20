@@ -53,8 +53,8 @@ export const buildCatalogue = async (
   precompiled?: ReadonlyMap<string, MarkitDocument>,
 ): Promise<{ catalogue: Catalogue; warnings: string[] }> => {
   // Canonicalise so that work directories and child-reference paths agree.
-  corpusDir = await fs.realPath(corpusDir);
-  const dataDir = `${corpusDir}/data`;
+  const realCorpusDir = await fs.realPath(corpusDir);
+  const dataDir = `${realCorpusDir}/data`;
   const ctx: LoadContext = {
     fs,
     cache: new Map(),
@@ -132,7 +132,7 @@ export const buildCatalogue = async (
   // this degrades rather than throws: entries that cannot be kept are dropped
   // with a warning (the strict report is validation's).
   const { dictionary, problems } = parseDictionary(
-    await readDictionaryShards(fs, corpusDir),
+    await readDictionaryShards(fs, realCorpusDir),
   );
   for (const problem of problems) {
     if (problem.dropped) {

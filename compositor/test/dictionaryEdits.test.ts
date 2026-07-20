@@ -68,6 +68,10 @@ test("upsertEntriesText rolls back nothing — a malformed value throws", () => 
   ).toThrow();
 });
 
+test("upsertEntriesText rejects an empty batch rather than throwing on [0]", () => {
+  expect(() => upsertEntriesText("", [])).toThrow(/no entries/);
+});
+
 test("removes an entry, keeping the rest sorted", () => {
   const before = '{\n  "and": null,\n  "apple": null\n}\n';
   expect(removeEntryText(before, "and")).toBe('{\n  "apple": null\n}\n');
@@ -91,6 +95,10 @@ test("removes several entries from one shard at once", () => {
   expect(removeEntriesText(before, ["and", "apple"])).toBe(
     '{\n  "ant": null\n}\n',
   );
+});
+
+test("removeEntriesText rejects an empty batch rather than throwing on [0]", () => {
+  expect(() => removeEntriesText("", [])).toThrow(/no surfaces/);
 });
 
 test("offers the add actions for an unknown surface", () => {

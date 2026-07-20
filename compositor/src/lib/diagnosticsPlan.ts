@@ -16,6 +16,11 @@ import type { Violation } from "@earlytexts/corpus";
  * open documents; the compositor suppresses its own copy for those files. */
 export const COMPILE_RULE = "every file compiles without errors";
 
+/** A generous end column for a violation that names a line but no column, so the
+ * squiggle spans the whole line however long it is (VSCode clamps to the actual
+ * line end). */
+const WHOLE_LINE_COLUMNS = 1000;
+
 /** A diagnostic as plain data, ready to become a vscode.Diagnostic. */
 export type PlainDiagnostic = {
   /** 0-based, end-exclusive. */
@@ -126,7 +131,7 @@ const toPlainDiagnostic = (v: Violation): PlainDiagnostic => {
           (v.endLine ?? v.line ?? 1) - 1,
           (v.endColumn ?? v.column + 1) - 1,
         ]
-      : [line, 0, line, 1000];
+      : [line, 0, line, WHOLE_LINE_COLUMNS];
   return {
     startLine,
     startColumn,

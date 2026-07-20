@@ -7,10 +7,10 @@
  */
 
 import * as vscode from "vscode";
-import type { Author, Work } from "@earlytexts/corpus";
+import type { Author } from "@earlytexts/corpus";
 import { nodeCorpusFs, YEAR } from "@earlytexts/corpus";
 import type { CorpusModel } from "../../corpusModel.ts";
-import type { TreeNode } from "../../lib/nodes.ts";
+import { capitalize, type TreeNode, workDocId } from "../../lib/nodes.ts";
 import { authorFile, editionFile, stubFile } from "../../lib/templates.ts";
 
 const SLUG = /^[a-z0-9]+$/;
@@ -48,17 +48,6 @@ const askNumber = (prompt: string, value?: string) =>
     validateInput: (input) =>
       /^\d+$/.test(input.trim()) ? undefined : "Must be a year (number)",
   });
-
-const capitalize = (slug: string): string =>
-  slug.charAt(0).toUpperCase() + slug.slice(1);
-
-/** The work's document ID (e.g. "Hume.EHU"), from any edition's root ID. */
-export const workDocId = (work: Work): string => {
-  const id = work.editions[0]?.document.id;
-  return id !== undefined && id.includes(".")
-    ? id.split(".").slice(0, -1).join(".")
-    : `${capitalize(work.hostSlug)}.${work.slug.toUpperCase()}`;
-};
 
 export const newAuthor = async (model: CorpusModel): Promise<void> => {
   const slug = await ask("Author slug (the file name, e.g. hume)", {

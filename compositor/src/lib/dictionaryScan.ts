@@ -7,7 +7,7 @@
  * editor can squiggle each occurrence and offer curation quick-fixes.
  *
  * Location runs Markit's own tokenizer over the positioned compile
- * (hints.ts's `blockSourceTokens`), which drops exempting markup (people,
+ * (sourceTokens.ts's `blockSourceTokens`), which drops exempting markup (people,
  * places, orgs, citations, foreign spans, `[w:]`) and reads through page
  * breaks, editorial marks, and `{…}` character mode — so an exempt or
  * disambiguated occurrence is never flagged, and a word built from character
@@ -30,7 +30,12 @@ import {
   fold,
   multiWordSurfaces,
 } from "@earlytexts/corpus";
-import { blockSourceTokens, collectBlocks, type SourceToken } from "./hints.ts";
+import {
+  blockSourceTokens,
+  collectBlocks,
+  sliceRange,
+  type SourceToken,
+} from "./sourceTokens.ts";
 
 /** One flagged occurrence of a surface the register does not yet account for.
  * Single-line (columns 0-based, end exclusive) — the shape a VSCode Range wants. */
@@ -165,8 +170,12 @@ const runGaps = (
   for (let i = 1; i < run.length; i++) {
     const a = run[i - 1]!;
     const b = run[i]!;
-    const between = sliceBetween(lines, a.line, a.end, b.line, b.start);
-    if (between === undefined || !/^[ \n]+$/.test(between)) return undefined;
+    // Brace-widening can leave the two positions inverted; that run can't fuse.
+    if (b.line < a.line || (b.line === a.line && b.start < a.end)) {
+      return undefined;
+    }
+    const between = sliceRange(lines, a.line, a.end, b.line, b.start);
+    if (!/^[ \n]+$/.test(between)) return undefined;
     gaps.push({
       startLine: a.line,
       startColumn: a.end,
@@ -185,25 +194,4 @@ const anchored = (token: SourceToken, lines: string[]): boolean => {
     line[token.start] === token.display[0] &&
     line[token.end - 1] === token.display[token.display.length - 1]
   );
-};
-
-/** The source text between two positions, or undefined if they are inverted. */
-const sliceBetween = (
-  lines: string[],
-  fromLine: number,
-  fromColumn: number,
-  toLine: number,
-  toColumn: number,
-): string | undefined => {
-  if (fromLine > toLine || (fromLine === toLine && fromColumn > toColumn)) {
-    return undefined;
-  }
-  if (fromLine === toLine) {
-    return (lines[fromLine] ?? "").slice(fromColumn, toColumn);
-  }
-  return [
-    (lines[fromLine] ?? "").slice(fromColumn),
-    ...lines.slice(fromLine + 1, toLine),
-    (lines[toLine] ?? "").slice(0, toColumn),
-  ].join("\n");
 };

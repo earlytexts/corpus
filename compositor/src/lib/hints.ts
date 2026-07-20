@@ -22,34 +22,46 @@
  *    from work titles), and a strong/weak word lexicon per language code.
  *    Generic `$…$` spans carry no language code and are ignored — in practice
  *    they mark symbols and other non-language material.
- *  - scanSource: run Markit's own tokenizer over a positioned compile of the
- *    file (so word identity is Markit's — the same `~` joins, page-break and
- *    editorial transparency the whole pipeline shares), drop the tokens
- *    already inside markup, place the rest by their source spans, and report
- *    matches as ranges in that source, ready to become editor diagnostics.
- *    Greek needs no lexicon: Greek-script tokens match outright.
+ *  - scanSource: place the file's source tokens (sourceTokens.ts runs Markit's
+ *    own tokenizer over a positioned compile, so word identity is Markit's —
+ *    the same `~` joins, page-break and editorial transparency the whole
+ *    pipeline shares — and drops the tokens already inside markup), match them
+ *    and the markup-masked lines against the lexicons, and report matches as
+ *    ranges in that source, ready to become editor diagnostics. Greek needs no
+ *    lexicon: Greek-script tokens match outright.
+ *
+ * The source-token machinery both this scanner and the dictionary scan lean on
+ * — token placement, `collectBlocks`, `maskedLines`, `sliceRange`, and the
+ * `foldWord` atom the lexicons and tokens must agree on — lives in the sibling
+ * sourceTokens.ts.
  *
  * Positions are 0-based (lines and columns), end-exclusive — the shape a
  * VSCode Range wants; the corpus's own display convention is 1-based.
  *
  * Reads top-down: tuning constants and public types, then each half's entry
- * point followed by its helpers (mining, then matching, then the source
- * tokens), with the word-folding foundation both halves share at the bottom.
+ * point followed by its helpers (mining, then matching), with the word
+ * segmentation the lexicons share at the bottom.
  */
 
 import {
-  type Block,
   type BlockElement,
-  type Extraction,
   extractText,
-  type Frame,
   type InlineElement,
   type List,
   type MarkitDocument,
-  tokenize,
   wordPattern,
 } from "@jsr/earlytexts__markit";
-import type { Catalogue, Work } from "@earlytexts/corpus";
+import type { Catalogue } from "@earlytexts/corpus";
+import { distinctEditionDocuments, distinctWorks } from "./catalogueWalk.ts";
+import {
+  blockTokens,
+  collectBlocks,
+  FORMAT_DELIMS,
+  foldWord,
+  maskedLines,
+  sliceRange,
+  type SourceToken,
+} from "./sourceTokens.ts";
 
 /* ------------------------- tuning constants --------------------------- */
 
@@ -73,19 +85,6 @@ const CLUSTER_MIN_WORDS = 2;
 const SINGLETON_MIN_LENGTH = 4;
 
 const LETTER = /\p{L}/u;
-const GREEK_CHAR = /[\u0370-\u03ff\u1f00-\u1fff]/u;
-
-/** The markup kinds whose content is already marked up (or, for `word`,
- * already disambiguated by `[w:]`): their tokens are never suggestion or
- * squiggle material. */
-const EXEMPT_FRAMES: ReadonlySet<string> = new Set([
-  "person",
-  "place",
-  "org",
-  "citation",
-  "language",
-  "word",
-]);
 
 /** Likely citation locators, matched against markup-masked source lines.
  * Mined from the corpus's existing citation spans ("Sect. II.", "Fig. 3.",
@@ -99,11 +98,6 @@ const CITATION_PATTERNS: RegExp[] = [
 /** A citation cue: the capitalised run after it (the group) is the candidate. */
 const CITATION_CUE =
   /\b(?:See|Vid\.?|Vide)\s+([A-Z][\p{L}'’]*(?:\s+[A-Z][\p{L}'’]*){0,5})/gu;
-
-/** Inline formatting wrappers a name/citation/foreign phrase is often set in
- * (italics, small-caps); the match is widened back over them so the markup
- * encloses the wrapper (`[p:_Machiavel_]`, not `_[p:Machiavel]_`). */
-const FORMAT_DELIMS = new Set(["_", "*"]);
 
 /* -------------------------------- types -------------------------------- */
 
@@ -198,7 +192,7 @@ export const buildHints = (
       }
     },
   };
-  for (const doc of allDocs(catalogue)) {
+  for (const doc of distinctEditionDocuments(catalogue, true)) {
     for (const block of doc.blocks) {
       for (const run of block.content.flatMap(inlineRuns)) {
         walkInline(run, sink);
@@ -206,16 +200,13 @@ export const buildHints = (
     }
   }
 
-  const seenWorks = new Set<Work>();
   for (const author of catalogue.authors) {
     addPhrase(people, `${author.forename} ${author.surname}`.trim());
     addPhrase(people, author.surname);
     if (author.title !== undefined) addPhrase(people, author.title);
-    for (const work of author.works) {
-      if (seenWorks.has(work)) continue; // co-authored works list repeatedly
-      seenWorks.add(work);
-      addPhrase(citations, work.title);
-    }
+  }
+  for (const work of distinctWorks(catalogue.authors)) {
+    addPhrase(citations, work.title);
   }
 
   // A single-word phrase that is also an everyday lowercase word ("of",
@@ -286,25 +277,6 @@ type HintSink = {
   org: (text: string) => void;
   citation: (text: string) => void;
   unmarked: (text: string) => void;
-};
-
-/** Every document in the catalogue, each once (borrowed children and
- * co-authored works share document objects across listings). */
-const allDocs = (catalogue: Catalogue): MarkitDocument[] => {
-  const seen = new Set<MarkitDocument>();
-  const out: MarkitDocument[] = [];
-  const add = (doc: MarkitDocument): void => {
-    if (seen.has(doc)) return;
-    seen.add(doc);
-    out.push(doc);
-    doc.children.forEach(add);
-  };
-  for (const author of catalogue.authors) {
-    for (const work of author.works) {
-      for (const edition of work.editions) add(edition.document);
-    }
-  }
-  return out;
 };
 
 /**
@@ -391,7 +363,7 @@ export const scanSource = (
     // Words too short to carry signal are dropped from lexicons and token
     // streams alike (keepWord), so phrase matching stays aligned.
     const tokens = blockTokens(block, extraction, lines).filter((token) =>
-      keepWord(token.folded),
+      keepWord(token.lexiconFolded),
     );
     const masked = maskedLines(block, extraction, lines);
     matchGreek(tokens, lines, out);
@@ -411,31 +383,6 @@ export const scanSource = (
   return prune(out.map((s) => expandOverMarkup(lines, s))).sort(byPosition);
 };
 
-/**
- * Every non-exempt token of a compiled block as a source token — Markit's
- * word identity (`~` joins, page-break and editorial transparency included),
- * placed by its source span. Unfiltered: single-letter tokens included, so
- * the dictionary scan (dictionaryScan.ts) sees the whole stream (it re-folds
- * each token's `display` with the corpus's own folding to match the
- * register); `scanSource` drops the short ones itself. The block must come
- * from a compile (with positions) of THIS source.
- */
-export const blockSourceTokens = (
-  block: Block,
-  lines: string[],
-): SourceToken[] => blockTokens(block, extractText(block), lines);
-
-/** Every block of the document and its (in-file) children, in source order. */
-export const collectBlocks = (document: MarkitDocument): Block[] => {
-  const out: Block[] = [];
-  const walk = (doc: MarkitDocument): void => {
-    out.push(...doc.blocks);
-    doc.children.forEach(walk);
-  };
-  walk(document);
-  return out.sort((a, b) => a.source!.start.line - b.source!.start.line);
-};
-
 /* ------------------------------- matching ------------------------------ */
 
 /** Maximal runs of one language's lexicon words; a run matches when a strong
@@ -448,7 +395,7 @@ const matchLanguages = (
 ): void => {
   for (const [lang, lexicon] of languages) {
     const member = (t: SourceToken): boolean =>
-      lexicon.strong.has(t.folded) || lexicon.weak.has(t.folded);
+      lexicon.strong.has(t.lexiconFolded) || lexicon.weak.has(t.lexiconFolded);
     let i = 0;
     while (i < tokens.length) {
       if (!member(tokens[i]!)) {
@@ -458,13 +405,13 @@ const matchLanguages = (
       let j = i;
       let anchored = false;
       while (j < tokens.length && member(tokens[j]!)) {
-        anchored ||= lexicon.strong.has(tokens[j]!.folded);
+        anchored ||= lexicon.strong.has(tokens[j]!.lexiconFolded);
         j++;
       }
       if (
         anchored &&
         (j - i >= CLUSTER_MIN_WORDS ||
-          tokens[i]!.folded.length >= SINGLETON_MIN_LENGTH)
+          tokens[i]!.lexiconFolded.length >= SINGLETON_MIN_LENGTH)
       ) {
         out.push(
           suggestion("language", lang, tokens[i]!, tokens[j - 1]!, lines),
@@ -505,10 +452,12 @@ const matchPhrases = (
   let i = 0;
   while (i < tokens.length) {
     const first = tokens[i]!;
-    const candidates = first.capital ? lexicon.get(first.folded) : undefined;
+    const candidates = first.capital
+      ? lexicon.get(first.lexiconFolded)
+      : undefined;
     let matched = 0;
     for (const seq of candidates ?? []) {
-      if (seq.every((word, k) => tokens[i + k]?.folded === word)) {
+      if (seq.every((word, k) => tokens[i + k]?.lexiconFolded === word)) {
         matched = seq.length;
         break;
       }
@@ -566,21 +515,6 @@ const suggestion = (
   endLine: last.line,
   endColumn: last.end,
 });
-
-const sliceRange = (
-  lines: string[],
-  fromLine: number,
-  fromCol: number,
-  toLine: number,
-  toCol: number,
-): string =>
-  fromLine === toLine
-    ? (lines[fromLine] ?? "").slice(fromCol, toCol)
-    : [
-        (lines[fromLine] ?? "").slice(fromCol),
-        ...lines.slice(fromLine + 1, toLine),
-        (lines[toLine] ?? "").slice(0, toCol),
-      ].join("\n");
 
 /**
  * Widen a single-line suggestion to take in the inline formatting markup that
@@ -672,183 +606,7 @@ const prune = (list: MarkupSuggestion[]): MarkupSuggestion[] =>
       }),
   );
 
-/* ----------------------------- source tokens --------------------------- */
-
-export type SourceToken = {
-  folded: string;
-  /** The token as extracted (non-breaking spaces read as plain spaces, so a
-   * `~`-fused unit reads "a priori"). */
-  display: string;
-  /** Whether only inter-word space separates this token from the previous one
-   * within the same plain-text run — the adjacency a multi-word join may
-   * bridge. Markup of any kind between the two breaks it. */
-  joinsLeft: boolean;
-  /** The source occurrence began with a capital letter. */
-  capital: boolean;
-  /** Greek script (typed directly or via a `{{…}}` Greek-mode span). */
-  greek: boolean;
-  line: number;
-  start: number;
-  end: number;
-};
-
-/**
- * Place a block's Markit tokens in the source: drop the exempt ones (already
- * inside markup), read each one's line and columns off its source span, and
- * widen the edges over any `{…}`/`{{…}}` character- or Greek-mode span they
- * fall inside — compiled positions point at the braces' content, but a
- * replacement over the token must cover the whole span.
- */
-const blockTokens = (
-  block: Block,
-  extraction: Extraction,
-  lines: string[],
-): SourceToken[] => {
-  const out: SourceToken[] = [];
-  const { text, spans } = extraction;
-  let startIndex = 0; // span holding the current token's first character
-  let endIndex = 0; // span holding the current token's last character
-  let previous: { span: number; end: number } | undefined;
-  for (const token of tokenize(block)) {
-    while (spans[startIndex]!.end <= token.start) startIndex++;
-    while (spans[endIndex]!.end <= token.end - 1) endIndex++;
-    const joinsLeft =
-      previous !== undefined &&
-      previous.span === startIndex &&
-      /^ *$/.test(text.slice(previous.end, token.start));
-    previous = { span: endIndex, end: token.end };
-    if (token.source === undefined || isExempt(token.context)) continue;
-    const line = token.source.start.line;
-    const [start, end] = widenOverBraces(
-      lines[line] ?? "",
-      token.source.start.column,
-      token.source.end.column,
-    );
-    out.push({
-      folded: foldWord(token.text),
-      display: token.text,
-      joinsLeft,
-      capital: /^\p{Lu}/u.test(token.text),
-      greek: GREEK_CHAR.test(token.text),
-      line,
-      start,
-      end,
-    });
-  }
-  return out;
-};
-
-/** Whether a wrapper stack contains exempting markup. */
-const isExempt = (context: Frame[]): boolean =>
-  context.some((frame) => EXEMPT_FRAMES.has(frame.type));
-
-/** Widen a token's column range over any character/Greek-mode span it
- * overlaps on its line (a token strictly inside a multi-word Greek span
- * widens to the whole span — replacing less would break the braces). */
-const widenOverBraces = (
-  line: string,
-  start: number,
-  end: number,
-): [number, number] => {
-  for (const span of braceSpans(line)) {
-    if (span.end <= start) continue;
-    if (span.start >= end) break;
-    if (span.start < start) start = span.start;
-    if (span.end > end) end = span.end;
-  }
-  return [start, end];
-};
-
-/** The `{…}` and `{{…}}` spans of a source line, as [start, end) column
- * ranges, escaped braces skipped. Block-tag braces only occur on lines that
- * carry no tokens, so they never matter here. */
-const braceSpans = (line: string): { start: number; end: number }[] => {
-  const spans: { start: number; end: number }[] = [];
-  let i = 0;
-  while (i < line.length) {
-    const ch = line[i];
-    if (ch === "\\") {
-      i += 2;
-      continue;
-    }
-    if (ch !== "{") {
-      i++;
-      continue;
-    }
-    const close = line[i + 1] === "{" ? "}}" : "}";
-    let j = i + close.length;
-    while (j < line.length && !line.startsWith(close, j)) {
-      j += line[j] === "\\" ? 2 : 1;
-    }
-    spans.push({ start: i, end: Math.min(j + close.length, line.length) });
-    i = spans[spans.length - 1]!.end;
-  }
-  return spans;
-};
-
-/**
- * The block's source lines with everything except unmarked text content
- * blanked to \x00, for the citation regexes: a pattern can never match inside
- * existing markup or across it. Inline formatting delimiters soften to a
- * space instead — a word boundary the regexes may bridge, with the match
- * widened back over the delimiter afterwards (expandOverMarkup).
- */
-const maskedLines = (
-  block: Block,
-  extraction: Extraction,
-  lines: string[],
-): Map<number, string> => {
-  const from = block.source!.start.line;
-  const to = Math.min(block.source!.end.line - 1, lines.length - 1);
-  const blanks = new Map<number, string[]>();
-  for (let num = from; num <= to; num++) {
-    blanks.set(
-      num,
-      Array.from(lines[num] ?? "", () => "\0"),
-    );
-  }
-  for (const span of extraction.spans) {
-    if (span.source === undefined || isExempt(span.context)) continue;
-    const { start, end } = span.source;
-    for (let num = start.line; num <= end.line; num++) {
-      const blank = blanks.get(num);
-      if (blank === undefined) continue;
-      const line = lines[num] ?? "";
-      const a = num === start.line ? start.column : 0;
-      const b =
-        num === end.line ? Math.min(end.column, line.length) : line.length;
-      for (let k = a; k < b; k++) blank[k] = line[k]!;
-    }
-  }
-  const masked = new Map<number, string>();
-  for (const [num, blank] of blanks) {
-    const line = lines[num] ?? "";
-    for (let k = 0; k < blank.length; k++) {
-      if (blank[k] === "\0" && FORMAT_DELIMS.has(line[k]!)) blank[k] = " ";
-    }
-    masked.set(num, blank.join(""));
-  }
-  return masked;
-};
-
-/* ------------------------------- folding ------------------------------- */
-
-/**
- * Fold a word for lexicon matching: lowercase, strip combining marks (which
- * also reduces `ç` and Greek breathings/accents), expand the ligatures the
- * corpus's character mode produces, normalise apostrophes, and trim edge
- * hyphens/apostrophes. Applied to both sides — words mined from compiled
- * documents and tokens read from raw source — so the two always agree.
- */
-export const foldWord = (raw: string): string =>
-  raw
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/gu, "")
-    .replace(/æ/gu, "ae")
-    .replace(/œ/gu, "oe")
-    .replace(/’/gu, "'")
-    .replace(/^['-]+|['-]+$/gu, "");
+/* ------------------------- word segmentation --------------------------- */
 
 /** Whether a folded word is worth keeping (see MIN_WORD_LENGTH). */
 const keepWord = (folded: string): boolean =>
@@ -865,7 +623,9 @@ const words = (text: string): string[] => {
   return out;
 };
 
-/** Build a phrase lexicon from display texts (folded internally). */
+/** Build a phrase lexicon from display texts (folded internally).
+ * Exported for tests only — production builds its lexicons through `addPhrase`
+ * directly (see `buildHints`); this is not part of the module's contract. */
 export const phraseLexicon = (texts: string[]): PhraseLexicon => {
   const lexicon: PhraseLexicon = new Map();
   for (const text of texts) addPhrase(lexicon, text);

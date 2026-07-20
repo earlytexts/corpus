@@ -145,7 +145,7 @@ const authorFilesMatchSchema: Rule = {
   name: "author files match the author schema",
   check: ({ files }) => {
     const violations: RuleViolation[] = [];
-    for (const { path, doc } of compiled(authorFiles(files))) {
+    for (const { path, doc } of cleanlyCompiled(authorFiles(files))) {
       const metadata = meta(doc.metadata);
       const line = metaLine(doc);
       const push = (message: string, at = line) =>
@@ -183,7 +183,7 @@ const textsMatchSchema: Rule = {
   name: "texts match the text schema",
   check: ({ files }) => {
     const violations: RuleViolation[] = [];
-    for (const { path, doc } of compiled(workFiles(files))) {
+    for (const { path, doc } of cleanlyCompiled(workFiles(files))) {
       const stub = isStub(path, doc);
       for (const { text, ancestors } of allTexts(doc)) {
         const parent = ancestors[ancestors.length - 1];
@@ -236,7 +236,7 @@ const workStubsNameCanonical: Rule = {
   name: "work stubs name a canonical edition that exists",
   check: async ({ files, fs, root }) => {
     const violations: RuleViolation[] = [];
-    for (const { path, doc } of compiled(workFiles(files))) {
+    for (const { path, doc } of cleanlyCompiled(workFiles(files))) {
       if (!isStub(path, doc)) continue;
       const metadata = meta(doc.metadata);
       const line = metaLine(doc);
@@ -271,7 +271,7 @@ const blockMetadataMatchesSchema: Rule = {
   name: "block metadata matches the block schema",
   check: ({ files }) => {
     const violations: RuleViolation[] = [];
-    for (const { path, doc } of compiled(workFiles(files))) {
+    for (const { path, doc } of cleanlyCompiled(workFiles(files))) {
       for (const { text } of allTexts(doc)) {
         for (const block of text.blocks) {
           if (block.metadata === undefined) continue;
@@ -300,7 +300,7 @@ const everyAuthorsSlugKnown: Rule = {
   check: ({ files }) => {
     const violations: RuleViolation[] = [];
     const known = authorSlugs(files);
-    for (const { path, doc } of compiled(workFiles(files))) {
+    for (const { path, doc } of cleanlyCompiled(workFiles(files))) {
       for (const { text } of allTexts(doc)) {
         for (const slug of authorsOf(meta(text.metadata).authors)) {
           if (!known.has(slug)) {
@@ -334,7 +334,7 @@ const everyAuthorsSlugKnown: Rule = {
 const rootIdsMatchPaths: Rule = {
   name: "root IDs match file paths",
   check: ({ files }) =>
-    compiled(files)
+    cleanlyCompiled(files)
       .filter(
         ({ path, doc }) =>
           doc.id.toLowerCase() !== expectedId(path).toLowerCase(),
@@ -350,7 +350,7 @@ const sectionHeadingsBare: Rule = {
   name: "section headings are bare segments",
   check: ({ files }) => {
     const violations: RuleViolation[] = [];
-    for (const { path, doc } of compiled(workFiles(files))) {
+    for (const { path, doc } of cleanlyCompiled(workFiles(files))) {
       for (const { text, ancestors } of allTexts(doc)) {
         const parent = ancestors[ancestors.length - 1];
         if (parent === undefined) continue;
@@ -376,7 +376,7 @@ const borrowedChildrenResolve: Rule = {
   name: "borrowed-child references resolve to an edition",
   check: async ({ files, fs, root }) => {
     const violations: RuleViolation[] = [];
-    for (const { path, doc } of compiled(workFiles(files))) {
+    for (const { path, doc } of cleanlyCompiled(workFiles(files))) {
       for (const { text, ancestors } of allTexts(doc)) {
         const parent = ancestors[ancestors.length - 1];
         const ref = borrowedRef(headingSegment(text.id, parent?.id));
@@ -552,7 +552,7 @@ const wordMarkupSelectsReading: Rule = {
   check: async (ctx) => {
     const dictionary = expandDictionary((await dictionaryOf(ctx)).dictionary);
     const violations: RuleViolation[] = [];
-    for (const { path, derived } of compiled(workFiles(ctx.files))) {
+    for (const { path, derived } of cleanlyCompiled(workFiles(ctx.files))) {
       // A `[w:]` surface is exactly one token (a Markit compile rule), so the
       // marked occurrences are the tokens carrying a word value — read from
       // the per-compile derivations rather than re-tokenized here.
@@ -584,7 +584,7 @@ const dictionaryOverridesSelect: Rule = {
   check: async (ctx) => {
     const dictionary = expandDictionary((await dictionaryOf(ctx)).dictionary);
     const violations: RuleViolation[] = [];
-    for (const { path, doc } of compiled(workFiles(ctx.files))) {
+    for (const { path, doc } of cleanlyCompiled(workFiles(ctx.files))) {
       for (const { text } of allTexts(doc)) {
         const overrides = Object.entries(overridesOf(text.metadata));
         if (overrides.length === 0) continue;
@@ -638,7 +638,7 @@ export const dictionaryCoverage = async (
   const { dictionary } = await dictionaryOf(ctx);
   const totals: Coverage = { total: 0, accounted: 0, unaccounted: 0 };
   const byWork = new Map<string, Coverage>();
-  for (const { path, doc } of compiled(workFiles(ctx.files))) {
+  for (const { path, doc } of cleanlyCompiled(workFiles(ctx.files))) {
     const coverage = coverageOf(accountTokens(doc, dictionary));
     addCoverage(totals, coverage);
     const work = path.split("/").slice(1, 3).join("/");
@@ -792,7 +792,7 @@ const workFiles = (files: CorpusFile[]): CorpusFile[] =>
 
 /** Files that compile cleanly; schema/structure rules skip the rest to avoid
  * cascading noise — the compile rule already reports them. */
-const compiled = (list: CorpusFile[]): CorpusFile[] =>
+const cleanlyCompiled = (list: CorpusFile[]): CorpusFile[] =>
   list.filter((f) => f.errors.length === 0);
 
 const authorSlugs = (files: CorpusFile[]): Set<string> =>
