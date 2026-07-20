@@ -51,7 +51,8 @@ import {
   type MarkitDocument,
   wordPattern,
 } from "@jsr/earlytexts__markit";
-import type { Catalogue, Work } from "@earlytexts/corpus";
+import type { Catalogue } from "@earlytexts/corpus";
+import { distinctEditionDocuments, distinctWorks } from "./catalogueWalk.ts";
 import {
   blockTokens,
   collectBlocks,
@@ -191,7 +192,7 @@ export const buildHints = (
       }
     },
   };
-  for (const doc of allDocs(catalogue)) {
+  for (const doc of distinctEditionDocuments(catalogue, true)) {
     for (const block of doc.blocks) {
       for (const run of block.content.flatMap(inlineRuns)) {
         walkInline(run, sink);
@@ -199,16 +200,13 @@ export const buildHints = (
     }
   }
 
-  const seenWorks = new Set<Work>();
   for (const author of catalogue.authors) {
     addPhrase(people, `${author.forename} ${author.surname}`.trim());
     addPhrase(people, author.surname);
     if (author.title !== undefined) addPhrase(people, author.title);
-    for (const work of author.works) {
-      if (seenWorks.has(work)) continue; // co-authored works list repeatedly
-      seenWorks.add(work);
-      addPhrase(citations, work.title);
-    }
+  }
+  for (const work of distinctWorks(catalogue.authors)) {
+    addPhrase(citations, work.title);
   }
 
   // A single-word phrase that is also an everyday lowercase word ("of",
@@ -279,25 +277,6 @@ type HintSink = {
   org: (text: string) => void;
   citation: (text: string) => void;
   unmarked: (text: string) => void;
-};
-
-/** Every document in the catalogue, each once (borrowed children and
- * co-authored works share document objects across listings). */
-const allDocs = (catalogue: Catalogue): MarkitDocument[] => {
-  const seen = new Set<MarkitDocument>();
-  const out: MarkitDocument[] = [];
-  const add = (doc: MarkitDocument): void => {
-    if (seen.has(doc)) return;
-    seen.add(doc);
-    out.push(doc);
-    doc.children.forEach(add);
-  };
-  for (const author of catalogue.authors) {
-    for (const work of author.works) {
-      for (const edition of work.editions) add(edition.document);
-    }
-  }
-  return out;
 };
 
 /**

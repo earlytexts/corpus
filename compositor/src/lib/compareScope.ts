@@ -6,24 +6,14 @@
  */
 
 import type { Edition, Work } from "@earlytexts/corpus";
+import { distinctWorks } from "./catalogueWalk.ts";
 
 /** Each work once, in author order, that has enough editions to compare. A
  * work co-authored by several people lists under each author, so it is
  * deduplicated by identity. */
 export const comparableWorks = (
   authors: readonly { works: Work[] }[],
-): Work[] => {
-  const seen = new Set<Work>();
-  const works: Work[] = [];
-  for (const author of authors) {
-    for (const work of author.works) {
-      if (seen.has(work) || work.editions.length < 2) continue;
-      seen.add(work);
-      works.push(work);
-    }
-  }
-  return works;
-};
+): Work[] => distinctWorks(authors).filter((work) => work.editions.length >= 2);
 
 /** The edition after `edition` in its work — editions are held ascending by
  * year, so its successor — or undefined if it is the latest. */

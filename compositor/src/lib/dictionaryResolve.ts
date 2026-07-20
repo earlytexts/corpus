@@ -12,7 +12,7 @@
  */
 
 import { accountTokens, type Catalogue } from "@earlytexts/corpus";
-import type { MarkitDocument } from "@jsr/earlytexts__markit";
+import { distinctEditionDocuments } from "./catalogueWalk.ts";
 
 /**
  * What resolving a respelling's target spelling requires:
@@ -68,19 +68,9 @@ export const resolveLemmaTarget = (
  */
 export const corpusVocabulary = (catalogue: Catalogue): Set<string> => {
   const vocab = new Set<string>();
-  const seen = new Set<MarkitDocument>();
-  for (const author of catalogue.authors) {
-    for (const work of author.works) {
-      for (const edition of work.editions) {
-        if (seen.has(edition.document)) continue;
-        seen.add(edition.document);
-        for (const token of accountTokens(
-          edition.document,
-          catalogue.dictionary,
-        )) {
-          if (token.status !== "mechanical") vocab.add(token.folded);
-        }
-      }
+  for (const document of distinctEditionDocuments(catalogue)) {
+    for (const token of accountTokens(document, catalogue.dictionary)) {
+      if (token.status !== "mechanical") vocab.add(token.folded);
     }
   }
   return vocab;
