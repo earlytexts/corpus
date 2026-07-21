@@ -138,6 +138,7 @@
   "teat": null,
   "tedious": null,
   "tediousness": null,
+  "tedium": null,
   "teem": null,
   "teemed": "=teem",
   "teeth": "=tooth",
@@ -306,6 +307,8 @@
   "theatre": null,
   "theatres": "=theatre",
   "theatrical": null,
+  "theban": null,
+  "thebans": "=theban",
   "thee": "=you",
   "theft": null,
   "thefts": "=theft",
@@ -755,6 +758,7 @@
   "trance": null,
   "trances": "=trance",
   "tranquil": null,
+  "tranquility": null,
   "tranquill": "tranquil",
   "tranquillise": null,
   "tranquillises": "=tranquillise",
@@ -1175,5 +1179,6 @@
   "tyre": null,
   "tythe": "tithe",
   "tythes": "tithes",
-  "tything": "tithing"
+  "tything": "tithing",
+  "tædium": "tedium"
 }
