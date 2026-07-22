@@ -34,6 +34,7 @@ import {
 } from "../lib/dictionaryPanelInput.ts";
 import { updateShard } from "./dictionaryShardIO.ts";
 import { PANEL_CSS } from "./dictionaryPanelCss.ts";
+import { panelHtml } from "./panelShell.ts";
 import type { CorpusModel } from "../corpusModel.ts";
 
 const VIEW_ID = "compositor.dictionaryPanel";
@@ -180,6 +181,8 @@ export const createDictionaryPanel = (
       webviewView.webview.html = panelHtml(
         webviewView.webview,
         context.extensionUri,
+        PANEL_CSS,
+        "webview.js",
       );
       webviewView.webview.onDidReceiveMessage(onMessage);
       webviewView.onDidChangeVisibility(() => void refresh());
@@ -217,43 +220,4 @@ const removeEntry = async (root: string, surface: string): Promise<void> => {
     }
     return removeEntryText(text, surface);
   });
-};
-
-/** The webview shell: a strict CSP (nonce for the one script and the one inline
- * stylesheet, nothing else), the styles, and the bundled front-end. */
-const panelHtml = (
-  webview: vscode.Webview,
-  extensionUri: vscode.Uri,
-): string => {
-  const nonce = makeNonce();
-  const script = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, "dist", "webview.js"),
-  );
-  return `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"
-    />
-    <style nonce="${nonce}">${PANEL_CSS}</style>
-  </head>
-  <body>
-    <script nonce="${nonce}" src="${script}"></script>
-  </body>
-</html>`;
-};
-
-/** A random script/style nonce (the extension host has global crypto only from
- * node 20, so a plain random string keeps the engines floor at 1.85). */
-const makeNonce = (): string => {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let text = "";
-  for (let i = 0; i < 32; i++) {
-    text += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return text;
 };

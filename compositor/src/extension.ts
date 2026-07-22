@@ -29,7 +29,6 @@ import {
   compareEditions,
   compareWithNext,
 } from "./surface/commands/compareEditions.ts";
-import { replaceInScope } from "./surface/commands/replaceInScope.ts";
 import {
   createSuggestionController,
   type SuggestionController,
@@ -44,6 +43,7 @@ import {
   createDictionaryPanel,
   type DictionaryPanel,
 } from "./surface/dictionaryPanel.ts";
+import { createSearchPanel, type SearchPanel } from "./surface/searchPanel.ts";
 
 /** The first workspace folder that looks like the corpus (has data/authors),
  * honouring the compositor.corpusRoot setting. */
@@ -94,6 +94,8 @@ export const activate = async (
     context,
   );
 
+  const searchPanel: SearchPanel = createSearchPanel(() => model, context);
+
   const dictionary: DictionaryController = createDictionaryController(
     () => model,
     context,
@@ -140,6 +142,7 @@ export const activate = async (
         suggestions.onCorpusChanged();
         dictionary.onCorpusChanged();
         dictionaryPanel.onCorpusChanged();
+        searchPanel.onCorpusChanged();
       }),
     );
     registerDiagnostics(model, context);
@@ -184,7 +187,25 @@ export const activate = async (
       withModel((m) => newEdition(m, node)),
     ),
     command("compositor.insertBorrowedRef", () => withModel(insertBorrowedRef)),
-    command("compositor.replaceInScope", () => withModel(replaceInScope)),
+    // Focus the search panel, seeded with the selection (or the word under the
+    // cursor) as a whole-word, case-sensitive term — the exact semantics the
+    // retired "Replace in Work / Author" command had, now with a preview and
+    // per-match control. Selections spanning lines don't seed (matches are
+    // single-line); the panel just opens.
+    command("compositor.search", () =>
+      withModel(() => {
+        const editor = vscode.window.activeTextEditor;
+        const range =
+          editor === undefined
+            ? undefined
+            : editor.selection.isEmpty
+              ? editor.document.getWordRangeAtPosition(editor.selection.active)
+              : editor.selection;
+        const term =
+          range === undefined ? "" : editor!.document.getText(range).trim();
+        return searchPanel.openWith(term.includes("\n") ? "" : term);
+      }),
+    ),
     // Attaches the model on first use (via withModel) so the overlay
     // controllers' getModel closures see it, then flips the two overlay
     // settings — which the controllers react to on their own.

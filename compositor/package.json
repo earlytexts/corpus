@@ -65,6 +65,12 @@
           "contextualTitle": "Early Text Corpus"
         },
         {
+          "id": "compositor.searchPanel",
+          "name": "Search",
+          "type": "webview",
+          "contextualTitle": "Corpus Search"
+        },
+        {
           "id": "compositor.dictionaryPanel",
           "name": "Dictionary",
           "type": "webview",
@@ -124,9 +130,10 @@
         "category": "Compositor"
       },
       {
-        "command": "compositor.replaceInScope",
-        "title": "Replace in Work / Author…",
-        "category": "Compositor"
+        "command": "compositor.search",
+        "title": "Search the Corpus…",
+        "category": "Compositor",
+        "icon": "$(search)"
       },
       {
         "command": "compositor.configureDiagnostics",
@@ -224,7 +231,7 @@
           "group": "compositor"
         },
         {
-          "command": "compositor.replaceInScope",
+          "command": "compositor.search",
           "when": "resourceExtname == .mit",
           "group": "compositor"
         },

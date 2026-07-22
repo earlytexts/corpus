@@ -55,6 +55,11 @@ export type CorpusModel = {
   readonly root: string;
   /** Undefined until the first load completes; stale while `loading`. */
   readonly state: CorpusState | undefined;
+  /** The compiled files keyed by data/-relative path — the same map the loads
+   * keep fresh incrementally. Empty until the first full compile (the
+   * catalogue cache seeds `state` alone; serialised documents carry no source
+   * ranges, so consumers that need positions must read from here). */
+  readonly compiledFiles: ReadonlyMap<string, CorpusFile>;
   readonly loading: boolean;
   readonly onDidChange: vscode.Event<void>;
   /** Recompile everything from disk. */
@@ -261,6 +266,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
     get state() {
       return state;
     },
+    compiledFiles: files,
     get loading() {
       return loading;
     },

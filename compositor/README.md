@@ -20,6 +20,16 @@ Compositor adds the corpus layer:
   labelled from metadata (names, titles, years; the canonical edition is
   starred). Clicking an author or edition opens its file; works expand to
   their editions, with the metadata stub on the context menu.
+- **Corpus Search** — a docked search-and-replace panel shaped like VSCode's
+  native Search view, scoped to the corpus's works: it filters by author
+  (include/exclude) rather than file glob, covers only catalogue editions, and
+  matches only block content — never `[metadata]` sections, title lines, or
+  `{#…}` block tags. Results group per edition under catalogue labels
+  ("Hume · Enquiry · 1748"); replacement works per match, per edition, or
+  across everything not dismissed, with each match re-verified against the
+  live document before it is touched. "Search the Corpus…" on a `.mit`
+  editor's context menu seeds the panel with the word under the cursor
+  (whole-word, case-sensitive).
 - **Validation** — the corpus's full rule set (the same rules `deno task
 validate` runs) published to the Problems panel, with a status-bar summary
   and a badge on the tree. Saving a file revalidates in about a second; the
@@ -130,9 +140,13 @@ is a directory line: if it needs the editor it lives in `surface/`, otherwise in
 - `corpusTree.ts` — Corpus Browser tree data provider (rendering only)
 - `curationView.ts` — Dictionary Curation tree data provider
 - `diagnostics.ts` — Problems-panel + status bar adapter over `planDiagnostics`
+- `searchPanel.ts` — the Corpus Search webview: scans the model's compiled
+  files on each query message, posts grouped results, verifies and applies
+  replaces (`panelShell.ts` carries the shared CSP shell, `searchPanelCss.ts`
+  the styles, `src/webview/search.ts` the front-end)
 - `commands/` — scaffolds, fix formatting, insert borrowed reference, compare
-  editions, replace in scope, suggest markup, dictionary diagnostics. Each
-  gathers input and applies effects; the decisions are pulled into `lib/`.
+  editions, suggest markup, dictionary diagnostics. Each gathers input and
+  applies effects; the decisions are pulled into `lib/`.
 
 **Pure logic** (`src/lib/`, no `vscode`, unit-tested)
 
@@ -148,10 +162,11 @@ is a directory line: if it needs the editor it lives in `surface/`, otherwise in
 - `dictionaryEntryText.ts` — validate entry input; squiggle + quick-fix wording
 - `curation.ts` — the corpus-wide, frequency-ranked curation worklist
 - `diagnosticsPlan.ts` — validations → collection action + status text
-- `replaceScope.ts` — which files a replacement touches; the scopes to offer
+- `searchPanel.ts` — the search core: the query matcher, the block-content
+  line filter, author scoping over the catalogue, the per-file scan, and
+  regex-aware replacement strings
 - `compareScope.ts` — which works are comparable; an edition's successor
 - `templates.ts` — scaffold file builders (formatted, schema-correct)
-- `wholeWord.ts` — whole-word, case-sensitive replacement
 
 ### Markup suggestions
 
