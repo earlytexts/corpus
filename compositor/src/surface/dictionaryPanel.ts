@@ -68,26 +68,34 @@ export type DictionaryPanel = {
 
 export const createDictionaryPanel = (
   getModel: () => CorpusModel | undefined,
+  /** Whether the first corpus search has finished (see extension.ts): tells the
+   * panel to show its definitive empty state rather than a spinner when there is
+   * no model. */
+  corpusSettled: () => boolean,
   context: vscode.ExtensionContext,
 ): DictionaryPanel => {
   let view: vscode.WebviewView | undefined;
 
   /** Read the shards, derive the two views, tally the curation backlog, and post
-   * all three to the webview. Curation applies the freshly-read register to the
-   * model's token index (a membership test over the distinct surfaces — cheap
-   * enough to re-run on every refresh), so a shard write re-ranks the backlog
-   * immediately; only the counts themselves wait for the first full load (the
-   * index is empty until then). */
+   * all three to the webview, tagged with the panel's status so the webview can
+   * tell "still loading" from "genuinely empty". The lemma/variant views come
+   * straight from the shards on disk, so they are ready the moment a corpus root
+   * is known — but the curation backlog is keyed on the token index, which is
+   * empty until the first full compile completes (`model.loaded`), so it carries
+   * its own readiness flag. */
   const refresh = async (): Promise<void> => {
     if (view === undefined || !view.visible) return;
-    const root = getModel()?.root;
+    const model = getModel();
+    const root = model?.root;
     if (root === undefined) {
       void view.webview.postMessage({
         type: "data",
+        status: corpusSettled() ? "no-corpus" : "loading",
         variants: [],
         lemmas: [],
         curation: [],
         curationTotal: 0,
+        curationReady: false,
       });
       return;
     }
@@ -96,16 +104,18 @@ export const createDictionaryPanel = (
     );
     const { variants, lemmas } = dictionaryViews(dictionary);
     const { rows, total } = curationRows(
-      getModel()?.state?.tokenIndex ?? new Map(),
+      model?.state?.tokenIndex ?? new Map(),
       dictionary,
       MAX_CURATION,
     );
     void view.webview.postMessage({
       type: "data",
+      status: "ready",
       variants,
       lemmas,
       curation: rows,
       curationTotal: total,
+      curationReady: model?.loaded ?? false,
     });
   };
 

@@ -68,20 +68,31 @@ const findCorpusRoot = async (): Promise<string | undefined> => {
 };
 
 /** The tree view's status message for the model's current phase, or undefined
- * to fall back to the view's welcome content (package.json viewsWelcome). */
-const viewMessage = (model: CorpusModel | undefined): string | undefined =>
-  model === undefined
-    ? undefined
-    : model.loading
-      ? "Loading the corpus…"
-      : model.state === undefined
-        ? "The corpus failed to load."
-        : undefined;
+ * to fall back to the view's welcome content (package.json viewsWelcome). With
+ * no model there is no corpus attached, so the welcome content ("No corpus
+ * found…") is exactly right. Otherwise the model's own `status` decides — never
+ * the raw `loading`/`state` pair, which reads the pre-first-load window as a
+ * failure. */
+const viewMessage = (model: CorpusModel | undefined): string | undefined => {
+  if (model === undefined) return undefined;
+  switch (model.status) {
+    case "loading":
+      return "Loading the corpus…";
+    case "failed":
+      return "The corpus failed to load.";
+    case "ready":
+      return undefined;
+  }
+};
 
 export const activate = async (
   context: vscode.ExtensionContext,
 ): Promise<void> => {
   let model: CorpusModel | undefined;
+  // True once the first corpus search has finished. Lets the docked panels tell
+  // "still looking" (show a spinner) apart from "there is genuinely no corpus"
+  // (show the empty state) while the model is absent.
+  let searched = false;
 
   const suggestions: SuggestionController = createSuggestionController(
     () => model,
@@ -91,6 +102,7 @@ export const activate = async (
 
   const dictionaryPanel: DictionaryPanel = createDictionaryPanel(
     () => model,
+    () => searched,
     context,
   );
 
@@ -110,6 +122,10 @@ export const activate = async (
     treeDataProvider: tree,
     showCollapseAll: true,
   });
+  // Until the first attach settles, the extension is still looking — say so,
+  // rather than momentarily flashing the "No corpus found" welcome. The final
+  // updateView() below clears this if no corpus turns up (welcome takes over).
+  view.message = "Looking for the corpus…";
   const updateView = (): void => {
     tree.refresh();
     // With no model, leave message and badge unset so the view's welcome
@@ -247,7 +263,16 @@ export const activate = async (
     vscode.workspace.onDidChangeWorkspaceFolders(() => void attach()),
   );
 
-  await attach();
+  // Settle the surfaces once the first search finishes: attach() calls
+  // updateView on success, but a miss leaves the "Looking for the corpus…"
+  // message standing — clear it so the welcome content shows, and let the
+  // dictionary panel swap its spinner for the definitive empty state.
+  const attached = await attach();
+  searched = true;
+  if (!attached) {
+    updateView();
+    dictionaryPanel.onCorpusChanged();
+  }
 };
 
 export const deactivate = (): void => {};

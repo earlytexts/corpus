@@ -51,17 +51,21 @@ export const registerDiagnostics = (
         .map((doc) => doc.uri.fsPath),
     );
 
-  const phase = (): ModelPhase =>
-    model.loading
-      ? { phase: "loading" }
-      : model.state === undefined
-        ? { phase: "failed" }
-        : {
-            phase: "loaded",
-            violations: model.state.violations,
-            openPaths: openPaths(),
-            root: model.root,
-          };
+  const phase = (): ModelPhase => {
+    // Drive off the model's own status, not the raw loading/state pair: the
+    // latter reads the pre-first-load window as a failure and flashes the
+    // status bar's slash icon before the spinner.
+    if (model.status === "loading") return { phase: "loading" };
+    if (model.status === "failed" || model.state === undefined) {
+      return { phase: "failed" };
+    }
+    return {
+      phase: "loaded",
+      violations: model.state.violations,
+      openPaths: openPaths(),
+      root: model.root,
+    };
+  };
 
   const update = (): void => {
     const plan = planDiagnostics(phase());
