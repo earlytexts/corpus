@@ -36,10 +36,10 @@ const buildOptions = {
   alias,
 };
 
-// The dictionary panel's front-end: a browser bundle (not node/CommonJS),
-// loaded by the webview via a <script> tag. It imports only the vscode-free
-// view helpers (lib/dictionaryPanel.ts), so the corpus/markit aliases go unused
-// here — kept for symmetry, and in case a future import needs them.
+// The panels' front-ends: browser bundles (not node/CommonJS), loaded by
+// their webviews via a <script> tag. They import only vscode-free helpers (or
+// nothing at all), so the corpus/markit aliases go unused here — kept for
+// symmetry, and in case a future import needs them.
 const webviewOptions = {
   entryPoints: ["src/webview/main.ts"],
   bundle: true,
@@ -52,17 +52,22 @@ const webviewOptions = {
   alias,
 };
 
+// The search panel's front-end, same shape.
+const searchviewOptions = {
+  ...webviewOptions,
+  entryPoints: ["src/webview/search.ts"],
+  outfile: "dist/searchview.js",
+};
+
+const allOptions = [buildOptions, webviewOptions, searchviewOptions];
+
 if (watch) {
-  const contexts = await Promise.all([
-    esbuild.context(buildOptions),
-    esbuild.context(webviewOptions),
-  ]);
+  const contexts = await Promise.all(
+    allOptions.map((options) => esbuild.context(options)),
+  );
   await Promise.all(contexts.map((ctx) => ctx.watch()));
   console.log("Watching for changes...");
 } else {
-  await Promise.all([
-    esbuild.build(buildOptions),
-    esbuild.build(webviewOptions),
-  ]);
+  await Promise.all(allOptions.map((options) => esbuild.build(options)));
   console.log("Build complete.");
 }

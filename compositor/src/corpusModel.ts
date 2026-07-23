@@ -55,7 +55,25 @@ export type CorpusModel = {
   readonly root: string;
   /** Undefined until the first load completes; stale while `loading`. */
   readonly state: CorpusState | undefined;
+  /** The compiled files keyed by data/-relative path — the same map the loads
+   * keep fresh incrementally. Empty until the first full compile (the
+   * catalogue cache seeds `state` alone; serialised documents carry no source
+   * ranges, so consumers that need positions must read from here). */
+  readonly compiledFiles: ReadonlyMap<string, CorpusFile>;
   readonly loading: boolean;
+  /** What to tell the user about the model right now. `loading` covers the whole
+   * run-up to the first result (the constructor always kicks a load off, so the
+   * model is never idly stateless) and any later reload; `ready` once there is
+   * state; `failed` only once a completed load has left none. This is the single
+   * source of truth for the tree and status-bar messages — never derive the
+   * phase from `loading`/`state` directly, or the pre-first-load window reads as
+   * a failure. */
+  readonly status: "loading" | "ready" | "failed";
+  /** True once a full load has completed — the token index and violations then
+   * reflect a real compile, not the provisional catalogue-cache seed (whose
+   * token index is empty). Stays true across later reloads, so consumers of the
+   * token index (the curation backlog) don't flicker during a reload. */
+  readonly loaded: boolean;
   readonly onDidChange: vscode.Event<void>;
   /** Recompile everything from disk. */
   reload: () => Promise<void>;
@@ -70,6 +88,10 @@ export const createCorpusModel = (root: string): CorpusModel => {
   const files = new Map<string, CorpusFile>();
   let state: CorpusState | undefined;
   let loading = false;
+  /** Whether a full load() body has ever run to completion. Distinguishes the
+   * pre-first-load window (state undefined but nothing has failed) from a real
+   * failure, and marks the token index as real rather than cache-seeded. */
+  let loaded = false;
   /** Changes that arrived mid-load, replayed afterwards. undefined = idle. */
   let queuedFull = false;
   let queuedPaths: Set<string> | undefined;
@@ -204,6 +226,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
       );
     } finally {
       loading = false;
+      loaded = true;
       emitter.fire();
     }
     if (queuedFull || queuedPaths !== undefined) {
@@ -261,8 +284,18 @@ export const createCorpusModel = (root: string): CorpusModel => {
     get state() {
       return state;
     },
+    compiledFiles: files,
     get loading() {
       return loading;
+    },
+    get status() {
+      // Not-yet-loaded and mid-load both read as "loading"; a settled load with
+      // no state is the only "failed".
+      if (loading || !loaded) return "loading";
+      return state === undefined ? "failed" : "ready";
+    },
+    get loaded() {
+      return loaded;
     },
     onDidChange: emitter.event,
     reload: () => load(true),

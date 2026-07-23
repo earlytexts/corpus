@@ -34,6 +34,7 @@ import {
 } from "../lib/dictionaryPanelInput.ts";
 import { updateShard } from "./dictionaryShardIO.ts";
 import { PANEL_CSS } from "./dictionaryPanelCss.ts";
+import { panelHtml } from "./panelShell.ts";
 import type { CorpusModel } from "../corpusModel.ts";
 
 const VIEW_ID = "compositor.dictionaryPanel";
@@ -67,26 +68,34 @@ export type DictionaryPanel = {
 
 export const createDictionaryPanel = (
   getModel: () => CorpusModel | undefined,
+  /** Whether the first corpus search has finished (see extension.ts): tells the
+   * panel to show its definitive empty state rather than a spinner when there is
+   * no model. */
+  corpusSettled: () => boolean,
   context: vscode.ExtensionContext,
 ): DictionaryPanel => {
   let view: vscode.WebviewView | undefined;
 
   /** Read the shards, derive the two views, tally the curation backlog, and post
-   * all three to the webview. Curation applies the freshly-read register to the
-   * model's token index (a membership test over the distinct surfaces — cheap
-   * enough to re-run on every refresh), so a shard write re-ranks the backlog
-   * immediately; only the counts themselves wait for the first full load (the
-   * index is empty until then). */
+   * all three to the webview, tagged with the panel's status so the webview can
+   * tell "still loading" from "genuinely empty". The lemma/variant views come
+   * straight from the shards on disk, so they are ready the moment a corpus root
+   * is known — but the curation backlog is keyed on the token index, which is
+   * empty until the first full compile completes (`model.loaded`), so it carries
+   * its own readiness flag. */
   const refresh = async (): Promise<void> => {
     if (view === undefined || !view.visible) return;
-    const root = getModel()?.root;
+    const model = getModel();
+    const root = model?.root;
     if (root === undefined) {
       void view.webview.postMessage({
         type: "data",
+        status: corpusSettled() ? "no-corpus" : "loading",
         variants: [],
         lemmas: [],
         curation: [],
         curationTotal: 0,
+        curationReady: false,
       });
       return;
     }
@@ -95,16 +104,18 @@ export const createDictionaryPanel = (
     );
     const { variants, lemmas } = dictionaryViews(dictionary);
     const { rows, total } = curationRows(
-      getModel()?.state?.tokenIndex ?? new Map(),
+      model?.state?.tokenIndex ?? new Map(),
       dictionary,
       MAX_CURATION,
     );
     void view.webview.postMessage({
       type: "data",
+      status: "ready",
       variants,
       lemmas,
       curation: rows,
       curationTotal: total,
+      curationReady: model?.loaded ?? false,
     });
   };
 
@@ -180,6 +191,8 @@ export const createDictionaryPanel = (
       webviewView.webview.html = panelHtml(
         webviewView.webview,
         context.extensionUri,
+        PANEL_CSS,
+        "webview.js",
       );
       webviewView.webview.onDidReceiveMessage(onMessage);
       webviewView.onDidChangeVisibility(() => void refresh());
@@ -217,43 +230,4 @@ const removeEntry = async (root: string, surface: string): Promise<void> => {
     }
     return removeEntryText(text, surface);
   });
-};
-
-/** The webview shell: a strict CSP (nonce for the one script and the one inline
- * stylesheet, nothing else), the styles, and the bundled front-end. */
-const panelHtml = (
-  webview: vscode.Webview,
-  extensionUri: vscode.Uri,
-): string => {
-  const nonce = makeNonce();
-  const script = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, "dist", "webview.js"),
-  );
-  return `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"
-    />
-    <style nonce="${nonce}">${PANEL_CSS}</style>
-  </head>
-  <body>
-    <script nonce="${nonce}" src="${script}"></script>
-  </body>
-</html>`;
-};
-
-/** A random script/style nonce (the extension host has global crypto only from
- * node 20, so a plain random string keeps the engines floor at 1.85). */
-const makeNonce = (): string => {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let text = "";
-  for (let i = 0; i < 32; i++) {
-    text += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return text;
 };

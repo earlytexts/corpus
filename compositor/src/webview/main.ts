@@ -40,6 +40,11 @@ type Data = {
   lemmas: LemmaRow[];
   curation: CurationRow[];
 };
+/** The panel's own load status, distinct from having no rows: `loading` until
+ * the extension's first data arrives (so the webview never shows a definitive
+ * "0 entries" while it is still catching up), `ready` once it has, and
+ * `no-corpus` when there is genuinely no corpus open. */
+type Status = "loading" | "ready" | "no-corpus";
 type Tab = "lemmas" | "variants" | "curation";
 type State = { tab: Tab; letter: string; pageIndex: number };
 
@@ -56,6 +61,14 @@ const PAGE_SIZE = 50;
 const LETTERS = ["all", ..."abcdefghijklmnopqrstuvwxyz", "other"];
 
 let data: Data = { variants: [], lemmas: [], curation: [] };
+/** The panel starts up not-yet-loaded: render a spinner note, not "0 entries",
+ * until the first data message settles this. */
+let status: Status = "loading";
+/** Whether the curation backlog reflects a completed compile. The lemma and
+ * variant views are ready as soon as the shards are read, but the backlog is
+ * keyed on the corpus token index, which is empty until the first full load — so
+ * its tab shows its own "still compiling" note rather than "0 to curate". */
+let curationReady = false;
 /** The untruncated size of the curation backlog (the panel posts only the most
  * frequent `data.curation`); the Curation tab's note reports it. */
 let curationTotal = 0;
@@ -86,9 +99,29 @@ const render = (): void => {
   renderTabs();
   renderLetters();
   renderAdd();
-  if (tab === "lemmas") renderView(data.lemmas, lemmaRow);
-  else if (tab === "variants") renderView(data.variants, variantRow);
-  else renderView(data.curation, curationRow);
+  renderRows();
+};
+
+/** The rows area: a status note while the panel is loading or corpus-less (so a
+ * still-catching-up panel never reads as an empty dictionary), the curation
+ * tab's own "still compiling" note before the backlog is ready, otherwise the
+ * active view's filtered, paged rows. */
+const renderRows = (): void => {
+  if (status === "loading") return note("Loading the dictionary…");
+  if (status === "no-corpus") return note("No corpus is open.");
+  if (tab === "lemmas") return renderView(data.lemmas, lemmaRow);
+  if (tab === "variants") return renderView(data.variants, variantRow);
+  if (!curationReady) {
+    return note("Compiling the corpus — the backlog will appear shortly.");
+  }
+  renderView(data.curation, curationRow);
+};
+
+/** Replace the rows with a single muted note and clear the pager — the shape the
+ * loading, corpus-less, and still-compiling states share. */
+const note = (text: string): void => {
+  rowsEl.replaceChildren(div("empty", text));
+  pagerEl.replaceChildren();
 };
 
 /** Filter the active view to the chosen letter, page it, and render the page's
@@ -142,6 +175,12 @@ const renderLetters = (): void => {
 };
 
 const renderAdd = (): void => {
+  // No add controls until the dictionary is loaded — there is nothing to add to
+  // yet, and the curation summary below needs the real backlog.
+  if (status !== "ready") {
+    addEl.replaceChildren();
+    return;
+  }
   if (tab === "lemmas") {
     const input = textInput("New lemma (a modern headword)");
     const submit = () =>
@@ -162,6 +201,10 @@ const renderAdd = (): void => {
     addEl.replaceChildren(surface, spelling, button("Add variant", "", submit));
     onEnter(surface, submit);
     onEnter(spelling, submit);
+  } else if (!curationReady) {
+    // The backlog is still compiling — the rows area says so; keep the summary
+    // out of the way rather than reporting a misleading zero.
+    addEl.replaceChildren();
   } else {
     // Curation has no add field — its rows carry the actions. Instead the header
     // reports the backlog, noting when only the most-frequent slice is shown.
@@ -354,9 +397,13 @@ document.body.append(tabsEl, lettersEl, addEl, rowsEl, pagerEl);
 
 window.addEventListener("message", (event: MessageEvent) => {
   const message = event.data as { type: string } & Partial<Data> & {
+      status?: Status;
       curationTotal?: number;
+      curationReady?: boolean;
     };
   if (message.type === "data") {
+    status = message.status ?? "ready";
+    curationReady = message.curationReady ?? false;
     data = {
       variants: message.variants ?? [],
       lemmas: message.lemmas ?? [],

@@ -2,7 +2,7 @@
   "name": "compositor",
   "publisher": "earlytexts",
   "displayName": "Early Text Compositor",
-  "version": "0.12.4",
+  "version": "0.12.5",
   "description": "A VSCode extension for contributing to the Early Text Corpus",
   "license": "MIT",
   "repository": {
@@ -10,7 +10,7 @@
     "url": "https://github.com/earlytexts/corpus"
   },
   "type": "module",
-  "icon": "./media/etc-logo.png",
+  "icon": "./media/etc.png",
   "main": "./dist/extension.cjs",
   "scripts": {
     "build": "node esbuild.mjs",
@@ -53,7 +53,7 @@
         {
           "id": "compositor",
           "title": "Compositor",
-          "icon": "media/icon.svg"
+          "icon": "media/etc.svg"
         }
       ]
     },
@@ -61,14 +61,23 @@
       "compositor": [
         {
           "id": "compositor.corpusBrowser",
-          "name": "Corpus",
-          "contextualTitle": "Early Text Corpus"
+          "name": "Browse",
+          "icon": "media/etc.svg",
+          "contextualTitle": "Early Text Corpus: Browse"
+        },
+        {
+          "id": "compositor.searchPanel",
+          "name": "Search",
+          "icon": "media/etc.svg",
+          "type": "webview",
+          "contextualTitle": "Early Text Corpus: Search"
         },
         {
           "id": "compositor.dictionaryPanel",
           "name": "Dictionary",
+          "icon": "media/etc.svg",
           "type": "webview",
-          "contextualTitle": "Dictionary"
+          "contextualTitle": "Early Text Corpus: Dictionary"
         }
       ]
     },
@@ -124,9 +133,10 @@
         "category": "Compositor"
       },
       {
-        "command": "compositor.replaceInScope",
-        "title": "Replace in Work / Author…",
-        "category": "Compositor"
+        "command": "compositor.search",
+        "title": "Search the Corpus…",
+        "category": "Compositor",
+        "icon": "$(search)"
       },
       {
         "command": "compositor.configureDiagnostics",
@@ -224,7 +234,7 @@
           "group": "compositor"
         },
         {
-          "command": "compositor.replaceInScope",
+          "command": "compositor.search",
           "when": "resourceExtname == .mit",
           "group": "compositor"
         },
