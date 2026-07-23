@@ -10,7 +10,7 @@
     "url": "https://github.com/earlytexts/corpus"
   },
   "type": "module",
-  "icon": "./media/etc-logo.png",
+  "icon": "./media/etc.png",
   "main": "./dist/extension.cjs",
   "scripts": {
     "build": "node esbuild.mjs",
@@ -53,7 +53,7 @@
         {
           "id": "compositor",
           "title": "Compositor",
-          "icon": "media/icon.svg"
+          "icon": "media/etc.svg"
         }
       ]
     },
@@ -61,20 +61,23 @@
       "compositor": [
         {
           "id": "compositor.corpusBrowser",
-          "name": "Corpus",
-          "contextualTitle": "Early Text Corpus"
+          "name": "Browse",
+          "icon": "media/etc.svg",
+          "contextualTitle": "Early Text Corpus: Browse"
         },
         {
           "id": "compositor.searchPanel",
           "name": "Search",
+          "icon": "media/etc.svg",
           "type": "webview",
-          "contextualTitle": "Corpus Search"
+          "contextualTitle": "Early Text Corpus: Search"
         },
         {
           "id": "compositor.dictionaryPanel",
           "name": "Dictionary",
+          "icon": "media/etc.svg",
           "type": "webview",
-          "contextualTitle": "Dictionary"
+          "contextualTitle": "Early Text Corpus: Dictionary"
         }
       ]
     },
