@@ -78,6 +78,13 @@
           "icon": "media/etc.svg",
           "type": "webview",
           "contextualTitle": "Early Text Corpus: Dictionary"
+        },
+        {
+          "id": "compositor.contributionPanel",
+          "name": "Contribute",
+          "icon": "media/etc.svg",
+          "type": "webview",
+          "contextualTitle": "Early Text Corpus: Contribute"
         }
       ]
     },
@@ -93,6 +100,18 @@
         "title": "Set up the Corpus…",
         "category": "Compositor",
         "icon": "$(repo-clone)"
+      },
+      {
+        "command": "compositor.contribute",
+        "title": "Send Your Work for Review…",
+        "category": "Compositor",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "compositor.contributeRefresh",
+        "title": "Check for a Reply from the Editors",
+        "category": "Compositor",
+        "icon": "$(refresh)"
       },
       {
         "command": "compositor.refresh",
@@ -188,6 +207,11 @@
           "command": "compositor.validate",
           "when": "view == compositor.corpusBrowser",
           "group": "navigation@3"
+        },
+        {
+          "command": "compositor.contributeRefresh",
+          "when": "view == compositor.contributionPanel",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -245,6 +269,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "compositor.contributeRefresh",
+          "when": "false"
+        },
         {
           "command": "compositor.openAuthorStub",
           "when": "false"

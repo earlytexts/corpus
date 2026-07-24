@@ -44,6 +44,11 @@ import {
   type DictionaryPanel,
 } from "./surface/dictionaryPanel.ts";
 import { createSearchPanel, type SearchPanel } from "./surface/searchPanel.ts";
+import {
+  type ContributionPanel,
+  createContributionPanel,
+  GIT_SCHEME,
+} from "./surface/contributionPanel.ts";
 
 /** The first workspace folder that looks like the corpus (has data/authors),
  * honouring the compositor.corpusRoot setting. */
@@ -108,6 +113,20 @@ export const activate = async (
 
   const searchPanel: SearchPanel = createSearchPanel(() => model, context);
 
+  // The contribution flow moves files underfoot (bringing in the latest corpus,
+  // undoing a change), so it recompiles the corpus when it does.
+  const contribution: ContributionPanel = createContributionPanel(
+    () => model,
+    context,
+    () => void model?.reload(),
+  );
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(
+      GIT_SCHEME,
+      contribution.contentProvider,
+    ),
+  );
+
   const dictionary: DictionaryController = createDictionaryController(
     () => model,
     context,
@@ -159,6 +178,7 @@ export const activate = async (
         dictionary.onCorpusChanged();
         dictionaryPanel.onCorpusChanged();
         searchPanel.onCorpusChanged();
+        contribution.onCorpusChanged();
       }),
     );
     registerDiagnostics(model, context);
@@ -191,6 +211,13 @@ export const activate = async (
     // data/authors). No build step is needed: the model compiles in memory, and
     // its first load writes catalogue/.
     command("compositor.setup", () => runSetup()),
+    // The contribution flow's own surface: everything from "what have I
+    // changed" to "the editors have accepted it" lives in the panel, so the
+    // command only has to bring it into view.
+    command("compositor.contribute", () =>
+      vscode.commands.executeCommand("compositor.contributionPanel.focus"),
+    ),
+    command("compositor.contributeRefresh", () => contribution.refresh()),
     // Refresh and Validate are two menu labels for the one action: a reload
     // recompiles the corpus and re-runs validation, so there is nothing to
     // separate them beyond the wording contributors expect to find.

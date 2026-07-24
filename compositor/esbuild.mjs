@@ -59,7 +59,19 @@ const searchviewOptions = {
   outfile: "dist/searchview.js",
 };
 
-const allOptions = [buildOptions, webviewOptions, searchviewOptions];
+// The Contribute panel's front-end, same shape again.
+const contributeviewOptions = {
+  ...webviewOptions,
+  entryPoints: ["src/webview/contribute.ts"],
+  outfile: "dist/contributeview.js",
+};
+
+const allOptions = [
+  buildOptions,
+  webviewOptions,
+  searchviewOptions,
+  contributeviewOptions,
+];
 
 if (watch) {
   const contexts = await Promise.all(
