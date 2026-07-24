@@ -23,10 +23,13 @@ import type {
   CatalogueEdition,
   CatalogueFile,
   CatalogueWork,
+  DocRefNode,
   Edition,
   SerializedDoc,
   Work,
 } from "./types.ts";
+import type { CorpusFs } from "../fs/ports.ts";
+import { borrowedRef, resolveEdition } from "../fs/paths.ts";
 
 /**
  * Serialise a catalogue. `root` is the real-path'd corpus directory used to make
@@ -143,6 +146,60 @@ export const sourceDocKeys = (
     }
   }
   return map;
+};
+
+/**
+ * Serialise a **standalone** compiled document — one edition's own file, with
+ * its borrowed children still `## <ref>` placeholders (as `compileWithPositions`
+ * leaves them), never the composed `{ __ref }` form — into the same
+ * `SerializedDoc` shape `serializeCatalogue` produces. This is the incremental
+ * write-back's door: the Compositor holds a body-free catalogue (every edition's
+ * `document` is a stub), so on a save it re-serialises just the touched
+ * edition(s) from their freshly recompiled standalone bodies rather than off the
+ * stub catalogue.
+ *
+ * Where `serializeDoc` reads the docKey off the *resolved child instance*
+ * (`docKeys.get(child)`), here there is no resolved instance — the child is a
+ * placeholder naming another edition by id. Each placeholder's `borrowedRef` is
+ * resolved to the file it names (exactly as the build's composition does, via
+ * `resolveEdition`), and that file's docKey looked up in `bySource`
+ * (`sourceDocKeys`). A placeholder whose file cannot be resolved is **dropped**,
+ * matching the build (which drops an unresolvable borrowed child with a
+ * warning); inline children recurse, and blocks are position-stripped — so the
+ * output is byte-identical to `serializeCatalogue`'s document for the same
+ * source on any well-formed corpus (guarded by a round-trip test).
+ */
+export const serializeSourceDoc = (
+  fs: CorpusFs,
+  root: string,
+  bySource: ReadonlyMap<string, string>,
+  doc: MarkitDocument,
+): Promise<SerializedDoc> => {
+  const worksDir = `${root}/data/works`;
+  const refDocKey = async (ref: string): Promise<string | undefined> => {
+    const file = await resolveEdition(fs, worksDir, ref);
+    return file === undefined ? undefined : bySource.get(relative(file, root));
+  };
+  const walk = async (node: MarkitDocument): Promise<SerializedDoc> => {
+    const children: (SerializedDoc | DocRefNode)[] = [];
+    for (const child of node.children) {
+      const ref = borrowedRef(child.id);
+      if (ref === undefined) {
+        children.push(await walk(child)); // an ordinary inline section
+        continue;
+      }
+      const docKey = await refDocKey(ref);
+      if (docKey !== undefined) children.push({ __ref: docKey });
+      // else drop, exactly as the build drops an unresolvable borrowed child.
+    }
+    return {
+      id: node.id,
+      ...(node.metadata !== undefined ? { metadata: node.metadata } : {}),
+      blocks: node.blocks.map(stripPositions),
+      children,
+    };
+  };
+  return walk(doc);
 };
 
 /**

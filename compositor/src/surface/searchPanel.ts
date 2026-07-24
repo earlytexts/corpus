@@ -98,6 +98,11 @@ export const createSearchPanel = (
    * listener attaches is lost — so a prefill waits for the handshake). */
   let ready = false;
   let pendingPrefill: string | undefined;
+  /** Bumped on every new search (and on a corpus change); a run that finds it
+   * superseded mid-scan drops its results rather than posting stale ones. The
+   * scan is async now — each edition is pulled through the model's on-demand
+   * compile cache — so a later query or reload can overtake it. */
+  let searchSeq = 0;
 
   const post = (message: unknown): void => {
     void view?.webview.postMessage(message);
@@ -112,10 +117,13 @@ export const createSearchPanel = (
   };
 
   /** Scan the scoped editions' compiled files and post the grouped results.
-   * Until the first full compile the map is empty (the catalogue cache seeds
-   * the tree alone), so an early search posts nothing — the load's change
-   * event re-runs it. */
-  const runSearch = (query: SearchQuery): void => {
+   * Each edition is pulled through the model's on-demand compile cache rather
+   * than a resident whole-corpus map, so the corpus need not be held compiled
+   * to search it; before the catalogue has loaded there is nothing to scope, so
+   * an early search posts nothing and the load's change event re-runs it. A
+   * newer query (or a reload) supersedes an in-flight scan via `searchSeq`. */
+  const runSearch = async (query: SearchQuery): Promise<void> => {
+    const seq = ++searchSeq;
     const model = getModel();
     const catalogue = model?.state?.catalogue;
     const empty = {
@@ -147,8 +155,9 @@ export const createSearchPanel = (
         break;
       }
       const file = path.startsWith(prefix)
-        ? model.compiledFiles.get(path.slice(prefix.length))
+        ? await model.getCompiledFile(path.slice(prefix.length))
         : undefined;
+      if (seq !== searchSeq) return; // superseded mid-scan — drop these results
       if (file === undefined) continue;
       const result = searchFile(
         file,
@@ -257,7 +266,7 @@ export const createSearchPanel = (
         }
         return;
       case "search":
-        runSearch(message.query);
+        void runSearch(message.query);
         return;
       case "openMatch":
         void vscode.window.showTextDocument(vscode.Uri.file(message.path), {
@@ -305,8 +314,10 @@ export const createSearchPanel = (
 
   return {
     onCorpusChanged: () => {
+      // Supersede any in-flight scan: its files may be mid-recompile, and the
+      // webview re-submits its current query against the fresh compile anyway.
+      searchSeq++;
       postContext();
-      // The webview re-submits its current query against the fresh compile.
       post({ type: "corpusChanged" });
     },
     openWith: async (term) => {

@@ -31,11 +31,12 @@ import * as vscode from "vscode";
 import { compileWithPositions } from "@jsr/earlytexts__markit";
 import type { Catalogue } from "@earlytexts/corpus";
 import {
-  buildHints,
+  createHintBuilder,
   type Hints,
   type MarkupSuggestion,
   scanSource,
 } from "../../lib/hints.ts";
+import { distinctWorks } from "../../lib/catalogueWalk.ts";
 import type { CorpusModel } from "../../corpusModel.ts";
 import { hintOverrides } from "../../lib/hintOverrides.ts";
 import {
@@ -162,17 +163,31 @@ export const createSuggestionController = (
   let hintsFrom: Catalogue | undefined;
 
   /** Build (or reuse) the hints for the loaded corpus, showing progress on the
-   * first, slow build. Undefined until a corpus has loaded. */
+   * first, slow build. Undefined until a corpus has loaded. The resident
+   * catalogue is body-free, so the miner streams each `works/**` source through
+   * the model's compile cache (discarded after) rather than reading resident
+   * bodies — only the vocabulary-bounded lexicons accumulate. */
   const ensureHints = async (): Promise<Hints | undefined> => {
-    const catalogue = getModel()?.state?.catalogue;
-    if (catalogue === undefined) return undefined;
+    const model = getModel();
+    const catalogue = model?.state?.catalogue;
+    if (model === undefined || catalogue === undefined) return undefined;
     if (hints !== undefined && hintsFrom === catalogue) return hints;
     hints = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Window,
         title: "Indexing corpus markup…",
       },
-      () => Promise.resolve(buildHints(catalogue, hintOverrides)),
+      async () => {
+        const builder = createHintBuilder(hintOverrides);
+        for (const path of model.workSourcePaths()) {
+          const file = await model.getCompiledFile(path);
+          if (file !== undefined) builder.addDocument(file.doc);
+        }
+        return builder.finish(
+          catalogue.authors,
+          distinctWorks(catalogue.authors),
+        );
+      },
     );
     hintsFrom = catalogue;
     return hints;

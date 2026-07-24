@@ -13,11 +13,16 @@
  */
 
 import {
-  type CorpusFile,
+  type FileDerivations,
   possessiveBase,
   type Register,
 } from "@earlytexts/corpus";
 import { letterOf } from "./dictionaryViews.ts";
+
+/** The slice of a file the corpus-wide indexes read: its path and its
+ * register-independent derivations. Satisfied by a full `CorpusFile` and by a
+ * persisted derivation record alike, so the indexes rebuild from either. */
+export type DerivedFile = { path: string; derived: FileDerivations };
 
 export type CurationEntry = {
   /** The folded surface — the dictionary key it is (or would be) filed under. */
@@ -44,7 +49,7 @@ export type TokenIndex = Map<
  * the corpus root, absolutising each surface's first-attestation path so the
  * panel can open it directly. */
 export const buildTokenIndex = (
-  files: Iterable<CorpusFile>,
+  files: Iterable<DerivedFile>,
   root: string,
 ): TokenIndex => {
   const index: TokenIndex = new Map();

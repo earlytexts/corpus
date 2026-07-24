@@ -11,12 +11,9 @@
  * these decisions and writes the resulting entries across their shards.
  */
 
-import {
-  accountTokens,
-  type Catalogue,
-  type CorpusFile,
-} from "@earlytexts/corpus";
+import { accountTokens, type Catalogue } from "@earlytexts/corpus";
 import { distinctEditionDocuments } from "./catalogueWalk.ts";
+import type { DerivedFile } from "./curation.ts";
 
 /**
  * What resolving a respelling's target spelling requires:
@@ -98,7 +95,7 @@ export const corpusVocabulary = (catalogue: Catalogue): Set<string> => {
  *     word never reaches this set.
  */
 export const vocabularyFromFiles = (
-  files: Iterable<CorpusFile>,
+  files: Iterable<DerivedFile>,
 ): Set<string> => {
   const vocab = new Set<string>();
   for (const file of files) {

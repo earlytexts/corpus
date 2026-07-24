@@ -149,17 +149,51 @@ export type MarkupSuggestion = {
 
 /* ------------------------------ buildHints ----------------------------- */
 
+/** The author metadata buildHintsFrom seeds the people lexicon from. */
+export type HintAuthor = { forename: string; surname: string; title?: string };
+
 /**
- * Mine the compiled catalogue for markup hints. One walk collects the marked
- * phrases and per-language word counts alongside the unmarked (English) word
- * frequencies; the language lexicons are then classified strong/weak against
- * those frequencies (see the header). People are seeded from author metadata
- * and citations from work titles, so both are useful before any spans exist.
+ * Mine markup hints from a stream of documents plus the author/work metadata to
+ * seed from. One walk collects the marked phrases and per-language word counts
+ * alongside the unmarked (English) word frequencies; the language lexicons are
+ * then classified strong/weak against those frequencies (see the header).
+ * People are seeded from author metadata and citations from work titles, so
+ * both are useful before any spans exist.
+ *
+ * `documents` is consumed lazily and each doc's children are walked (deduped by
+ * identity), so the caller can feed either the catalogue's edition documents
+ * (borrowed children shared, walked once — see `buildHints`) or the corpus's
+ * `.mit` source documents streamed one at a time through the compile cache and
+ * discarded, without holding them all resident. Only vocabulary-bounded
+ * lexicons accumulate, so memory stays flat however many documents stream by.
  */
-export const buildHints = (
-  catalogue: Catalogue,
+export const buildHintsFrom = (
+  documents: Iterable<MarkitDocument>,
+  authors: readonly HintAuthor[],
+  works: readonly { title: string }[],
   overrides: HintOverrides = {},
 ): Hints => {
+  const builder = createHintBuilder(overrides);
+  for (const doc of documents) builder.addDocument(doc);
+  return builder.finish(authors, works);
+};
+
+/** A stateful hint miner: feed it documents (any order, each walked once by
+ * identity, its sections included), then `finish` with the author/work seeds to
+ * classify and return the `Hints`. The streaming form behind `buildHintsFrom`,
+ * so the Compositor can pull each `.mit` through its compile cache and discard
+ * it — only the vocabulary-bounded lexicons accumulate (see suggestMarkup.ts). */
+export type HintBuilder = {
+  addDocument: (doc: MarkitDocument) => void;
+  finish: (
+    authors: readonly HintAuthor[],
+    works: readonly { title: string }[],
+  ) => Hints;
+};
+
+export const createHintBuilder = (
+  overrides: HintOverrides = {},
+): HintBuilder => {
   const people: PhraseLexicon = new Map();
   const places: PhraseLexicon = new Map();
   const orgs: PhraseLexicon = new Map();
@@ -192,81 +226,114 @@ export const buildHints = (
       }
     },
   };
-  for (const doc of distinctEditionDocuments(catalogue, true)) {
+  // Each document once by identity, its blocks and its sections' blocks — so a
+  // borrowed child shared across collections is walked once, and a source
+  // file's inline sections are covered without the caller flattening them.
+  const seen = new Set<MarkitDocument>();
+  const addDocument = (doc: MarkitDocument): void => {
+    if (seen.has(doc)) return;
+    seen.add(doc);
     for (const block of doc.blocks) {
       for (const run of block.content.flatMap(inlineRuns)) {
         walkInline(run, sink);
       }
     }
-  }
-
-  for (const author of catalogue.authors) {
-    addPhrase(people, `${author.forename} ${author.surname}`.trim());
-    addPhrase(people, author.surname);
-    if (author.title !== undefined) addPhrase(people, author.title);
-  }
-  for (const work of distinctWorks(catalogue.authors)) {
-    addPhrase(citations, work.title);
-  }
-
-  // A single-word phrase that is also an everyday lowercase word ("of",
-  // "his" — citation wrappers sometimes mark bare anchor words, and names
-  // can coincide with common nouns) would fire at every capitalised
-  // occurrence, sentence starts included; drop it. A multi-word phrase keeps
-  // its everyday words — the phrase as a whole is still distinctive.
-  const pruneSingletons = (lexicon: PhraseLexicon): void => {
-    for (const [head, seqs] of lexicon) {
-      const kept = seqs.filter(
-        (seq) =>
-          seq.length > 1 ||
-          (unmarkedLower.get(seq[0]!) ?? 0) <= STRONG_UNMARKED_FLOOR,
-      );
-      if (kept.length === 0) lexicon.delete(head);
-      else lexicon.set(head, kept);
-    }
+    for (const child of doc.children) addDocument(child);
   };
-  pruneSingletons(people);
-  pruneSingletons(places);
-  pruneSingletons(orgs);
-  pruneSingletons(citations);
 
-  const languages = new Map<string, LanguageLexicon>();
-  const lexiconFor = (code: string): LanguageLexicon => {
-    const existing = languages.get(code);
-    if (existing !== undefined) return existing;
-    const fresh = { strong: new Set<string>(), weak: new Set<string>() };
-    languages.set(code, fresh);
-    return fresh;
+  const finish = (
+    authors: readonly HintAuthor[],
+    works: readonly { title: string }[],
+  ): Hints => {
+    for (const author of authors) {
+      addPhrase(people, `${author.forename} ${author.surname}`.trim());
+      addPhrase(people, author.surname);
+      if (author.title !== undefined) addPhrase(people, author.title);
+    }
+    for (const work of works) {
+      addPhrase(citations, work.title);
+    }
+
+    // A single-word phrase that is also an everyday lowercase word ("of",
+    // "his" — citation wrappers sometimes mark bare anchor words, and names
+    // can coincide with common nouns) would fire at every capitalised
+    // occurrence, sentence starts included; drop it. A multi-word phrase keeps
+    // its everyday words — the phrase as a whole is still distinctive.
+    const pruneSingletons = (lexicon: PhraseLexicon): void => {
+      for (const [head, seqs] of lexicon) {
+        const kept = seqs.filter(
+          (seq) =>
+            seq.length > 1 ||
+            (unmarkedLower.get(seq[0]!) ?? 0) <= STRONG_UNMARKED_FLOOR,
+        );
+        if (kept.length === 0) lexicon.delete(head);
+        else lexicon.set(head, kept);
+      }
+    };
+    pruneSingletons(people);
+    pruneSingletons(places);
+    pruneSingletons(orgs);
+    pruneSingletons(citations);
+
+    const languages = new Map<string, LanguageLexicon>();
+    const lexiconFor = (code: string): LanguageLexicon => {
+      const existing = languages.get(code);
+      if (existing !== undefined) return existing;
+      const fresh = { strong: new Set<string>(), weak: new Set<string>() };
+      languages.set(code, fresh);
+      return fresh;
+    };
+    for (const [code, counts] of langCounts) {
+      const lexicon = lexiconFor(code);
+      for (const [word, marked] of counts) {
+        const u = unmarked.get(word) ?? 0;
+        const strong =
+          u <= STRONG_UNMARKED_FLOOR || u <= marked * STRONG_MARKED_RATIO;
+        (strong ? lexicon.strong : lexicon.weak).add(word);
+      }
+    }
+    // The patches run last so they win over the frequency rule; they may also
+    // introduce words (or whole languages) never yet marked.
+    for (const [code, patch] of Object.entries(overrides)) {
+      const lexicon = lexiconFor(code.toLowerCase());
+      for (const word of patch.strong ?? []) {
+        lexicon.weak.delete(word);
+        lexicon.strong.add(word);
+      }
+      for (const word of patch.weak ?? []) {
+        lexicon.strong.delete(word);
+        lexicon.weak.add(word);
+      }
+      for (const word of patch.ignore ?? []) {
+        lexicon.strong.delete(word);
+        lexicon.weak.delete(word);
+      }
+    }
+
+    return { people, places, orgs, citations, languages };
   };
-  for (const [code, counts] of langCounts) {
-    const lexicon = lexiconFor(code);
-    for (const [word, marked] of counts) {
-      const u = unmarked.get(word) ?? 0;
-      const strong =
-        u <= STRONG_UNMARKED_FLOOR || u <= marked * STRONG_MARKED_RATIO;
-      (strong ? lexicon.strong : lexicon.weak).add(word);
-    }
-  }
-  // The patches run last so they win over the frequency rule; they may also
-  // introduce words (or whole languages) never yet marked.
-  for (const [code, patch] of Object.entries(overrides)) {
-    const lexicon = lexiconFor(code.toLowerCase());
-    for (const word of patch.strong ?? []) {
-      lexicon.weak.delete(word);
-      lexicon.strong.add(word);
-    }
-    for (const word of patch.weak ?? []) {
-      lexicon.strong.delete(word);
-      lexicon.weak.add(word);
-    }
-    for (const word of patch.ignore ?? []) {
-      lexicon.strong.delete(word);
-      lexicon.weak.delete(word);
-    }
-  }
 
-  return { people, places, orgs, citations, languages };
+  return { addDocument, finish };
 };
+
+/**
+ * Mine hints from a fully loaded catalogue — the convenience over
+ * `buildHintsFrom` for callers holding the whole catalogue resident (and the
+ * form the tests exercise). Feeds the catalogue's distinct edition documents
+ * (borrowed children shared) with its authors and works. A body-free resident
+ * catalogue has no bodies, so the Compositor streams the source `.mit`s through
+ * `buildHintsFrom` directly instead (see suggestMarkup.ts).
+ */
+export const buildHints = (
+  catalogue: Catalogue,
+  overrides: HintOverrides = {},
+): Hints =>
+  buildHintsFrom(
+    distinctEditionDocuments(catalogue),
+    catalogue.authors,
+    distinctWorks(catalogue.authors),
+    overrides,
+  );
 
 /* --------------------------- the corpus walk --------------------------- */
 

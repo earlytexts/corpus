@@ -19,7 +19,12 @@ import {
 } from "@earlytexts/markit";
 import type { CorpusFs } from "../fs/ports.ts";
 import { accountTokens, type Coverage, coverageOf } from "./account.ts";
-import { deriveFile, type FileDerivations } from "./derive.ts";
+import {
+  deriveFile,
+  type FileDerivations,
+  type MarkedToken,
+} from "./derive.ts";
+import type { Dictionary, RawDictionary } from "../dictionary/types.ts";
 import {
   canonicalSpellingViolations,
   dictionaryViolations,
@@ -102,17 +107,11 @@ export type Rule = {
 };
 
 /** Run every rule and collect the violations, in rule order, stamping each with
- * the name of the rule that produced it. */
-export const validateCorpus = async (
-  ctx: RuleContext,
-): Promise<Violation[]> => {
-  const violations: Violation[] = [];
-  for (const rule of rules) {
-    const found = await rule.check(ctx);
-    violations.push(...found.map((v) => ({ ...v, rule: rule.name })));
-  }
-  return violations;
-};
+ * the name of the rule that produced it. The doc-free tiers below
+ * (`validateFile`/`validateCrossFile`/`validateWordAndOverride`/
+ * `validateDictionary`) recompose to the same set from persisted projections. */
+export const validateCorpus = (ctx: RuleContext): Promise<Violation[]> =>
+  runRules(rules, ctx);
 
 const everyFileCompiles: Rule = {
   name: "every file compiles without errors",
@@ -234,37 +233,7 @@ const textsMatchSchema: Rule = {
 
 const workStubsNameCanonical: Rule = {
   name: "work stubs name a canonical edition that exists",
-  check: async ({ files, fs, root }) => {
-    const violations: RuleViolation[] = [];
-    for (const { path, doc } of cleanlyCompiled(workFiles(files))) {
-      if (!isStub(path, doc)) continue;
-      const metadata = meta(doc.metadata);
-      const line = metaLine(doc);
-      if (doc.blocks.length > 0 || doc.children.length > 0) {
-        violations.push({
-          path,
-          message: "a stub holds metadata only (no text/sections)",
-          line: lineOf(doc.children[0]?.source) ??
-            lineOf(doc.blocks[0]?.source),
-        });
-      }
-      const canonical = metadata.canonical;
-      if (typeof canonical !== "string") continue; // schema rule reports the type
-      const dir = path.slice(0, path.lastIndexOf("/"));
-      const resolves = await resolveVariant(
-        fs,
-        `${root}/data/${dir}/${canonical}`,
-      );
-      if (resolves === undefined) {
-        violations.push({
-          path,
-          message: `canonical "${canonical}" has no edition in ${dir}`,
-          line,
-        });
-      }
-    }
-    return violations;
-  },
+  check: (ctx) => stubCanonicalViolations(projectionsOf(ctx), ctx.fs, ctx.root),
 };
 
 const blockMetadataMatchesSchema: Rule = {
@@ -297,38 +266,7 @@ const blockMetadataMatchesSchema: Rule = {
 
 const everyAuthorsSlugKnown: Rule = {
   name: "every authors slug names a known author",
-  check: ({ files }) => {
-    const violations: RuleViolation[] = [];
-    const known = authorSlugs(files);
-    for (const { path, doc } of cleanlyCompiled(workFiles(files))) {
-      for (const { text } of allTexts(doc)) {
-        for (const slug of authorsOf(meta(text.metadata).authors)) {
-          if (!known.has(slug)) {
-            violations.push({
-              path,
-              locus: `(${text.id})`,
-              message: `unknown author "${slug}"`,
-              line: metaLine(text),
-            });
-          }
-        }
-        for (const block of text.blocks) {
-          if (block.metadata === undefined) continue;
-          for (const slug of authorsOf(meta(block.metadata).authors)) {
-            if (!known.has(slug)) {
-              violations.push({
-                path,
-                locus: `(${text.id}) {#${block.id}}`,
-                message: `unknown author "${slug}"`,
-                line: metaLine(block),
-              });
-            }
-          }
-        }
-      }
-    }
-    return violations;
-  },
+  check: (ctx) => unknownAuthorViolations(projectionsOf(ctx)),
 };
 
 const rootIdsMatchPaths: Rule = {
@@ -374,95 +312,81 @@ const sectionHeadingsBare: Rule = {
 
 const borrowedChildrenResolve: Rule = {
   name: "borrowed-child references resolve to an edition",
-  check: async ({ files, fs, root }) => {
-    const violations: RuleViolation[] = [];
-    for (const { path, doc } of cleanlyCompiled(workFiles(files))) {
-      for (const { text, ancestors } of allTexts(doc)) {
-        const parent = ancestors[ancestors.length - 1];
-        const ref = borrowedRef(headingSegment(text.id, parent?.id));
-        if (ref === undefined) continue;
-        // <Author.Work.Edition> →
-        // data/works/<author>/<work>/<edition>{.mit,/index.mit}.
-        if (
-          (await resolveEdition(fs, `${root}/data/works`, ref)) === undefined
-        ) {
-          violations.push({
-            path,
-            locus: `(${text.id})`,
-            message: `unresolvable borrowed child "${ref}"`,
-            line: lineOf(text.source),
-          });
-        }
-      }
-    }
-    return violations;
-  },
+  check: (ctx) => borrowedChildViolations(projectionsOf(ctx), ctx.fs, ctx.root),
 };
 
 const layoutConventions: Rule = {
   name: "layout: lowercase names, index.mit in every directory",
-  check: async ({ files, fs, root }) => {
-    const violations: RuleViolation[] = [];
-    const known = authorSlugs(files);
-    // `depth` counts directory levels below works/: the works root itself is
-    // WORKS_ROOT, a host (author, possibly joint) sits one deeper, a WORK one
-    // deeper still, and a dated edition one deeper again.
-    const WORKS_ROOT = 0, WORK = 2;
-    const walkDirs = async (dir: string, depth: number): Promise<void> => {
-      const names = new Set<string>();
-      for (const entry of await fs.readDir(`${root}/data/${dir}`)) {
-        names.add(entry.name);
-        const stem = entry.name.replace(/\.mit$/, "");
-        // A host directory (directly under works/) may be a joint slug —
-        // author slugs joined with `-`, each of which must name a known
-        // author. Everything deeper is a single lowercase slug.
-        if (depth === WORKS_ROOT && entry.isDirectory && stem.includes("-")) {
-          for (const part of stem.split("-")) {
-            if (!/^[a-z0-9]+$/.test(part)) {
-              violations.push({
-                path: `${dir}/${entry.name}`,
-                message: "name should be a lowercase slug",
-              });
-            } else if (!known.has(part)) {
-              violations.push({
-                path: `${dir}/${entry.name}`,
-                message: `joint host names unknown author "${part}"`,
-              });
-            }
+  check: ({ files, fs, root }) =>
+    layoutViolations(fs, root, authorSlugs(files)),
+};
+
+/** The layout walk, over an explicit set of known author slugs (so it runs off
+ * the corpus's projections as readily as off the loaded files). */
+const layoutViolations = async (
+  fs: CorpusFs,
+  root: string,
+  known: Set<string>,
+): Promise<RuleViolation[]> => {
+  const violations: RuleViolation[] = [];
+  // `depth` counts directory levels below works/: the works root itself is
+  // WORKS_ROOT, a host (author, possibly joint) sits one deeper, a WORK one
+  // deeper still, and a dated edition one deeper again.
+  const WORKS_ROOT = 0, WORK = 2;
+  const walkDirs = async (dir: string, depth: number): Promise<void> => {
+    const names = new Set<string>();
+    for (const entry of await fs.readDir(`${root}/data/${dir}`)) {
+      names.add(entry.name);
+      const stem = entry.name.replace(/\.mit$/, "");
+      // A host directory (directly under works/) may be a joint slug —
+      // author slugs joined with `-`, each of which must name a known
+      // author. Everything deeper is a single lowercase slug.
+      if (depth === WORKS_ROOT && entry.isDirectory && stem.includes("-")) {
+        for (const part of stem.split("-")) {
+          if (!/^[a-z0-9]+$/.test(part)) {
+            violations.push({
+              path: `${dir}/${entry.name}`,
+              message: "name should be a lowercase slug",
+            });
+          } else if (!known.has(part)) {
+            violations.push({
+              path: `${dir}/${entry.name}`,
+              message: `joint host names unknown author "${part}"`,
+            });
           }
-        } else if (!YEAR.test(stem) && !/^[a-z0-9]+$/.test(stem)) {
-          violations.push({
-            path: `${dir}/${entry.name}`,
-            message: "name should be a lowercase slug",
-          });
         }
-        if (entry.isDirectory) {
-          await walkDirs(`${dir}/${entry.name}`, depth + 1);
-        }
-      }
-      // works/<author>/ holds works; every deeper directory is a work or a
-      // dated edition and must have a reading text / index.
-      if (depth >= WORK && !names.has("index.mit")) {
-        violations.push({ path: dir, message: "missing index.mit" });
-      }
-      if (depth === WORK && YEAR.test(dir.split("/").pop() ?? "")) {
+      } else if (!YEAR.test(stem) && !/^[a-z0-9]+$/.test(stem)) {
         violations.push({
-          path: dir,
-          message: "year-named directory directly under an author",
-        });
-      }
-    };
-    await walkDirs("works", WORKS_ROOT);
-    for (const entry of await fs.readDir(`${root}/data/authors`)) {
-      if (!/^[a-z0-9]+\.mit$/.test(entry.name)) {
-        violations.push({
-          path: `authors/${entry.name}`,
+          path: `${dir}/${entry.name}`,
           message: "name should be a lowercase slug",
         });
       }
+      if (entry.isDirectory) {
+        await walkDirs(`${dir}/${entry.name}`, depth + 1);
+      }
     }
-    return violations;
-  },
+    // works/<author>/ holds works; every deeper directory is a work or a
+    // dated edition and must have a reading text / index.
+    if (depth >= WORK && !names.has("index.mit")) {
+      violations.push({ path: dir, message: "missing index.mit" });
+    }
+    if (depth === WORK && YEAR.test(dir.split("/").pop() ?? "")) {
+      violations.push({
+        path: dir,
+        message: "year-named directory directly under an author",
+      });
+    }
+  };
+  await walkDirs("works", WORKS_ROOT);
+  for (const entry of await fs.readDir(`${root}/data/authors`)) {
+    if (!/^[a-z0-9]+\.mit$/.test(entry.name)) {
+      violations.push({
+        path: `authors/${entry.name}`,
+        message: "name should be a lowercase slug",
+      });
+    }
+  }
+  return violations;
 };
 
 // The structural tier of the dictionary validation (see ../README.md):
@@ -549,31 +473,15 @@ const canonicalSpellingMatches: Rule = {
 // expanded readings, so inherited ambiguity counts.
 const wordMarkupSelectsReading: Rule = {
   name: "word markup selects a dictionary reading",
-  check: async (ctx) => {
-    const dictionary = expandDictionary((await dictionaryOf(ctx)).dictionary);
-    const violations: RuleViolation[] = [];
-    for (const { path, derived } of cleanlyCompiled(workFiles(ctx.files))) {
-      // A `[w:]` surface is exactly one token (a Markit compile rule), so the
-      // marked occurrences are the tokens carrying a word value — read from
-      // the per-compile derivations rather than re-tokenized here.
-      for (const marked of derived.marked) {
-        const message = wordMarkupViolation(
-          marked.folded,
-          marked.word,
-          dictionary,
-        );
-        if (message !== undefined) {
-          violations.push({
-            path,
-            locus: `(${marked.textId})`,
-            message,
-            line: marked.line === undefined ? undefined : marked.line + 1,
-          });
-        }
-      }
-    }
-    return violations;
-  },
+  check: async (ctx) =>
+    wordMarkupViolationsFrom(
+      ctx.files.map((f) => ({
+        path: f.path,
+        clean: f.errors.length === 0,
+        marked: f.derived.marked,
+      })),
+      expandDictionary((await dictionaryOf(ctx)).dictionary),
+    ),
 };
 
 // Still the referential tier: every `[metadata.dictionary]` override obeys the
@@ -581,29 +489,11 @@ const wordMarkupSelectsReading: Rule = {
 // `[w:]` markup, stated once per edition (or section) instead of per occurrence.
 const dictionaryOverridesSelect: Rule = {
   name: "dictionary overrides select a reading",
-  check: async (ctx) => {
-    const dictionary = expandDictionary((await dictionaryOf(ctx)).dictionary);
-    const violations: RuleViolation[] = [];
-    for (const { path, doc } of cleanlyCompiled(workFiles(ctx.files))) {
-      for (const { text } of allTexts(doc)) {
-        const overrides = Object.entries(overridesOf(text.metadata));
-        if (overrides.length === 0) continue;
-        const line = metaLine(text, "dictionary");
-        for (const [surface, value] of overrides) {
-          const message = overrideViolation(surface, value, dictionary);
-          if (message !== undefined) {
-            violations.push({
-              path,
-              locus: `(${text.id})`,
-              message,
-              line,
-            });
-          }
-        }
-      }
-    }
-    return violations;
-  },
+  check: async (ctx) =>
+    overrideViolationsFrom(
+      projectionsOf(ctx),
+      expandDictionary((await dictionaryOf(ctx)).dictionary),
+    ),
 };
 
 /** Every corpus rule, in the order `validateCorpus` runs them. */
@@ -707,6 +597,390 @@ export const violationText = (v: RuleViolation): string =>
   v.column !== undefined && v.line !== undefined
     ? `${v.path}:${v.line}:${v.column}: ${v.message}`
     : `${v.path}${v.locus === undefined ? "" : ` ${v.locus}`}: ${v.message}`;
+
+/* -------------------- doc-free validation tiers --------------------- */
+
+/*
+ * The same rules, partitioned by data dependency so validation never needs the
+ * whole corpus resident as positioned documents (see COMPOSITOR_MEMORY_PLAN.md).
+ * A file is reduced once to two persistable products — its register-independent
+ * `derived` (derive.ts) and its `FileProjection` (below) — and the rules then
+ * fall into four tiers:
+ *
+ *   - per-file      (validateFile): compile, formatting, and the schema/
+ *                    structure rules — a single file's own `doc`/`errors`/
+ *                    `derived`, so an edit re-runs only over the edited file.
+ *   - dict-dependent (validateWordAndOverride): `[w:]` markup and overrides,
+ *                    read off `derived.marked` + the projection's `overrides`
+ *                    against the current dictionary — no documents.
+ *   - cross-file    (validateCrossFile): unknown-author, work-stub canonical,
+ *                    borrowed children, and layout — over the projections + fs.
+ *   - dictionary    (validateDictionary): the shard/reference rules — fs only.
+ *
+ * `validateCorpus` still runs the flat `rules` list (the Deno wrapper and the
+ * full-corpus test are its guard); the tiers recompose to the same violations
+ * (guarded by tests/project.test.ts) but let the Compositor validate a body-
+ * free resident corpus and re-validate incrementally.
+ */
+
+/**
+ * A file's projection: the small, register-independent facts the cross-file and
+ * override rules need, extracted in one document walk so those rules can run
+ * without the positioned document resident. Persisted beside the derivations
+ * (build/derivations.ts). Lines are as the rules emit them (1-based, or the
+ * 0-based-block line the marked-token rule offsets itself).
+ */
+export type FileProjection = {
+  /** Path relative to `data/`. */
+  path: string;
+  /** Whether the file compiled without errors — the rules skip the rest. */
+  clean: boolean;
+  /** For an author file (`authors/<slug>.mit`): its slug; else undefined. */
+  authorSlug?: string;
+  /** Author slugs declared by texts and blocks, in document order, each with
+   * the fully-formed locus and line its unknown-author violation would carry. */
+  declaredAuthors: { slug: string; locus: string; line?: number }[];
+  /** Work-stub facts (an `index.mit` carrying a `canonical` pointer), else
+   * undefined — the identity a stub is checked against. */
+  stub?: {
+    /** `metadata.canonical` when a string (else the schema rule reports the
+     * type and the stub rule defers). */
+    canonical?: string;
+    dir: string;
+    line?: number;
+    hasBody: boolean;
+    bodyLine?: number;
+  };
+  /** Borrowed-child references (`<Author.Work.Edition>`), in document order. */
+  borrowedRefs: { ref: string; textId: string; line?: number }[];
+  /** `[metadata.dictionary]` overrides per text, in document order. */
+  overrides: {
+    textId: string;
+    line?: number;
+    entries: [string, string][];
+  }[];
+};
+
+/** Project one compiled file (see FileProjection): one document walk, no
+ * dictionary or filesystem access, so it is stable across dictionary edits. */
+export const projectFile = (file: CorpusFile): FileProjection => {
+  const { path, doc, errors } = file;
+  const projection: FileProjection = {
+    path,
+    clean: errors.length === 0,
+    declaredAuthors: [],
+    borrowedRefs: [],
+    overrides: [],
+  };
+  if (path.startsWith("authors/")) {
+    projection.authorSlug = path.slice("authors/".length, -".mit".length);
+    return projection;
+  }
+  if (!path.startsWith("works/")) return projection;
+  if (isStub(path, doc)) {
+    const canonical = meta(doc.metadata).canonical;
+    projection.stub = {
+      ...(typeof canonical === "string" ? { canonical } : {}),
+      dir: path.slice(0, path.lastIndexOf("/")),
+      line: metaLine(doc),
+      hasBody: doc.blocks.length > 0 || doc.children.length > 0,
+      bodyLine: lineOf(doc.children[0]?.source) ??
+        lineOf(doc.blocks[0]?.source),
+    };
+  }
+  for (const { text, ancestors } of allTexts(doc)) {
+    const parent = ancestors[ancestors.length - 1];
+    const ref = borrowedRef(headingSegment(text.id, parent?.id));
+    if (ref !== undefined) {
+      projection.borrowedRefs.push({
+        ref,
+        textId: text.id,
+        line: lineOf(text.source),
+      });
+    }
+    for (const slug of authorsOf(meta(text.metadata).authors)) {
+      projection.declaredAuthors.push({
+        slug,
+        locus: `(${text.id})`,
+        line: metaLine(text),
+      });
+    }
+    for (const block of text.blocks) {
+      if (block.metadata === undefined) continue;
+      for (const slug of authorsOf(meta(block.metadata).authors)) {
+        projection.declaredAuthors.push({
+          slug,
+          locus: `(${text.id}) {#${block.id}}`,
+          line: metaLine(block),
+        });
+      }
+    }
+    const overrides = Object.entries(overridesOf(text.metadata));
+    if (overrides.length > 0) {
+      projection.overrides.push({
+        textId: text.id,
+        line: metaLine(text, "dictionary"),
+        entries: overrides,
+      });
+    }
+  }
+  return projection;
+};
+
+/** Project every file, in order. */
+export const projectCorpus = (files: CorpusFile[]): FileProjection[] =>
+  files.map(projectFile);
+
+/** The projections for a rule context, memoized so the cross-file rules share
+ * one walk (as the dictionary rules share one dictionary read). */
+const projectionCache = new WeakMap<RuleContext, FileProjection[]>();
+const projectionsOf = (ctx: RuleContext): FileProjection[] => {
+  let cached = projectionCache.get(ctx);
+  if (cached === undefined) {
+    projectionCache.set(ctx, cached = projectCorpus(ctx.files));
+  }
+  return cached;
+};
+
+/** The known author slugs of a projection set (every author file's slug, clean
+ * or not — the layout/unknown-author rules check against all of them). */
+const knownAuthorSlugs = (projections: FileProjection[]): Set<string> =>
+  new Set(
+    projections
+      .map((p) => p.authorSlug)
+      .filter((slug): slug is string => slug !== undefined),
+  );
+
+/* -- the cross-file / dict-dependent rule cores, over projections -- */
+
+const unknownAuthorViolations = (
+  projections: FileProjection[],
+): RuleViolation[] => {
+  const known = knownAuthorSlugs(projections);
+  const violations: RuleViolation[] = [];
+  for (const p of projections) {
+    if (!p.clean || !p.path.startsWith("works/")) continue;
+    for (const { slug, locus, line } of p.declaredAuthors) {
+      if (!known.has(slug)) {
+        violations.push({
+          path: p.path,
+          locus,
+          message: `unknown author "${slug}"`,
+          line,
+        });
+      }
+    }
+  }
+  return violations;
+};
+
+const stubCanonicalViolations = async (
+  projections: FileProjection[],
+  fs: CorpusFs,
+  root: string,
+): Promise<RuleViolation[]> => {
+  const violations: RuleViolation[] = [];
+  for (const p of projections) {
+    if (!p.clean || p.stub === undefined) continue;
+    const { canonical, dir, line, hasBody, bodyLine } = p.stub;
+    if (hasBody) {
+      violations.push({
+        path: p.path,
+        message: "a stub holds metadata only (no text/sections)",
+        line: bodyLine,
+      });
+    }
+    if (canonical === undefined) continue; // schema rule reports the type
+    const resolves = await resolveVariant(
+      fs,
+      `${root}/data/${dir}/${canonical}`,
+    );
+    if (resolves === undefined) {
+      violations.push({
+        path: p.path,
+        message: `canonical "${canonical}" has no edition in ${dir}`,
+        line,
+      });
+    }
+  }
+  return violations;
+};
+
+const borrowedChildViolations = async (
+  projections: FileProjection[],
+  fs: CorpusFs,
+  root: string,
+): Promise<RuleViolation[]> => {
+  const violations: RuleViolation[] = [];
+  for (const p of projections) {
+    if (!p.clean || !p.path.startsWith("works/")) continue;
+    for (const { ref, textId, line } of p.borrowedRefs) {
+      // <Author.Work.Edition> →
+      // data/works/<author>/<work>/<edition>{.mit,/index.mit}.
+      if ((await resolveEdition(fs, `${root}/data/works`, ref)) === undefined) {
+        violations.push({
+          path: p.path,
+          locus: `(${textId})`,
+          message: `unresolvable borrowed child "${ref}"`,
+          line,
+        });
+      }
+    }
+  }
+  return violations;
+};
+
+/** One `[w:]`-marked-token entry the word-markup rule consumes: a file's marked
+ * tokens (from `derived`) with whether it compiled cleanly. */
+export type MarkedEntry = {
+  path: string;
+  clean: boolean;
+  marked: MarkedToken[];
+};
+
+const wordMarkupViolationsFrom = (
+  entries: Iterable<MarkedEntry>,
+  dictionary: Dictionary,
+): RuleViolation[] => {
+  const violations: RuleViolation[] = [];
+  for (const { path, clean, marked } of entries) {
+    if (!clean || !path.startsWith("works/")) continue;
+    // A `[w:]` surface is exactly one token (a Markit compile rule), so the
+    // marked occurrences are the tokens carrying a word value — read from the
+    // per-compile derivations rather than re-tokenized here.
+    for (const m of marked) {
+      const message = wordMarkupViolation(m.folded, m.word, dictionary);
+      if (message !== undefined) {
+        violations.push({
+          path,
+          locus: `(${m.textId})`,
+          message,
+          line: m.line === undefined ? undefined : m.line + 1,
+        });
+      }
+    }
+  }
+  return violations;
+};
+
+const overrideViolationsFrom = (
+  entries: Iterable<Pick<FileProjection, "path" | "clean" | "overrides">>,
+  dictionary: Dictionary,
+): RuleViolation[] => {
+  const violations: RuleViolation[] = [];
+  for (const { path, clean, overrides } of entries) {
+    if (!clean || !path.startsWith("works/")) continue;
+    for (const { textId, line, entries: pairs } of overrides) {
+      for (const [surface, value] of pairs) {
+        const message = overrideViolation(surface, value, dictionary);
+        if (message !== undefined) {
+          violations.push({ path, locus: `(${textId})`, message, line });
+        }
+      }
+    }
+  }
+  return violations;
+};
+
+/* ------------------- the tiered public entry points ------------------- */
+
+/** Run a subset of the rules over a context, stamping each violation with its
+ * rule name (the shared runner behind `validateCorpus` and the tiers). */
+const runRules = async (
+  subset: Rule[],
+  ctx: RuleContext,
+): Promise<Violation[]> => {
+  const violations: Violation[] = [];
+  for (const rule of subset) {
+    const found = await rule.check(ctx);
+    violations.push(...found.map((v) => ({ ...v, rule: rule.name })));
+  }
+  return violations;
+};
+
+/** The per-file rules: a single file's own compile/format/schema/structure
+ * violations, needing neither the rest of the corpus nor the dictionary. */
+const FILE_RULES: Rule[] = [
+  everyFileCompiles,
+  everyFileFormatted,
+  authorFilesMatchSchema,
+  textsMatchSchema,
+  blockMetadataMatchesSchema,
+  rootIdsMatchPaths,
+  sectionHeadingsBare,
+];
+
+/** The dictionary rules: the shard/reference tier, from disk (no documents). */
+const DICTIONARY_RULES: Rule[] = [
+  dictionaryShardsWellFormed,
+  dictionaryReadingsResolve,
+  canonicalSpellingMatches,
+];
+
+/** Validate one compiled file against the per-file tier — the rules an edit to
+ * that file can change, re-run over just it. */
+export const validateFile = (
+  file: CorpusFile,
+  ctx: { fs: CorpusFs; root: string },
+): Promise<Violation[]> =>
+  runRules(FILE_RULES, { files: [file], fs: ctx.fs, root: ctx.root });
+
+/** The dictionary tier: the shard/reference rules, over the shards on disk. */
+export const validateDictionary = (
+  ctx: { fs: CorpusFs; root: string },
+): Promise<Violation[]> =>
+  runRules(DICTIONARY_RULES, { files: [], fs: ctx.fs, root: ctx.root });
+
+/** The cross-file tier: the rules over the whole corpus's projections plus the
+ * filesystem (unknown authors, work-stub canonicals, borrowed children,
+ * layout) — no documents. */
+export const validateCrossFile = async (
+  projections: FileProjection[],
+  ctx: { fs: CorpusFs; root: string },
+): Promise<Violation[]> => {
+  const { fs, root } = ctx;
+  const stamp = (name: string, found: RuleViolation[]): Violation[] =>
+    found.map((v) => ({ ...v, rule: name }));
+  return [
+    ...stamp(
+      workStubsNameCanonical.name,
+      await stubCanonicalViolations(projections, fs, root),
+    ),
+    ...stamp(everyAuthorsSlugKnown.name, unknownAuthorViolations(projections)),
+    ...stamp(
+      borrowedChildrenResolve.name,
+      await borrowedChildViolations(projections, fs, root),
+    ),
+    ...stamp(
+      layoutConventions.name,
+      await layoutViolations(fs, root, knownAuthorSlugs(projections)),
+    ),
+  ];
+};
+
+/** The dict-dependent tier: `[w:]` markup and `[metadata.dictionary]` overrides
+ * against the current (raw) dictionary, read off each file's marked tokens and
+ * projected overrides — the two rules a dictionary edit re-runs with no
+ * document recompile. */
+export const validateWordAndOverride = (
+  entries: Iterable<MarkedEntry & Pick<FileProjection, "overrides">>,
+  dictionary: RawDictionary,
+): Violation[] => {
+  const expanded = expandDictionary(dictionary);
+  const list = [...entries];
+  const stamp = (name: string, found: RuleViolation[]): Violation[] =>
+    found.map((v) => ({ ...v, rule: name }));
+  return [
+    ...stamp(
+      wordMarkupSelectsReading.name,
+      wordMarkupViolationsFrom(list, expanded),
+    ),
+    ...stamp(
+      dictionaryOverridesSelect.name,
+      overrideViolationsFrom(list, expanded),
+    ),
+  ];
+};
 
 /* ------------------------------- helpers ------------------------------- */
 
