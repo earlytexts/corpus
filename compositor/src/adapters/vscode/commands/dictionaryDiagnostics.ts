@@ -28,18 +28,18 @@ import { compileWithPositions } from "@jsr/earlytexts__markit";
 import {
   scanUnaccounted,
   type UnaccountedWord,
-} from "../../core/dictionaryScan.ts";
+} from "../../../core/dictionaryScan.ts";
 import {
   actionsFor,
   type EntryAction,
   upsertEntriesText,
-} from "../../core/dictionaryEdits.ts";
+} from "../../../core/dictionaryEdits.ts";
 import {
   addEntry,
   type CascadePrompts,
   type Decisions,
   groupDecisionsByShard,
-} from "../../core/dictionaryCascade.ts";
+} from "../../../core/dictionaryCascade.ts";
 import {
   addTargetTitle,
   entryActionTitle,
@@ -47,16 +47,16 @@ import {
   fuseActionTitle,
   unaccountedMessage,
   unattestedLemmaMessage,
-} from "../../core/dictionaryEntryText.ts";
-import { corpusVocabulary } from "../../core/dictionaryResolve.ts";
+} from "../../../core/dictionaryEntryText.ts";
+import { corpusVocabulary } from "../../../core/dictionaryResolve.ts";
 import { nodeCorpusFs } from "@earlytexts/corpus";
 import {
   readShardText,
   updateShards,
   writeShardText,
-} from "../../core/dictionaryShardIO.ts";
+} from "../../../core/dictionaryShardIO.ts";
 import { createOverlay } from "../overlay.ts";
-import type { CorpusModel, CorpusState } from "../../core/corpusModel.ts";
+import type { CorpusModel, CorpusState } from "../../../core/corpusModel.ts";
 
 const SOURCE = "compositor-dictionary";
 const SETTING = "flagUnaccountedWords";

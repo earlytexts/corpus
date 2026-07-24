@@ -28,10 +28,10 @@ import {
   type ReplaceTarget,
   searchCorpus,
   type SearchQuery,
-} from "../core/searchPanel.ts";
+} from "../../core/searchPanel.ts";
 import { panelHtml } from "./panelShell.ts";
 import { SEARCH_CSS } from "./searchPanelCss.ts";
-import type { CorpusModel } from "../core/corpusModel.ts";
+import type { CorpusModel } from "../../core/corpusModel.ts";
 
 const VIEW_ID = "compositor.searchPanel";
 

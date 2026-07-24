@@ -18,21 +18,21 @@
  */
 
 import * as vscode from "vscode";
-import { type GitPort, type Resolutions } from "../core/gitPort.ts";
-import { findRepoRoot, nodeGitPort } from "../adapters/git/gitPort.ts";
-import { type GitHubClient, type Viewer } from "../core/github.ts";
-import { githubClient } from "../adapters/git/github.ts";
+import { type GitPort, type Resolutions } from "../../core/gitPort.ts";
+import { findRepoRoot, nodeGitPort } from "../git/gitPort.ts";
+import { type GitHubClient, type Viewer } from "../../core/github.ts";
+import { githubClient } from "../git/github.ts";
 import {
   addToSubmission,
   type ConflictResolver,
   getLatest,
   sendForReview,
   tidyUp,
-} from "../core/workflow.ts";
-import { readScene, type Scene } from "../core/contribution.ts";
+} from "../../core/workflow.ts";
+import { readScene, type Scene } from "../../core/contribution.ts";
 import { panelHtml } from "./panelShell.ts";
 import { CONTRIBUTE_CSS } from "./contributionPanelCss.ts";
-import type { CorpusModel } from "../core/corpusModel.ts";
+import type { CorpusModel } from "../../core/corpusModel.ts";
 
 const VIEW_ID = "compositor.contributionPanel";
 

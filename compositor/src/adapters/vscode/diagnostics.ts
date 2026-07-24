@@ -11,12 +11,12 @@
  */
 
 import * as vscode from "vscode";
-import type { CorpusModel } from "../core/corpusModel.ts";
+import type { CorpusModel } from "../../core/corpusModel.ts";
 import {
   type ModelPhase,
   type PlainDiagnostic,
   planDiagnostics,
-} from "../core/diagnosticsPlan.ts";
+} from "../../core/diagnosticsPlan.ts";
 
 const toDiagnostic = (d: PlainDiagnostic): vscode.Diagnostic => {
   const diagnostic = new vscode.Diagnostic(

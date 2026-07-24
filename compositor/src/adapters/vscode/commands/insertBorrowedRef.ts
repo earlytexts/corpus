@@ -6,11 +6,11 @@
  */
 
 import * as vscode from "vscode";
-import type { CorpusModel } from "../../core/corpusModel.ts";
+import type { CorpusModel } from "../../../core/corpusModel.ts";
 import {
   borrowableEditions,
   borrowedRefSnippet,
-} from "../../core/borrowedRef.ts";
+} from "../../../core/borrowedRef.ts";
 
 export const insertBorrowedRef = async (model: CorpusModel): Promise<void> => {
   const editor = vscode.window.activeTextEditor;

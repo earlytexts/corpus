@@ -15,43 +15,46 @@ import { type CorpusModel, createCorpusModel } from "./core/corpusModel.ts";
 import { findCorpusRoot, viewMessage } from "./core/workspace.ts";
 import { createCorpusWatcher } from "./adapters/vscode/corpusWatcher.ts";
 import { vscodeNotifier } from "./adapters/vscode/notifier.ts";
-import { createCorpusTree } from "./surface/corpusTree.ts";
-import { registerDoubleClickOpen } from "./surface/doubleClickOpen.ts";
+import { createCorpusTree } from "./adapters/vscode/corpusTree.ts";
+import { registerDoubleClickOpen } from "./adapters/vscode/doubleClickOpen.ts";
 import { authorPath, type TreeNode, workDocId } from "./core/nodes.ts";
-import { registerDiagnostics } from "./surface/diagnostics.ts";
-import { registerHover } from "./surface/hover.ts";
+import { registerDiagnostics } from "./adapters/vscode/diagnostics.ts";
+import { registerHover } from "./adapters/vscode/hover.ts";
 import { nodeCorpusFs } from "@earlytexts/corpus";
 import {
   newAuthor,
   newEdition,
   newWork,
-} from "./surface/commands/scaffolds.ts";
-import { fixFormatting } from "./surface/commands/fixFormatting.ts";
-import { insertBorrowedRef } from "./surface/commands/insertBorrowedRef.ts";
+} from "./adapters/vscode/commands/scaffolds.ts";
+import { fixFormatting } from "./adapters/vscode/commands/fixFormatting.ts";
+import { insertBorrowedRef } from "./adapters/vscode/commands/insertBorrowedRef.ts";
 import {
   compareEditions,
   compareWithNext,
-} from "./surface/commands/compareEditions.ts";
+} from "./adapters/vscode/commands/compareEditions.ts";
 import {
   createSuggestionController,
   type SuggestionController,
-} from "./surface/commands/suggestMarkup.ts";
+} from "./adapters/vscode/commands/suggestMarkup.ts";
 import {
   createDictionaryController,
   type DictionaryController,
-} from "./surface/commands/dictionaryDiagnostics.ts";
-import { configureDiagnostics } from "./surface/commands/configureDiagnostics.ts";
+} from "./adapters/vscode/commands/dictionaryDiagnostics.ts";
+import { configureDiagnostics } from "./adapters/vscode/commands/configureDiagnostics.ts";
 import { runSetup } from "./adapters/git/setup.ts";
 import {
   createDictionaryPanel,
   type DictionaryPanel,
-} from "./surface/dictionaryPanel.ts";
-import { createSearchPanel, type SearchPanel } from "./surface/searchPanel.ts";
+} from "./adapters/vscode/dictionaryPanel.ts";
+import {
+  createSearchPanel,
+  type SearchPanel,
+} from "./adapters/vscode/searchPanel.ts";
 import {
   type ContributionPanel,
   createContributionPanel,
   GIT_SCHEME,
-} from "./surface/contributionPanel.ts";
+} from "./adapters/vscode/contributionPanel.ts";
 
 /** The corpus root among the open folders, honouring the compositor.corpusRoot
  * setting — the config read and folder→path mapping the pure finder needs. */
