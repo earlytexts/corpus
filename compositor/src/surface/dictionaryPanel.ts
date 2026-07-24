@@ -37,10 +37,10 @@ import {
   lemmaEntry,
   variantEntry,
 } from "../core/dictionaryPanelInput.ts";
-import { readShardText, updateShard } from "./dictionaryShardIO.ts";
+import { readShardText, updateShard } from "../core/dictionaryShardIO.ts";
 import { PANEL_CSS } from "./dictionaryPanelCss.ts";
 import { panelHtml } from "./panelShell.ts";
-import type { CorpusModel } from "../corpusModel.ts";
+import type { CorpusModel } from "../core/corpusModel.ts";
 
 const VIEW_ID = "compositor.dictionaryPanel";
 
@@ -167,7 +167,7 @@ export const createDictionaryPanel = (
     }
     let dictionary = cache.dictionary;
     for (const shard of new Set(surfaces.map(shardOf))) {
-      const text = await readShardText(root, shard);
+      const text = await readShardText(nodeCorpusFs, root, shard);
       const { dictionary: entries } = parseDictionary(
         new Map([[shard, text.trim() === "" ? "{}" : text]]),
       );
@@ -298,7 +298,7 @@ export const createDictionaryPanel = (
 /** Write a validated add edit, or throw its validation error. */
 const writeAdd = async (root: string, entry: EntryEdit): Promise<void> => {
   if ("error" in entry) throw new Error(entry.error);
-  await updateShard(root, shardOf(entry.surface), (current) =>
+  await updateShard(nodeCorpusFs, root, shardOf(entry.surface), (current) =>
     upsertEntryText(current, entry.surface, entry.value),
   );
 };
@@ -307,7 +307,7 @@ const writeAdd = async (root: string, entry: EntryEdit): Promise<void> => {
  * would go with it, so those stay editable through the editor quick-fix. */
 const removeEntry = async (root: string, surface: string): Promise<void> => {
   const shard = shardOf(surface);
-  await updateShard(root, shard, (text) => {
+  await updateShard(nodeCorpusFs, root, shard, (text) => {
     const { dictionary } = parseDictionary(
       new Map([[shard, text.trim() === "" ? "{}" : text]]),
     );

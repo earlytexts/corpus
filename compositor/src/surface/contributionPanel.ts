@@ -40,7 +40,7 @@ import {
 import { panelHtml } from "./panelShell.ts";
 import { CONTRIBUTE_CSS } from "./contributionPanelCss.ts";
 import { scopedEditions } from "../core/searchPanel.ts";
-import type { CorpusModel } from "../corpusModel.ts";
+import type { CorpusModel } from "../core/corpusModel.ts";
 
 const VIEW_ID = "compositor.contributionPanel";
 

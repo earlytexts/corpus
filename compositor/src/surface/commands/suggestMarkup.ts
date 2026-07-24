@@ -37,7 +37,7 @@ import {
   scanSource,
 } from "../../core/hints.ts";
 import { distinctWorks } from "../../core/catalogueWalk.ts";
-import type { CorpusModel } from "../../corpusModel.ts";
+import type { CorpusModel } from "../../core/corpusModel.ts";
 import { hintOverrides } from "../../core/hintOverrides.ts";
 import {
   fixTitle,

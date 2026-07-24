@@ -1,24 +1,32 @@
 /**
- * Reading and writing a single dictionary shard file through the vscode
- * filesystem — the read-modify-write primitive shared by the two dictionary
+ * Reading and writing a single dictionary shard file through the corpus
+ * filesystem port — the read-modify-write primitive shared by the two dictionary
  * write paths (the editor quick-fixes in commands/dictionaryDiagnostics.ts and
  * the panel in dictionaryPanel.ts). The *what* to write is the corpus's
- * canonicalising `upsert*`/`remove*` (lib/dictionaryEdits.ts); this is only the
- * I/O around it. A missing shard reads as "" (a fresh one is written on demand).
+ * canonicalising `upsert*`/`remove*` (dictionaryEdits.ts); this is only the I/O
+ * around it. A missing shard reads as "" (a fresh one is written on demand).
  *
  * Every write goes through `updateShard`/`updateShards`, which funnel the whole
- * read-modify-write through one FIFO serializer (lib/serialize.ts). Without it a
+ * read-modify-write through one FIFO serializer (serialize.ts). Without it a
  * second edit's read can land inside a first edit's (truncating) write and see
  * an empty file, so the second write would clobber the shard down to its own
  * lone entry. `readShardText`/`writeShardText` stay unserialized so the update
  * helpers can call them from inside the critical section without deadlocking.
+ *
+ * The disk is reached only through the injected `CorpusFsWrite` (production:
+ * `nodeCorpusFs`; tests: an in-memory fake), so the whole primitive is
+ * editor-free and testable.
  */
 
-import * as vscode from "vscode";
-import { serial } from "../core/serialize.ts";
+import type { CorpusFsWrite } from "@earlytexts/corpus";
+import { serial } from "./serialize.ts";
 
 /** The one queue every shard write runs through (see the module note). */
 const runExclusive = serial();
+
+/** The absolute path of a dictionary shard under a corpus root. */
+export const shardPath = (root: string, shard: string): string =>
+  `${root}/data/dictionary/${shard}`;
 
 /**
  * Atomically rewrite one shard: read its current text, hand it to `transform`,
@@ -28,13 +36,14 @@ const runExclusive = serial();
  * caller, leaving the queue free for the next edit.
  */
 export const updateShard = (
+  fs: CorpusFsWrite,
   root: string,
   shard: string,
   transform: (current: string) => string | Promise<string>,
 ): Promise<void> =>
   runExclusive(async () => {
-    const next = await transform(await readShardText(root, shard));
-    await writeShardText(root, shard, next);
+    const next = await transform(await readShardText(fs, root, shard));
+    await writeShardText(fs, root, shard, next);
   });
 
 /**
@@ -46,32 +55,17 @@ export const updateShard = (
 export const updateShards = (op: () => Promise<void>): Promise<void> =>
   runExclusive(op);
 
-/** The absolute uri of a dictionary shard under a corpus root. */
-export const shardUri = (root: string, shard: string): vscode.Uri =>
-  vscode.Uri.file(`${root}/data/dictionary/${shard}`);
-
 /** A shard's current text, or "" when it does not exist yet. */
 export const readShardText = async (
+  fs: CorpusFsWrite,
   root: string,
   shard: string,
-): Promise<string> => {
-  try {
-    return new TextDecoder().decode(
-      await vscode.workspace.fs.readFile(shardUri(root, shard)),
-    );
-  } catch {
-    return "";
-  }
-};
+): Promise<string> => (await fs.readFile(shardPath(root, shard))) ?? "";
 
 /** Overwrite a shard with new canonical text. */
-export const writeShardText = async (
+export const writeShardText = (
+  fs: CorpusFsWrite,
   root: string,
   shard: string,
   text: string,
-): Promise<void> => {
-  await vscode.workspace.fs.writeFile(
-    shardUri(root, shard),
-    new TextEncoder().encode(text),
-  );
-};
+): Promise<void> => fs.writeFile(shardPath(root, shard), text);

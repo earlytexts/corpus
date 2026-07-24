@@ -35,7 +35,7 @@ import {
   type MarkitDocument,
 } from "@jsr/earlytexts__markit";
 import { type Dictionary, overridesOf } from "@earlytexts/corpus";
-import type { CorpusModel } from "../corpusModel.ts";
+import type { CorpusModel } from "../core/corpusModel.ts";
 import {
   blockSourceTokens,
   collectBlocks,

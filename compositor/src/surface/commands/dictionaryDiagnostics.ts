@@ -49,13 +49,14 @@ import {
   unattestedLemmaMessage,
 } from "../../core/dictionaryEntryText.ts";
 import { corpusVocabulary } from "../../core/dictionaryResolve.ts";
+import { nodeCorpusFs } from "@earlytexts/corpus";
 import {
   readShardText,
   updateShards,
   writeShardText,
-} from "../dictionaryShardIO.ts";
+} from "../../core/dictionaryShardIO.ts";
 import { createOverlay } from "../overlay.ts";
-import type { CorpusModel, CorpusState } from "../../corpusModel.ts";
+import type { CorpusModel, CorpusState } from "../../core/corpusModel.ts";
 
 const SOURCE = "compositor-dictionary";
 const SETTING = "flagUnaccountedWords";
@@ -143,11 +144,14 @@ const writeDecisions = (root: string, decisions: Decisions): Promise<void> =>
     for (const [shard, entries] of groupDecisionsByShard(decisions)) {
       writes.push({
         shard,
-        text: upsertEntriesText(await readShardText(root, shard), entries),
+        text: upsertEntriesText(
+          await readShardText(nodeCorpusFs, root, shard),
+          entries,
+        ),
       });
     }
     for (const { shard, text } of writes) {
-      await writeShardText(root, shard, text);
+      await writeShardText(nodeCorpusFs, root, shard, text);
     }
   });
 

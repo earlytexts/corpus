@@ -11,7 +11,7 @@
  */
 
 import * as vscode from "vscode";
-import type { CorpusModel } from "../corpusModel.ts";
+import type { CorpusModel } from "../core/corpusModel.ts";
 import {
   type ModelPhase,
   type PlainDiagnostic,

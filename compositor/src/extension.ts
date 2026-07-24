@@ -11,7 +11,9 @@
  */
 
 import * as vscode from "vscode";
-import { type CorpusModel, createCorpusModel } from "./corpusModel.ts";
+import { type CorpusModel, createCorpusModel } from "./core/corpusModel.ts";
+import { createCorpusWatcher } from "./adapters/vscode/corpusWatcher.ts";
+import { vscodeNotifier } from "./adapters/vscode/notifier.ts";
 import { createCorpusTree } from "./surface/corpusTree.ts";
 import { registerDoubleClickOpen } from "./surface/doubleClickOpen.ts";
 import { authorPath, type TreeNode, workDocId } from "./core/nodes.ts";
@@ -167,7 +169,11 @@ export const activate = async (
     if (model !== undefined) return true;
     const root = await findCorpusRoot();
     if (root === undefined) return false;
-    model = createCorpusModel(root);
+    model = createCorpusModel(root, {
+      fs: nodeCorpusFs,
+      watch: createCorpusWatcher,
+      notify: vscodeNotifier,
+    });
     context.subscriptions.push(
       { dispose: () => model?.dispose() },
       // One fan-out on each corpus change: refresh the view and let every

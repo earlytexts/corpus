@@ -24,18 +24,18 @@
  * deleted edition's document is removed.
  */
 
-import * as vscode from "vscode";
 import { compileWithPositions } from "@jsr/earlytexts__markit";
 import {
   buildCatalogue,
   type Catalogue,
   type CorpusFile,
+  type CorpusFs,
+  type CorpusFsWrite,
   type DerivationRecord,
   derivationRecord,
   deriveFile,
   hashText,
   loadCorpus,
-  nodeCorpusFs,
   normalizePath,
   parseDictionary,
   precompiledSkeletons,
@@ -50,10 +50,35 @@ import {
   writeCatalogueSources,
   writeDerivations,
 } from "@earlytexts/corpus";
-import { createCompiledFileCache } from "./core/compiledFileCache.ts";
-import { buildTokenIndex, type TokenIndex } from "./core/curation.ts";
-import { vocabularyFromFiles } from "./core/dictionaryResolve.ts";
-import { reloadKind } from "./core/reloadKind.ts";
+import { createCompiledFileCache } from "./compiledFileCache.ts";
+import { buildTokenIndex, type TokenIndex } from "./curation.ts";
+import { vocabularyFromFiles } from "./dictionaryResolve.ts";
+import { reloadKind } from "./reloadKind.ts";
+import { createEmitter, type Disposable, type Event } from "./emitter.ts";
+
+/** Watch the corpus's `data/**` for source changes, calling `onEvent` with the
+ * absolute fsPath of each created/changed/deleted file. The debounce and
+ * coalescing policy stays in the model (see `onEvent` below); the adapter only
+ * forwards raw events. Adapter over `vscode.workspace.createFileSystemWatcher`. */
+export type CorpusWatcher = (
+  root: string,
+  onEvent: (path: string) => void,
+) => Disposable;
+
+/** The user-facing messages the model needs — currently just the load-failure
+ * error. Adapter over `vscode.window.show*`. */
+export type Notifier = {
+  error: (message: string) => void;
+};
+
+/** The outbound ports the model reaches the world through: the corpus
+ * filesystem, the source watcher, and user notifications. Production adapters
+ * are `nodeCorpusFs` + the vscode watcher/notifier; the tests bring fakes. */
+export type CorpusModelDeps = {
+  fs: CorpusFsWrite;
+  watch: CorpusWatcher;
+  notify: Notifier;
+};
 
 export type CorpusState = {
   /** Structure only — each `Edition.document` is a stub (its block bodies are
@@ -93,7 +118,7 @@ export type CorpusModel = {
   /** True once a first load has completed — the indexes and violations then
    * reflect real data rather than nothing. */
   readonly loaded: boolean;
-  readonly onDidChange: vscode.Event<void>;
+  readonly onDidChange: Event<void>;
   /** Recompile everything from disk and rewrite the build output — the
    * "Rebuild catalogue" escape hatch. */
   reload: () => Promise<void>;
@@ -102,8 +127,11 @@ export type CorpusModel = {
 
 const RELOAD_DEBOUNCE_MS = 300;
 
-export const createCorpusModel = (root: string): CorpusModel => {
-  const emitter = new vscode.EventEmitter<void>();
+export const createCorpusModel = (
+  root: string,
+  { fs, watch, notify }: CorpusModelDeps,
+): CorpusModel => {
+  const emitter = createEmitter<void>();
   /** One record per source `.mit`, keyed by data/-relative path: the whole
    * resident corpus, bounded by file count in structure but never holding a
    * positioned body. */
@@ -111,7 +139,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
   /** The on-demand working set of positioned documents (search, the edited
    * buffer): the only place bodies live, and byte-bounded. */
   const compiledCache = createCompiledFileCache((path) =>
-    nodeCorpusFs.readFile(`${root}/data/${path}`),
+    fs.readFile(`${root}/data/${path}`),
   );
   let state: CorpusState | undefined;
   let loading = false;
@@ -140,7 +168,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
   const recomputeViolations = async (): Promise<Violation[]> => {
     const recs = [...records.values()];
     const raw = parseDictionary(
-      await readDictionaryShards(nodeCorpusFs, root),
+      await readDictionaryShards(fs, root),
     ).dictionary;
     const wordEntries = recs.map((r) => ({
       path: r.projection.path,
@@ -153,9 +181,9 @@ export const createCorpusModel = (root: string): CorpusModel => {
       ...validateWordAndOverride(wordEntries, raw),
       ...(await validateCrossFile(
         recs.map((r) => r.projection),
-        { fs: nodeCorpusFs, root },
+        { fs, root },
       )),
-      ...(await validateDictionary({ fs: nodeCorpusFs, root })),
+      ...(await validateDictionary({ fs, root })),
     ];
   };
 
@@ -165,7 +193,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
   const buildStructure = (): Promise<{
     catalogue: Catalogue;
     warnings: string[];
-  }> => buildCatalogue(nodeCorpusFs, root, precompiledSkeletons(records, root));
+  }> => buildCatalogue(fs, root, precompiledSkeletons(records, root));
 
   /** Rebuild the whole resident state from the current records. */
   const stateFromRecords = async (): Promise<CorpusState> => {
@@ -209,7 +237,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
             if (next.kind === "full") await next.run();
             else if (state !== undefined) {
               await writeCatalogueSources(
-                nodeCorpusFs,
+                fs,
                 root,
                 state.catalogue,
                 state.warnings,
@@ -253,7 +281,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
 
   /** Compile one source into a full `CorpusFile` (or undefined if it is gone). */
   const compileOne = async (path: string): Promise<CorpusFile | undefined> => {
-    const text = await nodeCorpusFs.readFile(`${root}/data/${path}`);
+    const text = await fs.readFile(`${root}/data/${path}`);
     if (text === null) return undefined;
     const { document: doc, errors } = compileWithPositions(text);
     return { path, text, doc, errors, derived: deriveFile(text, doc) };
@@ -269,14 +297,14 @@ export const createCorpusModel = (root: string): CorpusModel => {
    * structural change and the Rebuild command take.
    */
   const loadFull = async (): Promise<void> => {
-    const files = await loadCorpus(nodeCorpusFs, root);
+    const files = await loadCorpus(fs, root);
     records.clear();
     compiledCache.clear();
     for (const file of files) {
       records.set(
         file.path,
         await derivationRecord(file, {
-          fs: nodeCorpusFs,
+          fs,
           root,
         }),
       );
@@ -289,11 +317,11 @@ export const createCorpusModel = (root: string): CorpusModel => {
         (f) => [normalizePath(`${root}/data/${f.path}`), f.doc] as const,
       ),
     );
-    const full = await buildCatalogue(nodeCorpusFs, root, precompiled);
+    const full = await buildCatalogue(fs, root, precompiled);
     const snapshot = new Map(records);
     enqueueFull(async () => {
-      await writeCatalogue(nodeCorpusFs, root, full.catalogue, full.warnings);
-      await writeDerivations(nodeCorpusFs, root, snapshot);
+      await writeCatalogue(fs, root, full.catalogue, full.warnings);
+      await writeDerivations(fs, root, snapshot);
     });
     // `files`/`full` fall out of scope here — only the records and stubs remain.
   };
@@ -311,7 +339,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
     ): Promise<string | undefined> => {
       if (state === undefined) return undefined;
       if (docKeysBefore === undefined) {
-        const real = await nodeCorpusFs.realPath(root).catch(() => root);
+        const real = await fs.realPath(root).catch(() => root);
         docKeysBefore = sourceDocKeys(state.catalogue, real);
       }
       return docKeysBefore.get(source);
@@ -333,7 +361,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
         continue;
       }
       const before = records.get(path);
-      const record = await derivationRecord(file, { fs: nodeCorpusFs, root });
+      const record = await derivationRecord(file, { fs, root });
       records.set(path, record);
       skeletonChanged ||=
         before === undefined ||
@@ -377,10 +405,8 @@ export const createCorpusModel = (root: string): CorpusModel => {
    * gitignored) falls through to a full compile.
    */
   const coldStart = async (): Promise<void> => {
-    const derivations = await readDerivations(nodeCorpusFs, root).catch(
-      () => null,
-    );
-    const real = await nodeCorpusFs.realPath(root).catch(() => root);
+    const derivations = await readDerivations(fs, root).catch(() => null);
+    const real = await fs.realPath(root).catch(() => root);
     if (derivations === null || derivations.root !== real) {
       await loadFull();
       return;
@@ -395,11 +421,11 @@ export const createCorpusModel = (root: string): CorpusModel => {
   /** After the instant seed, hash every source and reconcile: unchanged → done;
    * only contents changed → recompile those; the file set changed → full reload. */
   const sweep = async (): Promise<void> => {
-    const diskPaths = await sourcePaths(nodeCorpusFs, root);
+    const diskPaths = await sourcePaths(fs, root);
     const changed = new Set<string>();
     let structural = false;
     for (const path of diskPaths) {
-      const text = await nodeCorpusFs.readFile(`${root}/data/${path}`);
+      const text = await fs.readFile(`${root}/data/${path}`);
       if (text === null) continue;
       const record = records.get(path);
       if (
@@ -436,9 +462,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
       } catch (error) {
         state = undefined;
         const message = error instanceof Error ? error.message : String(error);
-        void vscode.window.showErrorMessage(
-          `Compositor: corpus load failed: ${message}`,
-        );
+        notify.error(`Compositor: corpus load failed: ${message}`);
       } finally {
         loading = false;
         loaded = true;
@@ -457,8 +481,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pendingFull = false;
   let pendingPaths = new Set<string>();
-  const onEvent = (uri: vscode.Uri): void => {
-    const path = uri.fsPath;
+  const onEvent = (path: string): void => {
     const rel = path.startsWith(`${root}/data/`)
       ? path.slice(`${root}/data/`.length)
       : undefined;
@@ -481,12 +504,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
     }, RELOAD_DEBOUNCE_MS);
   };
 
-  const watcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(root, "data/**"),
-  );
-  watcher.onDidCreate(onEvent);
-  watcher.onDidChange(onEvent);
-  watcher.onDidDelete(onEvent);
+  const watcher = watch(root, onEvent);
 
   // Kick off: instant seed (or full compile), then the background reconcile.
   run(async () => {
@@ -530,7 +548,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
 /** Every `.mit` source under `data/authors` and `data/works`, data/-relative —
  * the set the sweep hashes and the full load walks. */
 const sourcePaths = async (
-  fs: typeof nodeCorpusFs,
+  fs: CorpusFs,
   root: string,
 ): Promise<Set<string>> => {
   const out = new Set<string>();

@@ -17,7 +17,7 @@
 import * as vscode from "vscode";
 import type { Author, Catalogue, Edition, Work } from "@earlytexts/corpus";
 import type { MarkitDocument } from "@jsr/earlytexts__markit";
-import type { CorpusModel } from "../corpusModel.ts";
+import type { CorpusModel } from "../core/corpusModel.ts";
 import {
   borrowedChildren,
   editionPath,

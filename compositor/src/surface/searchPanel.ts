@@ -32,7 +32,7 @@ import {
 } from "../core/searchPanel.ts";
 import { panelHtml } from "./panelShell.ts";
 import { SEARCH_CSS } from "./searchPanelCss.ts";
-import type { CorpusModel } from "../corpusModel.ts";
+import type { CorpusModel } from "../core/corpusModel.ts";
 
 const VIEW_ID = "compositor.searchPanel";
 

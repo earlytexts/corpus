@@ -1,25 +1,32 @@
 /**
- * Scaffolding commands: New Author, New Work (with its first edition), and New
- * Edition. Each walks the user through the required metadata, writes files in
- * the canonical shape (src/templates.ts), and opens the result. The corpus
- * watcher picks the new files up, so the tree and diagnostics refresh on
- * their own.
+ * The editor surface of the scaffolding flows (New Author, New Work, New
+ * Edition): it implements the metadata prompts as input boxes — wiring in the
+ * validators core/scaffolds.ts exports — and provides the fs/open adapters the
+ * flows write through. Every flow decision, the validation rules, and the file
+ * contents live in core; this module is the prompts and the writes.
  */
 
 import * as vscode from "vscode";
-import type { Author } from "@earlytexts/corpus";
-import { nodeCorpusFs, YEAR } from "@earlytexts/corpus";
-import type { CorpusModel } from "../../corpusModel.ts";
-import { capitalize, type TreeNode, workDocId } from "../../core/nodes.ts";
-import { authorFile, editionFile, stubFile } from "../../core/templates.ts";
-
-const SLUG = /^[a-z0-9]+$/;
-
-const writeAndOpen = async (path: string, content: string): Promise<void> => {
-  const uri = vscode.Uri.file(path);
-  await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(content));
-  await vscode.window.showTextDocument(uri);
-};
+import type { Author, Work } from "@earlytexts/corpus";
+import { nodeCorpusFs } from "@earlytexts/corpus";
+import type { CorpusModel } from "../../core/corpusModel.ts";
+import type { TreeNode } from "../../core/nodes.ts";
+import {
+  type AuthorMeta,
+  defaultPublished,
+  defaultWorkId,
+  type EditionMeta,
+  newAuthor as coreNewAuthor,
+  newEdition as coreNewEdition,
+  newWork as coreNewWork,
+  requiredError,
+  type ScaffoldDeps,
+  type ScaffoldPrompts,
+  slugError,
+  type WorkMeta,
+  yearError,
+  yearSlugError,
+} from "../../core/scaffolds.ts";
 
 const ask = (
   prompt: string,
@@ -30,68 +37,61 @@ const ask = (
 const askRequired = (prompt: string, value?: string) =>
   ask(prompt, {
     ...(value === undefined ? {} : { value }),
-    validateInput: (input) => (input.trim() === "" ? "Required" : undefined),
+    validateInput: requiredError,
   });
 
 const askYear = (prompt: string) =>
   ask(prompt, {
     placeHolder: "e.g. 1748, 1742a, 1739-40",
-    validateInput: (input) =>
-      YEAR.test(input)
-        ? undefined
-        : "Must be a year slug (1748, 1742a, 1739-40)",
+    validateInput: yearSlugError,
   });
 
 const askNumber = (prompt: string, value?: string) =>
   ask(prompt, {
     ...(value === undefined ? {} : { value }),
-    validateInput: (input) =>
-      /^\d+$/.test(input.trim()) ? undefined : "Must be a year (number)",
+    validateInput: yearError,
   });
 
-export const newAuthor = async (model: CorpusModel): Promise<void> => {
+/** Gather a new author's metadata, or undefined if the contributor backs out. */
+const authorDetails = async (root: string): Promise<AuthorMeta | undefined> => {
   const slug = await ask("Author slug (the file name, e.g. hume)", {
     validateInput: async (input) => {
-      if (!SLUG.test(input)) return "Must be a lowercase slug (a-z, 0-9)";
+      const bad = slugError(input);
+      if (bad !== undefined) return bad;
       const exists = await nodeCorpusFs.stat(
-        `${model.root}/data/authors/${input}.mit`,
+        `${root}/data/authors/${input}.mit`,
       );
       return exists === null ? undefined : "That author file already exists";
     },
   });
-  if (slug === undefined) return;
+  if (slug === undefined) return undefined;
   const forename = await askRequired("Forename");
-  if (forename === undefined) return;
+  if (forename === undefined) return undefined;
   const surname = await askRequired("Surname");
-  if (surname === undefined) return;
+  if (surname === undefined) return undefined;
   const birth = await askNumber("Year of birth");
-  if (birth === undefined) return;
+  if (birth === undefined) return undefined;
   const death = await askNumber("Year of death");
-  if (death === undefined) return;
+  if (death === undefined) return undefined;
   const nationality = await askRequired("Nationality (e.g. English, Scottish)");
-  if (nationality === undefined) return;
+  if (nationality === undefined) return undefined;
   const sex = await vscode.window.showQuickPick(["Male", "Female"], {
     placeHolder: "Sex",
     ignoreFocusOut: true,
   });
-  if (sex === undefined) return;
-
-  await writeAndOpen(
-    `${model.root}/data/authors/${slug}.mit`,
-    authorFile({
-      slug,
-      forename: forename.trim(),
-      surname: surname.trim(),
-      birth: Number(birth),
-      death: Number(death),
-      nationality: nationality.trim(),
-      sex,
-    }),
-  );
+  if (sex === undefined) return undefined;
+  return {
+    slug,
+    forename: forename.trim(),
+    surname: surname.trim(),
+    birth: Number(birth),
+    death: Number(death),
+    nationality: nationality.trim(),
+    sex,
+  };
 };
 
-const pickAuthor = async (model: CorpusModel): Promise<Author | undefined> => {
-  const authors = model.state?.catalogue.authors ?? [];
+const chooseAuthor = async (authors: Author[]): Promise<Author | undefined> => {
   const picked = await vscode.window.showQuickPick(
     authors.map((author) => ({
       label: `${author.surname}, ${author.forename}`.replace(/, $/, ""),
@@ -103,110 +103,94 @@ const pickAuthor = async (model: CorpusModel): Promise<Author | undefined> => {
   return picked?.author;
 };
 
-export const newWork = async (
-  model: CorpusModel,
-  node?: TreeNode,
-): Promise<void> => {
-  const author =
-    node?.kind === "author" ? node.author : await pickAuthor(model);
-  if (author === undefined) return;
-
+/** Gather a new work's metadata, or undefined if the contributor backs out. */
+const workDetails = async (
+  author: Author,
+  root: string,
+): Promise<WorkMeta | undefined> => {
   const slug = await ask("Work slug (the directory name, e.g. ehu)", {
     validateInput: async (input) => {
-      if (!SLUG.test(input)) return "Must be a lowercase slug (a-z, 0-9)";
+      const bad = slugError(input);
+      if (bad !== undefined) return bad;
       const exists = await nodeCorpusFs.stat(
-        `${model.root}/data/works/${author.slug}/${input}`,
+        `${root}/data/works/${author.slug}/${input}`,
       );
       return exists === null ? undefined : "That work already exists";
     },
   });
-  if (slug === undefined) return;
-  const id = await askRequired(
-    "Document ID",
-    `${capitalize(author.slug)}.${slug.toUpperCase()}`,
-  );
-  if (id === undefined) return;
+  if (slug === undefined) return undefined;
+  const id = await askRequired("Document ID", defaultWorkId(author.slug, slug));
+  if (id === undefined) return undefined;
   const title = await askRequired("Title");
-  if (title === undefined) return;
+  if (title === undefined) return undefined;
   const breadcrumb = await askRequired("Breadcrumb (short title)", title);
-  if (breadcrumb === undefined) return;
+  if (breadcrumb === undefined) return undefined;
   const year = await askYear("First edition (a year slug)");
-  if (year === undefined) return;
-  const published = await askNumber("Publication year", year.slice(0, 4));
-  if (published === undefined) return;
-
-  const dir = `${model.root}/data/works/${author.slug}/${slug}`;
-  const shared = {
+  if (year === undefined) return undefined;
+  const published = await askNumber("Publication year", defaultPublished(year));
+  if (published === undefined) return undefined;
+  return {
+    slug,
+    id: id.trim(),
     title: title.trim(),
     breadcrumb: breadcrumb.trim(),
-    authors: [author.slug],
+    year,
+    published: Number(published),
   };
-  await vscode.workspace.fs.writeFile(
-    vscode.Uri.file(`${dir}/index.mit`),
-    new TextEncoder().encode(
-      stubFile({ id: id.trim(), ...shared, canonical: year }),
-    ),
-  );
-  await writeAndOpen(
-    `${dir}/${year}.mit`,
-    editionFile({
-      id: `${id.trim()}.${year}`,
-      ...shared,
-      breadcrumb: year,
-      published: [Number(published)],
-    }),
-  );
 };
 
-export const newEdition = async (
-  model: CorpusModel,
-  node?: TreeNode,
-): Promise<void> => {
-  if (node?.kind !== "work") return;
-  const { work } = node;
-
+/** Gather a new edition's metadata, or undefined if the contributor backs out. */
+const editionDetails = async (work: Work): Promise<EditionMeta | undefined> => {
   const year = await ask("Edition (a year slug)", {
     placeHolder: "e.g. 1748, 1742a, 1739-40",
     validateInput: async (input) => {
-      if (!YEAR.test(input)) {
-        return "Must be a year slug (1748, 1742a, 1739-40)";
-      }
+      const bad = yearSlugError(input);
+      if (bad !== undefined) return bad;
       const taken =
-        work.editions.some((e) => e.slug === input) ||
+        work.editions.some((edition) => edition.slug === input) ||
         (await nodeCorpusFs.stat(`${work.dir}/${input}.mit`)) !== null;
       return taken ? "That edition already exists" : undefined;
     },
   });
-  if (year === undefined) return;
+  if (year === undefined) return undefined;
   const title = await askRequired("Title", work.title);
-  if (title === undefined) return;
-  const published = await askNumber("Publication year", year.slice(0, 4));
-  if (published === undefined) return;
+  if (title === undefined) return undefined;
+  const published = await askNumber("Publication year", defaultPublished(year));
+  if (published === undefined) return undefined;
+  return { year, title: title.trim(), published: Number(published) };
+};
 
-  await writeAndOpen(
-    `${work.dir}/${year}.mit`,
-    editionFile({
-      id: `${workDocId(work)}.${year}`,
-      title: title.trim(),
-      breadcrumb: year,
-      authors: work.authorSlugs,
-      published: [Number(published)],
-    }),
-  );
-
-  const canonical = await vscode.window.showQuickPick(["No", "Yes"], {
+const confirmCanonical = async (year: string): Promise<boolean> =>
+  (await vscode.window.showQuickPick(["No", "Yes"], {
     placeHolder: `Make ${year} the canonical edition?`,
-  });
-  if (canonical === "Yes") {
-    const stubUri = vscode.Uri.file(`${work.dir}/index.mit`);
-    const text = new TextDecoder().decode(
-      await vscode.workspace.fs.readFile(stubUri),
-    );
-    await vscode.workspace.fs.writeFile(
-      stubUri,
-      new TextEncoder().encode(
-        text.replace(/canonical = "[^"]*"/, `canonical = "${year}"`),
-      ),
-    );
-  }
+  })) === "Yes";
+
+const prompts: ScaffoldPrompts = {
+  authorDetails,
+  chooseAuthor,
+  workDetails,
+  editionDetails,
+  confirmCanonical,
+};
+
+const deps: ScaffoldDeps = {
+  fs: nodeCorpusFs,
+  open: async (path) => {
+    await vscode.window.showTextDocument(vscode.Uri.file(path));
+  },
+  prompts,
+};
+
+export const newAuthor = (model: CorpusModel): Promise<void> =>
+  coreNewAuthor(model.root, deps);
+
+export const newWork = (model: CorpusModel, node?: TreeNode): Promise<void> =>
+  coreNewWork(model.root, node, model.state?.catalogue.authors ?? [], deps);
+
+export const newEdition = (
+  model: CorpusModel,
+  node?: TreeNode,
+): Promise<void> => {
+  if (node?.kind !== "work") return Promise.resolve();
+  return coreNewEdition(node.work, deps);
 };
