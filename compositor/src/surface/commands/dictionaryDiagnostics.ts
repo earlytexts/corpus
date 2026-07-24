@@ -294,7 +294,7 @@ export const createDictionaryController = (
     for (const [path, words] of overlay.scanned) {
       const kept = words.filter((word) => !surfaces.has(word.surface));
       if (kept.length === words.length) continue;
-      overlay.publish(vscode.Uri.file(path), kept);
+      overlay.publish(path, kept);
     }
   };
 

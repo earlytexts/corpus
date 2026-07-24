@@ -4,58 +4,15 @@
  * creating their fork of the corpus, and opening and following the pull
  * requests that carry their work back. Everything here talks to api.github.com
  * over `fetch` with the OAuth token from VSCode's built-in GitHub sign-in; no
- * SDK.
- *
- * `ensureFork` is the pure branch of the flow (fork exists → use it; missing →
- * create and poll; name collision → refuse), written over the small
- * `GitHubClient` port so it can be tested without a network.
+ * SDK. The pure `ensureFork` flow written over this port lives in core/setup.ts.
  */
 
-import type { GitHubClient, PullSummary, Repo } from "../../core/github.ts";
-
-/** The canonical corpus every contributor forks from. */
-export const UPSTREAM = { owner: "earlytexts", repo: "corpus" } as const;
-
-export const UPSTREAM_URL = `https://github.com/${UPSTREAM.owner}/${UPSTREAM.repo}.git`;
-
-/**
- * Resolve the user's fork of the corpus to a clone URL, creating it if needed.
- * GitHub creates forks asynchronously, so a fresh fork is polled until it
- * materialises. `sleep` is injected so tests can run without real delays.
- */
-export const ensureFork = async (
-  gh: GitHubClient,
-  login: string,
-  report: (message: string) => void,
-  sleep: (ms: number) => Promise<void>,
-): Promise<string> => {
-  const existing = await gh.getRepo(login, UPSTREAM.repo);
-  if (existing !== undefined) {
-    const ancestor = `${UPSTREAM.owner}/${UPSTREAM.repo}`;
-    if (!existing.fork || existing.source?.full_name !== ancestor) {
-      throw new Error(
-        `You already have a repository called "${UPSTREAM.repo}" that is not ` +
-          `a fork of ${ancestor}. Rename or remove it on GitHub, then try again.`,
-      );
-    }
-    return existing.clone_url;
-  }
-
-  report("Creating your copy of the corpus on GitHub…");
-  await gh.createFork(UPSTREAM.owner, UPSTREAM.repo);
-  for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
-    await sleep(POLL_INTERVAL_MS);
-    const repo = await gh.getRepo(login, UPSTREAM.repo);
-    if (repo !== undefined) return repo.clone_url;
-  }
-  throw new Error(
-    "GitHub is taking longer than expected to create your copy of the corpus. " +
-      "Wait a moment and try setting up again.",
-  );
-};
-
-const POLL_ATTEMPTS = 30;
-const POLL_INTERVAL_MS = 2000;
+import {
+  type GitHubClient,
+  type PullSummary,
+  type Repo,
+  UPSTREAM,
+} from "../../core/github.ts";
 
 /** A `GitHubClient` backed by api.github.com and an OAuth token. */
 export const githubClient = (token: string): GitHubClient => {

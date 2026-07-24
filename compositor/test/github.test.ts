@@ -5,7 +5,7 @@
  */
 
 import { expect, test, vi } from "vitest";
-import { ensureFork } from "../src/adapters/git/github.ts";
+import { ensureFork } from "../src/core/setup.ts";
 import type { GitHubClient, Repo } from "../src/core/github.ts";
 
 const fork = (login: string): Repo => ({

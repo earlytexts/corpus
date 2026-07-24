@@ -19,24 +19,25 @@
 import * as vscode from "vscode";
 import {
   nodeCorpusFs,
-  parseDictionary,
-  type RawDictionary,
   readDictionaryShards,
   shardOf,
 } from "@earlytexts/corpus";
-import { dictionaryViews } from "../core/dictionaryViews.ts";
-import { type CurationRow, curationRows } from "../core/curation.ts";
-import {
-  dropCuratedRows,
-  replaceShardEntries,
-} from "../core/dictionaryPanelData.ts";
-import { removeEntryText, upsertEntryText } from "../core/dictionaryEdits.ts";
+import { upsertEntryText } from "../core/dictionaryEdits.ts";
 import {
   type EntryEdit,
   formEntry,
   lemmaEntry,
+  removeSurfaceFromShard,
   variantEntry,
 } from "../core/dictionaryPanelInput.ts";
+import {
+  buildCache,
+  dataMessage,
+  emptyMessage,
+  MAX_CURATION,
+  type PanelCache,
+  patchCache,
+} from "../core/dictionaryPanelView.ts";
 import { readShardText, updateShard } from "../core/dictionaryShardIO.ts";
 import { PANEL_CSS } from "./dictionaryPanelCss.ts";
 import { panelHtml } from "./panelShell.ts";
@@ -47,12 +48,6 @@ const VIEW_ID = "compositor.dictionaryPanel";
 /** The curation command the editor quick-fixes register (its full resolution
  * cascade): the Curation tab drives the very same one the old tree view did. */
 const ENTRY_COMMAND = "compositor.dictionaryEntry";
-
-/** How many unaccounted surfaces the Curation tab carries — the most frequent,
- * the ones worth curating first (paged client-side). Until the register is
- * backfilled the backlog is most of the vocabulary, so it is capped to keep the
- * posted payload small; the true total travels alongside for the tab's note. */
-const MAX_CURATION = 2000;
 
 /** What the webview posts back. `ready` requests the initial data; then the four
  * single-surface edits (three adds and a remove); then the Curation tab's two —
@@ -77,18 +72,6 @@ export type DictionaryPanel = {
   onEntriesWritten: (surfaces: ReadonlySet<string>) => void;
 };
 
-/** The panel's cached derivation, kept so a single-surface edit can patch just
- * its shard instead of re-reading all of them and re-ranking the whole backlog.
- * The variant/lemma views are re-derived from `dictionary` on each post (a
- * cheap in-memory pass); the curation backlog is held ranked so an edit only
- * drops the rows it accounts for, deferring the corpus-wide re-rank to the
- * reload. */
-type PanelCache = {
-  dictionary: RawDictionary;
-  curation: CurationRow[];
-  curationTotal: number;
-};
-
 export const createDictionaryPanel = (
   getModel: () => CorpusModel | undefined,
   /** Whether the first corpus search has finished (see extension.ts): tells the
@@ -100,23 +83,14 @@ export const createDictionaryPanel = (
   let view: vscode.WebviewView | undefined;
   let cache: PanelCache | undefined;
 
-  /** Derive the two views from a dictionary and post everything to the webview,
-   * tagged with the panel's status and whether it is `stale` (an optimistic
-   * patch the reload has yet to confirm — the webview shows an "Updating…"
-   * hint). The curation backlog is keyed on the token index, empty until the
-   * first full compile (`model.loaded`), so it carries its own readiness flag. */
+  /** Post a cache to the webview as its `data` message (`core/dataMessage`),
+   * tagged `stale` for an optimistic patch. The curation backlog is keyed on the
+   * token index, empty until the first full compile (`model.loaded`), so it
+   * carries its own readiness flag. */
   const postReady = (data: PanelCache, stale: boolean): void => {
-    const { variants, lemmas } = dictionaryViews(data.dictionary);
-    void view?.webview.postMessage({
-      type: "data",
-      status: "ready",
-      variants,
-      lemmas,
-      curation: data.curation,
-      curationTotal: data.curationTotal,
-      curationReady: getModel()?.loaded ?? false,
-      stale,
-    });
+    void view?.webview.postMessage(
+      dataMessage(data, { curationReady: getModel()?.loaded ?? false, stale }),
+    );
   };
 
   /** Re-read every shard, re-rank the whole backlog, cache it, and post — the
@@ -129,35 +103,23 @@ export const createDictionaryPanel = (
     const root = model?.root;
     if (root === undefined) {
       cache = undefined;
-      void view.webview.postMessage({
-        type: "data",
-        status: corpusSettled() ? "no-corpus" : "loading",
-        variants: [],
-        lemmas: [],
-        curation: [],
-        curationTotal: 0,
-        curationReady: false,
-        stale: false,
-      });
+      void view.webview.postMessage(emptyMessage(corpusSettled()));
       return;
     }
-    const { dictionary } = parseDictionary(
+    cache = buildCache(
       await readDictionaryShards(nodeCorpusFs, root),
-    );
-    const { rows, total } = curationRows(
       model?.state?.tokenIndex ?? new Map(),
-      dictionary,
       MAX_CURATION,
     );
-    cache = { dictionary, curation: rows, curationTotal: total };
     postReady(cache, false);
   };
 
   /** Patch just the written surfaces into the cache and post at once: re-read
-   * only their shards (byte-identical to a full re-read for those entries),
-   * swap them in, drop the curation rows they account for, and mark the result
-   * stale — the reload that follows re-ranks the backlog and clears the flag.
-   * Falls back to a full refresh before the first one has cached anything. */
+   * only their shards (byte-identical to a full re-read for those entries) and
+   * hand them to `core/patchCache`, which swaps them in, drops the curation rows
+   * they account for, and leaves the corpus-wide re-rank to the reload that
+   * follows. Falls back to a full refresh before the first one has cached
+   * anything. */
   const patch = async (surfaces: string[]): Promise<void> => {
     if (view === undefined || !view.visible) return;
     const root = getModel()?.root;
@@ -165,19 +127,11 @@ export const createDictionaryPanel = (
       await refreshFull();
       return;
     }
-    let dictionary = cache.dictionary;
+    const shardTexts = new Map<string, string>();
     for (const shard of new Set(surfaces.map(shardOf))) {
-      const text = await readShardText(nodeCorpusFs, root, shard);
-      const { dictionary: entries } = parseDictionary(
-        new Map([[shard, text.trim() === "" ? "{}" : text]]),
-      );
-      dictionary = replaceShardEntries(dictionary, shard, entries);
+      shardTexts.set(shard, await readShardText(nodeCorpusFs, root, shard));
     }
-    cache = {
-      dictionary,
-      curation: dropCuratedRows(cache.curation, new Set(surfaces)),
-      curationTotal: cache.curationTotal,
-    };
+    cache = patchCache(cache, shardTexts, surfaces);
     postReady(cache, true);
   };
 
@@ -303,19 +257,11 @@ const writeAdd = async (root: string, entry: EntryEdit): Promise<void> => {
   );
 };
 
-/** Remove a surface's entry, refusing an ambiguous one — its other readings
- * would go with it, so those stay editable through the editor quick-fix. */
+/** Remove a surface's entry through the corpus's canonicalising shard write; the
+ * ambiguous-entry refusal is `core/removeSurfaceFromShard`. */
 const removeEntry = async (root: string, surface: string): Promise<void> => {
   const shard = shardOf(surface);
-  await updateShard(nodeCorpusFs, root, shard, (text) => {
-    const { dictionary } = parseDictionary(
-      new Map([[shard, text.trim() === "" ? "{}" : text]]),
-    );
-    if ((dictionary[surface]?.readings.length ?? 0) > 1) {
-      throw new Error(
-        `“${surface}” is an ambiguous entry — edit it with the editor quick-fix.`,
-      );
-    }
-    return removeEntryText(text, surface);
-  });
+  await updateShard(nodeCorpusFs, root, shard, (text) =>
+    removeSurfaceFromShard(text, shard, surface),
+  );
 };

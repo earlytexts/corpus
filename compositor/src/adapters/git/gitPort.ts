@@ -22,7 +22,7 @@ import {
   MAIN,
   type Resolutions,
 } from "../../core/gitPort.ts";
-import { UPSTREAM_URL } from "./github.ts";
+import { UPSTREAM_URL } from "../../core/github.ts";
 
 /** The remote pointing at the canonical corpus (the fork is `origin`). */
 const UPSTREAM_REMOTE = "upstream";

@@ -18,59 +18,26 @@
  */
 
 import * as vscode from "vscode";
-import {
-  type FileChange,
-  type GitPort,
-  type Resolutions,
-} from "../core/gitPort.ts";
+import { type GitPort, type Resolutions } from "../core/gitPort.ts";
 import { findRepoRoot, nodeGitPort } from "../adapters/git/gitPort.ts";
 import { type GitHubClient, type Viewer } from "../core/github.ts";
 import { githubClient } from "../adapters/git/github.ts";
 import {
   addToSubmission,
   type ConflictResolver,
-  describeState,
   getLatest,
-  isSubmissionBranch,
   sendForReview,
-  type Submission,
   tidyUp,
-  type WorkState,
 } from "../core/workflow.ts";
+import { readScene, type Scene } from "../core/contribution.ts";
 import { panelHtml } from "./panelShell.ts";
 import { CONTRIBUTE_CSS } from "./contributionPanelCss.ts";
-import { scopedEditions } from "../core/searchPanel.ts";
 import type { CorpusModel } from "../core/corpusModel.ts";
 
 const VIEW_ID = "compositor.contributionPanel";
 
 /** The scheme the panel's diffs read their historical sides from. */
 export const GIT_SCHEME = "compositor-git";
-
-/** One changed file as the panel shows it: the catalogue's label for it where
- * the corpus knows one, the path itself where it does not. */
-type ChangeRow = {
-  path: string;
-  label: string;
-  change: FileChange["change"];
-};
-
-/** What the webview renders. The first two are situations the workflow has no
- * opinion about: still reading, and not a copy of the corpus at all. */
-type Scene =
-  | { kind: "loading" }
-  | { kind: "noRepo" }
-  | { kind: "signedOut"; files: ChangeRow[] }
-  | { kind: "clean" }
-  | { kind: "editing"; files: ChangeRow[] }
-  | { kind: "unfinished"; title: string; files: ChangeRow[] }
-  | { kind: "sent"; submission: Submission; files: ChangeRow[] }
-  | {
-      kind: "decided";
-      submission: Submission;
-      accepted: boolean;
-      files: ChangeRow[];
-    };
 
 type Incoming =
   | { type: "ready" }
@@ -117,8 +84,9 @@ export const createContributionPanel = (
 
   /* ------------------------------ reading ------------------------------- */
 
-  /** Re-read the working copy and decide what the panel shows. Never runs
-   * twice at once: a request arriving mid-read queues exactly one more pass. */
+  /** Re-read the working copy and decide what the panel shows (`core/readScene`
+   * over the vscode session and the port factories). Never runs twice at once: a
+   * request arriving mid-read queues exactly one more pass. */
   const refresh = async (): Promise<void> => {
     if (reading) {
       again = true;
@@ -126,7 +94,24 @@ export const createContributionPanel = (
     }
     reading = true;
     try {
-      scene = await readScene();
+      const { scene: next, viewer: who } = await readScene({
+        root: repoRoot(),
+        catalogue: getModel()?.state?.catalogue,
+        session: async () => {
+          const session = await vscode.authentication.getSession(
+            "github",
+            ["repo"],
+            { createIfNone: false },
+          );
+          return session === undefined
+            ? undefined
+            : { token: session.accessToken };
+        },
+        gitAt: (root, token) => nodeGitPort(root, token),
+        githubAt: (token) => githubClient(token),
+      });
+      scene = next;
+      if (who !== undefined) viewer = who;
       error = undefined;
     } catch (problem) {
       error = messageOf(problem);
@@ -140,75 +125,12 @@ export const createContributionPanel = (
     }
   };
 
-  const readScene = async (): Promise<Scene> => {
-    const root = repoRoot();
-    if (root === undefined) return { kind: "noRepo" };
-
-    const session = await vscode.authentication.getSession("github", ["repo"], {
-      createIfNone: false,
-    });
-    const git = nodeGitPort(root, session?.accessToken ?? "");
-    const branch = await git.currentBranch();
-    const changes = await git.changedFiles();
-    if (session === undefined) {
-      return { kind: "signedOut", files: rows(changes, root) };
-    }
-
-    const gh = githubClient(session.accessToken);
-    viewer = await gh.getViewer();
-    const submitted = isSubmissionBranch(branch);
-    const pull = submitted
-      ? await gh.findPull(`${viewer.login}:${branch}`)
-      : undefined;
-    return asScene(
-      describeState({
-        branch,
-        changes,
-        signedIn: true,
-        pull,
-        // Naming an interrupted send after the work it carries is the only way
-        // the contributor can tell what it is they are being asked to finish.
-        title:
-          submitted && pull === undefined
-            ? await git.lastCommitMessage(branch)
-            : undefined,
-      }),
-      root,
-    );
-  };
-
-  /** The same state the workflow decided, with each changed file labelled —
-   * and the raw paths dropped, since the panel renders only the labels. */
-  const asScene = (state: WorkState, root: string): Scene => {
-    if (state.kind === "clean") return state;
-    const { changes, ...rest } = state;
-    return { ...rest, files: rows(changes, root) };
-  };
-
   /** The repository holding the corpus: the model's root when one is attached,
    * otherwise the workspace folder, walked up to the enclosing clone. */
   const repoRoot = (): string | undefined => {
     const start =
       getModel()?.root ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     return start === undefined ? undefined : findRepoRoot(start);
-  };
-
-  /** Label each changed file the way the corpus browser would. */
-  const rows = (changes: FileChange[], root: string): ChangeRow[] => {
-    const catalogue = getModel()?.state?.catalogue;
-    const labels = new Map<string, string>();
-    if (catalogue !== undefined) {
-      for (const edition of scopedEditions(catalogue, [], [])) {
-        if (edition.path.startsWith(`${root}/`)) {
-          labels.set(edition.path.slice(root.length + 1), edition.label);
-        }
-      }
-    }
-    return changes.map(({ path, change }) => ({
-      path,
-      label: labels.get(path) ?? path,
-      change,
-    }));
   };
 
   /* ------------------------------ actions ------------------------------- */

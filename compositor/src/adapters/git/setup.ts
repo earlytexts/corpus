@@ -1,72 +1,59 @@
 /**
- * "Set up the corpus on this computer" — the onboarding flow that replaces
- * handing the user to `git clone`. It signs them in to GitHub, ensures they
- * have a fork, clones that fork into a folder they choose, points `upstream` at
- * the canonical corpus, and offers to open the result. This is the riskiest
- * slice of the contribution feature (auth + fork + programmatic clone), proven
- * end-to-end here before the rest of the verbs are built on gitPort.
- *
- * The GitHub token comes from VSCode's built-in `github` auth provider, so
- * there are no tokens to paste or store; the same token authenticates both the
- * REST calls and the clone.
+ * The vscode adapter for the onboarding flow (core/setup.ts): it translates the
+ * flow's ports into VSCode — the folder dialog, the progress notification, the
+ * built-in `github` sign-in (so there are no tokens to paste or store; the same
+ * token authenticates both the REST calls and the clone), the REST client, and
+ * the bundled-git clone. Every decision lives in core; this file is wiring.
  */
 
 import * as vscode from "vscode";
 import * as fs from "node:fs";
-import { ensureFork, githubClient, UPSTREAM_URL } from "./github.ts";
+import { runSetup as runSetupCore } from "../../core/setup.ts";
+import { githubClient } from "./github.ts";
 import { addRemote, cloneRepo } from "./gitPort.ts";
 
-export const runSetup = async (): Promise<void> => {
-  const dir = await chooseDestination();
-  if (dir === undefined) return;
-
-  const session = await vscode.authentication.getSession("github", ["repo"], {
-    createIfNone: true,
+export const runSetup = (): Promise<void> =>
+  runSetupCore({
+    git: { clone: cloneRepo, addRemote },
+    makeGitHub: githubClient,
+    authenticate: async () => {
+      const session = await vscode.authentication.getSession(
+        "github",
+        ["repo"],
+        {
+          createIfNone: true,
+        },
+      );
+      return session.accessToken;
+    },
+    ui: {
+      chooseDestination,
+      withProgress: async (work) =>
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: "Setting up the corpus",
+            cancellable: false,
+          },
+          (progress) => work((message) => progress.report({ message })),
+        ),
+      reportFailure: async (message) => {
+        await vscode.window.showErrorMessage(message);
+      },
+      askToOpen: async () =>
+        (await vscode.window.showInformationMessage(
+          "The corpus is ready on this computer. Open it now?",
+          "Open",
+        )) === "Open",
+      open: async (dir) => {
+        await vscode.commands.executeCommand(
+          "vscode.openFolder",
+          vscode.Uri.file(dir),
+        );
+      },
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    },
   });
-  const token = session.accessToken;
-  const gh = githubClient(token);
-
-  try {
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: "Setting up the corpus",
-        cancellable: false,
-      },
-      async (progress) => {
-        const report = (message: string): void => progress.report({ message });
-        const sleep = (ms: number): Promise<void> =>
-          new Promise((resolve) => setTimeout(resolve, ms));
-
-        report("Checking your GitHub account…");
-        const { login } = await gh.getViewer();
-
-        report("Finding your copy of the corpus…");
-        const cloneUrl = await ensureFork(gh, login, report, sleep);
-
-        report("Downloading the corpus…");
-        await cloneRepo({ dir, url: cloneUrl, token, onProgress: report });
-        await addRemote(dir, "upstream", UPSTREAM_URL);
-      },
-    );
-  } catch (error) {
-    await vscode.window.showErrorMessage(
-      `Setting up the corpus failed: ${messageOf(error)}`,
-    );
-    return;
-  }
-
-  const open = await vscode.window.showInformationMessage(
-    "The corpus is ready on this computer. Open it now?",
-    "Open",
-  );
-  if (open === "Open") {
-    await vscode.commands.executeCommand(
-      "vscode.openFolder",
-      vscode.Uri.file(dir),
-    );
-  }
-};
 
 /** Pick a parent folder, then the corpus lands in a `corpus` subfolder of it. */
 const chooseDestination = async (): Promise<string | undefined> => {
@@ -89,6 +76,3 @@ const chooseDestination = async (): Promise<string | undefined> => {
   }
   return dir;
 };
-
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);

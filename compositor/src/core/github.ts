@@ -2,9 +2,16 @@
  * The GitHub operations the contribution workflow needs — the operations that
  * are *not* git: reading the signed-in user, finding or creating their fork of
  * the corpus, and opening and following the pull requests that carry their work
- * back. Declared here as a port the core owns; the REST implementation (and the
- * pure `ensureFork` flow written over it) lives in `adapters/git/github.ts`.
+ * back. Declared here as a port the core owns; the REST implementation lives in
+ * `adapters/git/github.ts`, the pure `ensureFork` flow written over it in
+ * `core/setup.ts`.
  */
+
+/** The canonical corpus every contributor forks from — the identity the setup
+ * flow and the REST client both speak of, so it is owned here in core. */
+export const UPSTREAM = { owner: "earlytexts", repo: "corpus" } as const;
+
+export const UPSTREAM_URL = `https://github.com/${UPSTREAM.owner}/${UPSTREAM.repo}.git`;
 
 /** The slice of a GitHub repository object we care about. */
 export type Repo = {

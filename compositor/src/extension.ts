@@ -12,6 +12,7 @@
 
 import * as vscode from "vscode";
 import { type CorpusModel, createCorpusModel } from "./core/corpusModel.ts";
+import { findCorpusRoot, viewMessage } from "./core/workspace.ts";
 import { createCorpusWatcher } from "./adapters/vscode/corpusWatcher.ts";
 import { vscodeNotifier } from "./adapters/vscode/notifier.ts";
 import { createCorpusTree } from "./surface/corpusTree.ts";
@@ -52,45 +53,16 @@ import {
   GIT_SCHEME,
 } from "./surface/contributionPanel.ts";
 
-/** The first workspace folder that looks like the corpus (has data/authors),
- * honouring the compositor.corpusRoot setting. */
-const findCorpusRoot = async (): Promise<string | undefined> => {
-  const configured = vscode.workspace
-    .getConfiguration("compositor")
-    .get<string>("corpusRoot", "")
-    .replace(/\/$/, "");
-  for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    const root =
-      configured === ""
-        ? folder.uri.fsPath
-        : `${folder.uri.fsPath}/${configured}`;
-    const authors = await nodeCorpusFs.stat(`${root}/data/authors`);
-    // Canonicalised, so the model's precompiled-document keys line up with the
-    // paths buildCatalogue resolves internally.
-    if (authors !== null && !authors.isFile) {
-      return await nodeCorpusFs.realPath(root);
-    }
-  }
-  return undefined;
-};
-
-/** The tree view's status message for the model's current phase, or undefined
- * to fall back to the view's welcome content (package.json viewsWelcome). With
- * no model there is no corpus attached, so the welcome content ("No corpus
- * found…") is exactly right. Otherwise the model's own `status` decides — never
- * the raw `loading`/`state` pair, which reads the pre-first-load window as a
- * failure. */
-const viewMessage = (model: CorpusModel | undefined): string | undefined => {
-  if (model === undefined) return undefined;
-  switch (model.status) {
-    case "loading":
-      return "Loading the corpus…";
-    case "failed":
-      return "The corpus failed to load.";
-    case "ready":
-      return undefined;
-  }
-};
+/** The corpus root among the open folders, honouring the compositor.corpusRoot
+ * setting — the config read and folder→path mapping the pure finder needs. */
+const locateCorpusRoot = (): Promise<string | undefined> =>
+  findCorpusRoot(
+    nodeCorpusFs,
+    (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
+    vscode.workspace
+      .getConfiguration("compositor")
+      .get<string>("corpusRoot", ""),
+  );
 
 export const activate = async (
   context: vscode.ExtensionContext,
@@ -167,7 +139,7 @@ export const activate = async (
   /** Look for the corpus and attach the model to it; true if attached. */
   const attach = async (): Promise<boolean> => {
     if (model !== undefined) return true;
-    const root = await findCorpusRoot();
+    const root = await locateCorpusRoot();
     if (root === undefined) return false;
     model = createCorpusModel(root, {
       fs: nodeCorpusFs,

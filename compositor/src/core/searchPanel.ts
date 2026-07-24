@@ -264,3 +264,184 @@ export const replacementFor = (
 
 export const plural = (n: number, noun: string): string =>
   `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+/* --------------------------- scan over the model -------------------------- */
+
+/** Result caps, native-search ballpark: a scan stops here rather than posting
+ * an unbounded payload for a one-letter term over ~250k-token editions. */
+export const MAX_TOTAL = 10_000;
+export const MAX_PER_FILE = 500;
+
+/** A compiled edition as the scan reads it, fetched on demand by its
+ * data/-relative path (the model's bounded compile cache); undefined when the
+ * source is gone. The one seam onto the model the scan needs. */
+export type CompiledFileSource = (
+  rel: string,
+) => Promise<{ text: string; doc: MarkitDocument } | undefined>;
+
+/** One file's worth of results: the catalogue label is composed here so the
+ * webview never needs the catalogue itself. */
+export type SearchFileGroup = {
+  path: string;
+  label: string;
+  matches: Match[];
+  truncated: boolean;
+};
+
+/** The results payload the webview renders: the file groups and the tallies, or
+ * an `error` when the regex will not parse. The adapter posts it verbatim. */
+export type SearchResults = {
+  files: SearchFileGroup[];
+  totalMatches: number;
+  truncated: boolean;
+  error?: string;
+};
+
+/**
+ * Scan the scoped editions for `query`, pulling each through `getCompiledFile`,
+ * and return the grouped results — or `undefined` when `isCurrent()` reports the
+ * run superseded mid-scan (a newer query or a reload), so the adapter drops it
+ * rather than posting stale results. An absent catalogue or an empty term yields
+ * empty results (posted, to clear the view); an unparsable regex yields the
+ * error. Editions are pulled on demand, so the corpus need not be held compiled.
+ */
+export const searchCorpus = async (
+  query: SearchQuery,
+  catalogue: Catalogue | undefined,
+  root: string,
+  getCompiledFile: CompiledFileSource,
+  isCurrent: () => boolean,
+): Promise<SearchResults | undefined> => {
+  const empty: SearchResults = { files: [], totalMatches: 0, truncated: false };
+  if (catalogue === undefined || query.term === "") return empty;
+  const built = buildMatcher(query);
+  if ("error" in built) return { ...empty, error: built.error };
+  const prefix = `${root}/data/`;
+  const files: SearchFileGroup[] = [];
+  let total = 0;
+  let truncated = false;
+  for (const { path, label } of scopedEditions(
+    catalogue,
+    query.include,
+    query.exclude,
+  )) {
+    if (total >= MAX_TOTAL) {
+      truncated = true;
+      break;
+    }
+    const file = path.startsWith(prefix)
+      ? await getCompiledFile(path.slice(prefix.length))
+      : undefined;
+    if (!isCurrent()) return undefined; // superseded mid-scan — drop these
+    if (file === undefined) continue;
+    const result = searchFile(
+      file,
+      built.matcher,
+      Math.min(MAX_PER_FILE, MAX_TOTAL - total),
+    );
+    if (result.matches.length === 0) continue;
+    truncated ||= result.truncated;
+    total += result.matches.length;
+    files.push({
+      path,
+      label,
+      matches: result.matches,
+      truncated: result.truncated,
+    });
+  }
+  return { files, totalMatches: total, truncated };
+};
+
+/* ---------------------------- replace planning --------------------------- */
+
+/** One located match the webview asks to replace: verbatim, so the edit can be
+ * verified against the live document before it lands. */
+export type ReplaceTarget = {
+  path: string;
+  line: number;
+  start: number;
+  end: number;
+  matchText: string;
+};
+
+/** A verified edit to apply: the (0-based, end-exclusive) range and the
+ * expanded replacement text. */
+export type ReplaceEdit = {
+  path: string;
+  line: number;
+  start: number;
+  end: number;
+  newText: string;
+};
+
+/** The outcome of verifying a replace request against the live documents. */
+export type ReplacePlan = {
+  /** The surviving edits, ready for one WorkspaceEdit. */
+  edits: ReplaceEdit[];
+  /** Distinct files at least one edit touches (for the summary and the saves). */
+  filesTouched: number;
+  /** Targets dropped because the file was gone or its text had moved. */
+  skipped: number;
+};
+
+/** Read the live text at a range, or undefined when the file is gone. The
+ * adapter opens the document through VSCode (once per file) and reads ranges. */
+export type LiveDoc = (
+  path: string,
+) => Promise<
+  ((line: number, start: number, end: number) => string) | undefined
+>;
+
+/** The number of distinct files the targets touch — the adapter's cue to
+ * confirm a cross-file replace before planning it. */
+export const distinctTargetFiles = (targets: ReplaceTarget[]): number =>
+  new Set(targets.map((target) => target.path)).size;
+
+/**
+ * Group the targets by file and verify each against its live document: a file
+ * that is gone skips all its targets; a target whose text moved since the search
+ * is skipped; a surviving target becomes an edit with its replacement expanded
+ * (regex captures included). The adapter applies the `edits` as one
+ * WorkspaceEdit and saves the touched files — never a raw disk write, so VSCode
+ * keeps per-file undo and does not auto-revert an open editor.
+ */
+export const planReplace = async (
+  query: SearchQuery,
+  replaceText: string,
+  targets: ReplaceTarget[],
+  openDoc: LiveDoc,
+): Promise<ReplacePlan> => {
+  const byPath = new Map<string, ReplaceTarget[]>();
+  for (const target of targets) {
+    const list = byPath.get(target.path);
+    if (list === undefined) byPath.set(target.path, [target]);
+    else list.push(target);
+  }
+  const edits: ReplaceEdit[] = [];
+  let skipped = 0;
+  let filesTouched = 0;
+  for (const [path, list] of byPath) {
+    const read = await openDoc(path);
+    if (read === undefined) {
+      skipped += list.length; // gone since the search
+      continue;
+    }
+    let touchedHere = false;
+    for (const target of list) {
+      if (read(target.line, target.start, target.end) !== target.matchText) {
+        skipped++;
+        continue;
+      }
+      edits.push({
+        path,
+        line: target.line,
+        start: target.start,
+        end: target.end,
+        newText: replacementFor(target.matchText, query, replaceText),
+      });
+      touchedHere = true;
+    }
+    if (touchedHere) filesTouched++;
+  }
+  return { edits, filesTouched, skipped };
+};

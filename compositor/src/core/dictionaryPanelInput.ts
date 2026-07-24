@@ -10,8 +10,9 @@
  * returns, or shows the error string.
  */
 
-import type { EntryValue } from "@earlytexts/corpus";
+import { type EntryValue, parseDictionary } from "@earlytexts/corpus";
 import { entryWords } from "./dictionaryEntryText.ts";
+import { removeEntryText } from "./dictionaryEdits.ts";
 
 /** A validated single-surface upsert, or why the input was rejected. */
 export type EntryEdit =
@@ -56,6 +57,29 @@ export const variantEntry = (
     return { error: "A variant must point at a different spelling." };
   }
   return { surface, value: spellings.join(" ") };
+};
+
+/**
+ * The remove edit for a surface: `shardText` with that entry gone. An ambiguous
+ * entry (more than one reading) is refused — its other readings would go with
+ * it, so those stay editable through the editor quick-fix. `shard` is the
+ * surface's shard file; the empty shard reads as `{}`. Throws the refusal so the
+ * panel surface can report it.
+ */
+export const removeSurfaceFromShard = (
+  shardText: string,
+  shard: string,
+  surface: string,
+): string => {
+  const { dictionary } = parseDictionary(
+    new Map([[shard, shardText.trim() === "" ? "{}" : shardText]]),
+  );
+  if ((dictionary[surface]?.readings.length ?? 0) > 1) {
+    throw new Error(
+      `“${surface}” is an ambiguous entry — edit it with the editor quick-fix.`,
+    );
+  }
+  return removeEntryText(shardText, surface);
 };
 
 /** The one folded word of `input`, or undefined when it is not exactly one. */
