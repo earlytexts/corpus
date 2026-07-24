@@ -39,7 +39,7 @@ export const runSetup = async (): Promise<void> => {
           new Promise((resolve) => setTimeout(resolve, ms));
 
         report("Checking your GitHub account…");
-        const login = await gh.getViewerLogin();
+        const { login } = await gh.getViewer();
 
         report("Finding your copy of the corpus…");
         const cloneUrl = await ensureFork(gh, login, report, sleep);

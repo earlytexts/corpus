@@ -2,7 +2,7 @@
   "name": "compositor",
   "publisher": "earlytexts",
   "displayName": "Early Text Compositor",
-  "version": "0.12.5",
+  "version": "0.13.0",
   "description": "A VSCode extension for contributing to the Early Text Corpus",
   "license": "MIT",
   "repository": {
@@ -63,21 +63,28 @@
           "id": "compositor.corpusBrowser",
           "name": "Browse",
           "icon": "media/etc.svg",
-          "contextualTitle": "Early Text Corpus: Browse"
+          "contextualTitle": "ETC: Browse"
         },
         {
           "id": "compositor.searchPanel",
           "name": "Search",
           "icon": "media/etc.svg",
           "type": "webview",
-          "contextualTitle": "Early Text Corpus: Search"
+          "contextualTitle": "ETC: Search"
         },
         {
           "id": "compositor.dictionaryPanel",
           "name": "Dictionary",
           "icon": "media/etc.svg",
           "type": "webview",
-          "contextualTitle": "Early Text Corpus: Dictionary"
+          "contextualTitle": "ETC: Dictionary"
+        },
+        {
+          "id": "compositor.contributionPanel",
+          "name": "Contribute",
+          "icon": "media/etc.svg",
+          "type": "webview",
+          "contextualTitle": "ETC: Contribute"
         }
       ]
     },
@@ -93,6 +100,18 @@
         "title": "Set up the Corpus…",
         "category": "Compositor",
         "icon": "$(repo-clone)"
+      },
+      {
+        "command": "compositor.contribute",
+        "title": "Send Your Work for Review…",
+        "category": "Compositor",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "compositor.contributeRefresh",
+        "title": "Check for a Reply from the Editors",
+        "category": "Compositor",
+        "icon": "$(refresh)"
       },
       {
         "command": "compositor.refresh",
@@ -188,6 +207,11 @@
           "command": "compositor.validate",
           "when": "view == compositor.corpusBrowser",
           "group": "navigation@3"
+        },
+        {
+          "command": "compositor.contributeRefresh",
+          "when": "view == compositor.contributionPanel",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -245,6 +269,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "compositor.contributeRefresh",
+          "when": "false"
+        },
         {
           "command": "compositor.openAuthorStub",
           "when": "false"

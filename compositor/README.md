@@ -6,10 +6,11 @@ diplomatic digital editions of texts from the hand press era, stored in
 [Markit](https://github.com/earlytexts/markit) — a human-friendly markup
 language designed for early text preservation.
 
-The extension activates when VSCode is opened in a clone of the corpus (it
+The extension activates when VSCode is opened in a copy of the corpus (it
 looks for `data/authors`; if the corpus is a subfolder of the workspace, point
-`compositor.corpusRoot` at it). Git stays in the contributor's hands — the
-extension reads and writes the working tree, nothing more.
+`compositor.corpusRoot` at it). Contributors are not expected to know git: the
+extension sets the corpus up on their machine and carries their finished work
+back to the Centre for review, using a GitHub account and nothing else.
 
 It sits on top of the [Markit language extension](https://github.com/earlytexts/markit)
 (declared as an extension dependency), which provides syntax highlighting,
@@ -47,6 +48,15 @@ validate` runs) published to the Problems panel, with a status-bar summary
   unconfirmed `?` entries as hints), each with quick-fixes that curate the
   entry — add it as a modern word, a respelling, or with a lemma; confirm an
   unconfirmed one — writing the shard file canonically.
+- **Contribute** — a docked panel that carries a contributor's work back to
+  the Centre without ever naming a branch, a commit, a push or a pull request.
+  It shows one situation at a time — your changes, your submission, what the
+  editors decided — with the file list labelled from the catalogue ("Hume ·
+  Enquiry · 1748"), a diff of what you changed, an undo per file, and a
+  description box whose text becomes the title the editors read. Sending
+  brings in the latest corpus first, asking about any text that changed on
+  both sides, then opens the submission on GitHub. See
+  [Contributing back](#contributing-back).
 - **Dictionary Curation** — an activity-bar view listing the unaccounted and
   unconfirmed surfaces corpus-wide, most frequent first, so the register can be
   backfilled highest-impact first; selecting one opens it in context, the
@@ -114,9 +124,15 @@ checkout in the Extension Development Host.
   documents carry no source ranges). Every completed load writes `catalogue/`
   back (`writeCatalogue`, ~0.5s, chained so writes never interleave), so the
   cache — and the computer's dev input — stays fresh.
-- **Clone Corpus** (welcome-view button / command) delegates to the built-in
-  `git.clone` with the corpus URL; opening the clone activates the extension,
-  and no separate build step is needed (the model builds in memory).
+- **Git is the extension's business, not the contributor's.** Both halves of
+  the round trip — setting the corpus up, and sending work back — run on
+  bundled git (isomorphic-git) and the GitHub REST API, authenticated with
+  VSCode's built-in GitHub sign-in, so there is no system git to install and
+  no token to paste. Set-up forks the corpus into the contributor's account,
+  clones the fork, and points `upstream` at the canonical corpus; opening the
+  clone activates the extension, and no separate build step is needed (the
+  model builds in memory). See [Contributing back](#contributing-back) for the
+  rest.
 - **Build tooling**: esbuild + npm; `vsce package` for the .vsix; vitest for
   unit tests (scaffold templates are validated against the real corpus rule
   set via the corpus's in-memory test harness).
@@ -144,9 +160,28 @@ is a directory line: if it needs the editor it lives in `surface/`, otherwise in
   files on each query message, posts grouped results, verifies and applies
   replaces (`panelShell.ts` carries the shared CSP shell, `searchPanelCss.ts`
   the styles, `src/webview/search.ts` the front-end)
+- `contributionPanel.ts` — the Contribute webview: reads the working copy
+  through the git port, asks GitHub about the submission, posts the scene
+  `workflow.ts` decides, and owns what only VSCode can do — sign-in, progress,
+  the conflict dialogs, the diffs (`contributionPanelCss.ts` the styles,
+  `src/webview/contribute.ts` the front-end)
 - `commands/` — scaffolds, fix formatting, insert borrowed reference, compare
   editions, suggest markup, dictionary diagnostics. Each gathers input and
   applies effects; the decisions are pulled into `lib/`.
+
+**Git and GitHub** (`src/git/`, no `vscode` below `setup.ts`)
+
+- `gitPort.ts` — the one place isomorphic-git lives: cloning and remotes for
+  set-up, and the `GitPort` type (what changed, branch, commit, merge, push)
+  the contribution flow works through
+- `github.ts` — the REST calls that are not git: the signed-in user, finding
+  or creating the fork, opening and following pull requests. `ensureFork` is
+  pure over the `GitHubClient` port
+- `workflow.ts` — the translation layer: `describeState` (pure) decides where
+  a contributor stands, and the four verbs — send for review, add to a
+  submission, get the latest corpus, tidy up — are written over the two ports,
+  so the whole flow is tested without a repository or a network
+- `setup.ts` — the "Set up the corpus" onboarding command (VSCode-facing)
 
 **Pure logic** (`src/lib/`, no `vscode`, unit-tested)
 
@@ -228,6 +263,64 @@ The dictionary quick-fixes deliberately do not re-offer name/citation/language
 markup (that lives in the markup-suggestion overlay), nor `[w:]`/edition-default
 disambiguation of an already-accounted ambiguous surface (which has no
 diagnostic to hang a fix on); both are natural follow-ups.
+
+### Contributing back
+
+The Contribute panel exists so that someone who has never used git can send a
+corrected text to the Centre. Its whole design follows from one decision: **one
+unit of work is in flight at a time, and it is called a submission** — one
+branch, one pull request, one lifecycle that can be stated in a sentence.
+Several submissions at once would mean switching between them, which means
+files changing on disk underneath the contributor, which is exactly where a
+non-technical user loses trust in the tool.
+
+The vocabulary is fixed, and nothing below the panel is allowed to leak into
+it:
+
+| git                                   | what the contributor is told |
+| ------------------------------------- | ---------------------------- |
+| fork                                  | your copy of the corpus      |
+| working tree changes                  | your changes                 |
+| branch + commit + push + pull request | send for review              |
+| a pull request                        | your submission              |
+| merging `upstream/main`               | getting the latest corpus    |
+| merged                                | accepted into the corpus     |
+
+`describeState` reads three facts — which branch the copy is on, what has
+changed, and what GitHub says about the submission — and returns exactly one
+situation, which is the only thing the panel can render:
+
+- **clean** — nothing changed, nothing outstanding; offers the latest corpus.
+- **editing** — work not yet sent: the changed files, and the description box
+  that sends them.
+- **unfinished** — a send that stopped part-way (the connection dropped between
+  the push and the pull request). The work is safe on its branch, and the panel
+  offers to finish, named after the commit it carries. Without this a
+  contributor would be stranded on a branch with no way forward.
+- **sent** — awaiting review; further edits go to the same submission.
+- **decided** — accepted or closed. With nothing pending it offers to clear
+  away and start afresh; with new edits it offers to send them as a new
+  submission (a settled submission cannot be added to).
+
+Sending is: commit everything as one described commit on a branch named for the
+date and the description, bring in the corpus, push to the fork, open the pull
+request. Bringing in the corpus at send time — rather than leaving it to the
+editors — is deliberate: a contributor should meet a clash with their own work
+while they still remember doing it.
+
+A clash is handled in two passes, which is why `mergeCorpus` takes its choices
+as a second call rather than a callback. The first pass is a probe that aborts
+on conflict, so backing out costs nothing and nothing has moved; the
+contributor is then asked, per file, to keep their version or take the corpus's
+(with a diff of the two on request); the second pass replays the merge, writes
+the chosen sides into the working files, and commits the result with both
+parents, so it reads as an ordinary merge to git. Conflict-marker editing is
+deliberately not offered: for a corpus of separate texts the realistic clash is
+"we both edited this text", which a per-file choice settles, and anything finer
+is an editorial judgment that belongs in the review conversation.
+
+The review conversation itself stays on GitHub — the panel links to it rather
+than rebuilding it.
 
 ### Corpus layout (what the tree and scaffolds produce)
 

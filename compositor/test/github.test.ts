@@ -21,12 +21,17 @@ const fakeClient = (
   const queue = [...getRepoResponses];
   const client = {
     forks: 0,
-    getViewerLogin: () => Promise.resolve("ada"),
+    getViewer: () =>
+      Promise.resolve({ login: "ada", name: "Ada", email: "ada@example.com" }),
     getRepo: () => Promise.resolve(queue.shift()),
     createFork: () => {
       client.forks++;
       return Promise.resolve();
     },
+    // Unused by ensureFork; present so the fake satisfies the port.
+    findPull: () => Promise.resolve(undefined),
+    createPull: () => Promise.reject(new Error("not used here")),
+    deleteBranch: () => Promise.resolve(),
   };
   return client;
 };
