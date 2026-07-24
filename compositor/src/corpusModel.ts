@@ -18,7 +18,10 @@
  * derivations file falls back to that full compile, which also rewrites the
  * build output. In-session edits recompile just the touched file and rebuild the
  * indexes/violations/structure from the resident records — no whole-corpus
- * recompile, and no whole-corpus documents resident.
+ * recompile, and no whole-corpus documents resident — then write back just those
+ * editions' `catalogue/documents/` (from their recompiled standalone bodies), so
+ * the computer's input tracks the edit without the full document rewrite; a
+ * deleted edition's document is removed.
  */
 
 import * as vscode from "vscode";
@@ -38,11 +41,13 @@ import {
   precompiledSkeletons,
   readDerivations,
   readDictionaryShards,
+  sourceDocKeys,
   validateCrossFile,
   validateDictionary,
   validateWordAndOverride,
   type Violation,
   writeCatalogue,
+  writeCatalogueSources,
   writeDerivations,
 } from "@earlytexts/corpus";
 import { createCompiledFileCache } from "./lib/compiledFileCache.ts";
@@ -173,22 +178,45 @@ export const createCorpusModel = (root: string): CorpusModel => {
 
   /* --------------------------- disk write-back --------------------------- */
 
-  // A latest-wins background writer: keeps the build output fresh (the
-  // Compositor's own next cold start, and the computer's dev input) without
-  // stacking writes or blocking a load. A newer task replaces a pending one.
-  let pendingWrite: (() => Promise<void>) | undefined;
+  // A background writer that keeps the build output fresh (the Compositor's own
+  // next cold start, and the computer's dev input) without stacking writes or
+  // blocking a load. Two scopes: a *full* rewrite (loadFull — the whole
+  // `catalogue/` + derivations) and a *docs* write-back (loadIncremental — just
+  // the changed editions' documents, plus catalogue.json/dictionary.json). A
+  // full rewrite supersedes any pending docs write; a burst of saves coalesces
+  // into one docs write, keyed by source so the last operation on each file
+  // wins (a re-save overwrites, a delete drops a pending write, and vice versa).
+  type PendingWrite =
+    | { kind: "full"; run: () => Promise<void> }
+    | {
+        kind: "docs";
+        /** root-relative source path → its freshly compiled standalone doc. */
+        docs: Map<string, CorpusFile["doc"]>;
+        /** root-relative source path → the docKey to remove (a deleted edition). */
+        removals: Map<string, string>;
+      };
+  let pending: PendingWrite | undefined;
   let writing = false;
-  const enqueueWrite = (task: () => Promise<void>): void => {
-    pendingWrite = task;
+  const drainWrites = (): void => {
     if (writing) return;
     writing = true;
     void (async () => {
       try {
-        while (pendingWrite !== undefined) {
-          const next = pendingWrite;
-          pendingWrite = undefined;
+        while (pending !== undefined) {
+          const next = pending;
+          pending = undefined;
           try {
-            await next();
+            if (next.kind === "full") await next.run();
+            else if (state !== undefined) {
+              await writeCatalogueSources(
+                nodeCorpusFs,
+                root,
+                state.catalogue,
+                state.warnings,
+                next.docs,
+                new Set(next.removals.values()),
+              );
+            }
           } catch {
             // a failed write only costs the cache; the next load refreshes it
           }
@@ -197,6 +225,28 @@ export const createCorpusModel = (root: string): CorpusModel => {
         writing = false;
       }
     })();
+  };
+  const enqueueFull = (run: () => Promise<void>): void => {
+    pending = { kind: "full", run }; // supersedes any pending docs write
+    drainWrites();
+  };
+  const enqueueDocs = (
+    docs: Map<string, CorpusFile["doc"]>,
+    removals: Map<string, string>,
+  ): void => {
+    if (pending?.kind === "full") return; // the pending full covers everything
+    if (pending === undefined) {
+      pending = { kind: "docs", docs: new Map(), removals: new Map() };
+    }
+    for (const [source, doc] of docs) {
+      pending.removals.delete(source);
+      pending.docs.set(source, doc);
+    }
+    for (const [source, docKey] of removals) {
+      pending.docs.delete(source);
+      pending.removals.set(source, docKey);
+    }
+    drainWrites();
   };
 
   /* ----------------------------- compiling ----------------------------- */
@@ -241,7 +291,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
     );
     const full = await buildCatalogue(nodeCorpusFs, root, precompiled);
     const snapshot = new Map(records);
-    enqueueWrite(async () => {
+    enqueueFull(async () => {
       await writeCatalogue(nodeCorpusFs, root, full.catalogue, full.warnings);
       await writeDerivations(nodeCorpusFs, root, snapshot);
     });
@@ -252,12 +302,34 @@ export const createCorpusModel = (root: string): CorpusModel => {
    * records. Structure is rebuilt only when a skeleton actually changed (a body
    * edit leaves it untouched), so a plain content save skips the catalogue pass. */
   const loadIncremental = async (paths: Set<string>): Promise<void> => {
+    // A deleted edition's document is located by the docKey it *had* before this
+    // save mutated the catalogue, so capture the mapping lazily (only when a
+    // delete is actually seen) off the pre-edit catalogue.
+    let docKeysBefore: Map<string, string> | undefined;
+    const removalDocKey = async (
+      source: string,
+    ): Promise<string | undefined> => {
+      if (state === undefined) return undefined;
+      if (docKeysBefore === undefined) {
+        const real = await nodeCorpusFs.realPath(root).catch(() => root);
+        docKeysBefore = sourceDocKeys(state.catalogue, real);
+      }
+      return docKeysBefore.get(source);
+    };
+
+    // Changed editions' standalone docs (source-keyed as sourceDocKeys keys
+    // them, `data/`-relative) and deleted editions' documents, for the write-back.
+    const changedDocs = new Map<string, CorpusFile["doc"]>();
+    const removals = new Map<string, string>();
     let skeletonChanged = false;
     for (const path of paths) {
+      const source = `data/${path}`;
       compiledCache.invalidate(path);
       const file = await compileOne(path);
       if (file === undefined) {
         if (records.delete(path)) skeletonChanged = true;
+        const docKey = await removalDocKey(source);
+        if (docKey !== undefined) removals.set(source, docKey);
         continue;
       }
       const before = records.get(path);
@@ -266,6 +338,7 @@ export const createCorpusModel = (root: string): CorpusModel => {
       skeletonChanged ||=
         before === undefined ||
         JSON.stringify(before.skeleton) !== JSON.stringify(record.skeleton);
+      changedDocs.set(source, file.doc);
     }
     const catalogue =
       skeletonChanged || state === undefined
@@ -276,9 +349,16 @@ export const createCorpusModel = (root: string): CorpusModel => {
       violations: await recomputeViolations(),
       ...seedIndexes(),
     };
-    // The derivations cache is not rewritten per save (it is 10s of MB): the
+    // Write just the touched editions' documents (from their recompiled
+    // standalone bodies) plus catalogue.json/dictionary.json — so the computer's
+    // input tracks in-session edits, without the ~60MB full document rewrite or
+    // any whole-corpus body resident. A delete removes its stale document.
+    // The derivations cache is *not* rewritten per save (it is 10s of MB): the
     // next cold start's hash sweep recompiles just these touched files, so the
     // in-memory state is fresh now and the disk cache reconciles cheaply later.
+    if (changedDocs.size > 0 || removals.size > 0) {
+      enqueueDocs(changedDocs, removals);
+    }
   };
 
   /** A dictionary-shard edit: the documents are untouched (records stay valid),

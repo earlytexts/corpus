@@ -55,6 +55,7 @@ import {
 } from "../src/validation/rules.ts";
 import { corpus, CORPUS_ROOT, memoryCorpus } from "./harness.ts";
 import { buildCatalogue } from "../src/catalogue/compile.ts";
+import { compileWithPositions } from "@earlytexts/markit";
 import {
   writeCatalogue,
   writeCatalogueDictionary,
@@ -1310,7 +1311,8 @@ test("catalogue: writeCatalogueSources rewrites only the changed document", asyn
   // Two editions, each its own document. A save to one must rewrite only that
   // document's JSON (plus catalogue.json/dictionary.json), leaving the other's
   // byte-identical — the incremental write that keeps a save off the ~60MB
-  // full rewrite.
+  // full rewrite. The changed edition is handed as its recompiled *standalone*
+  // document (as the body-free Compositor holds it), never read off a catalogue.
   const files = corpus()
     .author("a", { forename: "Ann", surname: "Aa" })
     .work("a", "w", { title: "W", breadcrumb: "W", canonical: "1700" })
@@ -1338,16 +1340,21 @@ test("catalogue: writeCatalogueSources rewrites only the changed document", asyn
   expect(before[1700]).toBeDefined();
   expect(before[1710]).toBeDefined();
 
-  // Edit only the 1700 edition, rebuild, and write back just its source.
-  files[`${CORPUS_ROOT}/data/works/a/w/1700.mit`] =
+  // Edit only the 1700 edition, rebuild the (stub-safe) structure, and write
+  // back just its recompiled standalone document.
+  const edited =
     '# a.w.1700\n\n[metadata]\nimported = true\ntitle = "W"\nbreadcrumb = "W"\npublished = [1700]\n\n## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nGamma text.\n';
+  files[`${CORPUS_ROOT}/data/works/a/w/1700.mit`] = edited;
   const second = await buildCatalogue(fs, CORPUS_ROOT);
   await writeCatalogueSources(
     fs,
     CORPUS_ROOT,
     second.catalogue,
     second.warnings,
-    new Set(["data/works/a/w/1700.mit"]),
+    new Map([[
+      "data/works/a/w/1700.mit",
+      compileWithPositions(edited).document,
+    ]]),
   );
 
   // The changed document was rewritten (now carries "gamma"); the untouched one
@@ -1360,6 +1367,168 @@ test("catalogue: writeCatalogueSources rewrites only the changed document", asyn
   const slugs = loaded.catalogue.byAuthor
     .get("a")!.works[0].editions.map((e) => e.slug);
   expect(slugs).toEqual(["1700", "1710"]);
+});
+
+test("catalogue: writeCatalogueSources with a standalone doc equals the full build's document", async () => {
+  // The write-back's standalone serialisation must be byte-identical to what a
+  // full writeCatalogue would emit for the same source — including a collection
+  // whose borrowed child serialises as a `{ __ref }` and whose inline,
+  // footnote-bearing section serialises inline. This is the guarantee the whole
+  // incremental path rests on (see serializeSourceDoc).
+  const collSource = "## <a.w.1700>\n\n" +
+    '## In\n\n[metadata]\ntitle = "Inline"\nbreadcrumb = "Inline"\n\n' +
+    "{#1}\nA sentence with a note<n1>.\n\n{#n1}\nThe note itself.";
+  const files = corpus()
+    .author("a", { forename: "Ann", surname: "Aa" })
+    .work("a", "w", { title: "W", breadcrumb: "W", canonical: "1700" })
+    .edition(
+      "a",
+      "w",
+      "1700",
+      { imported: true, title: "W", breadcrumb: "W", published: [1700] },
+      '## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nAlpha text.',
+    )
+    .work("a", "coll", { title: "Coll", breadcrumb: "Coll", canonical: "1720" })
+    .edition(
+      "a",
+      "coll",
+      "1720",
+      { imported: true, title: "Coll", breadcrumb: "Coll", published: [1720] },
+      collSource,
+    )
+    .build();
+  const fs = writableCorpus(files);
+  // The full build's document for the collection is the golden.
+  const full = await buildCatalogue(fs, CORPUS_ROOT);
+  await writeCatalogue(fs, CORPUS_ROOT, full.catalogue, full.warnings);
+  const collDoc = `${CORPUS_ROOT}/catalogue/documents/a/coll/1720.json`;
+  const golden = files[collDoc];
+  expect(golden).toContain('"__ref":"a/w/1700"');
+
+  // Re-derive it from a standalone compile of the on-disk source (as the
+  // Compositor's incremental path does), and demand byte-equality.
+  await writeCatalogueSources(
+    fs,
+    CORPUS_ROOT,
+    full.catalogue,
+    full.warnings,
+    new Map([[
+      "data/works/a/coll/1720.mit",
+      compileWithPositions(files[`${CORPUS_ROOT}/data/works/a/coll/1720.mit`])
+        .document,
+    ]]),
+  );
+  expect(files[collDoc]).toBe(golden);
+});
+
+test("catalogue: writeCatalogueSources drops an unresolvable borrowed child, like the build", async () => {
+  // A collection borrowing a ref that names no edition: the full build drops it
+  // with a warning, and the standalone write-back must drop it too — the same
+  // degradation — so the two documents stay byte-identical. A changed author
+  // source (no edition docKey) writes no document, only refreshing structure.
+  const collSource = "## <a.w.nope>\n\n" +
+    '## In\n\n[metadata]\ntitle = "Inline"\nbreadcrumb = "Inline"\n\n{#1}\nText.';
+  const files = corpus()
+    .author("a", { forename: "Ann", surname: "Aa" })
+    .work("a", "w", { title: "W", breadcrumb: "W", canonical: "1700" })
+    .edition(
+      "a",
+      "w",
+      "1700",
+      { imported: true, title: "W", breadcrumb: "W", published: [1700] },
+      '## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nAlpha text.',
+    )
+    .work("a", "coll", { title: "Coll", breadcrumb: "Coll", canonical: "1720" })
+    .edition(
+      "a",
+      "coll",
+      "1720",
+      { imported: true, title: "Coll", breadcrumb: "Coll", published: [1720] },
+      collSource,
+    )
+    .build();
+  const fs = writableCorpus(files);
+  const full = await buildCatalogue(fs, CORPUS_ROOT);
+  await writeCatalogue(fs, CORPUS_ROOT, full.catalogue, full.warnings);
+  const collDoc = `${CORPUS_ROOT}/catalogue/documents/a/coll/1720.json`;
+  const golden = files[collDoc];
+  expect(golden).not.toContain("__ref"); // the borrowed child was dropped
+  const catalogueBefore = files[`${CORPUS_ROOT}/catalogue/catalogue.json`];
+
+  await writeCatalogueSources(
+    fs,
+    CORPUS_ROOT,
+    full.catalogue,
+    full.warnings,
+    new Map([
+      [
+        "data/works/a/coll/1720.mit",
+        compileWithPositions(files[`${CORPUS_ROOT}/data/works/a/coll/1720.mit`])
+          .document,
+      ],
+      // An author source: it has no edition docKey, so it writes no document.
+      [
+        "data/authors/a.mit",
+        compileWithPositions(files[`${CORPUS_ROOT}/data/authors/a.mit`])
+          .document,
+      ],
+    ]),
+  );
+
+  expect(files[collDoc]).toBe(golden); // dropped child, byte-identical
+  expect(files[`${CORPUS_ROOT}/catalogue/documents/authors/a.json`])
+    .toBeUndefined();
+  // catalogue.json is always refreshed (its structure/warnings are body-free).
+  expect(files[`${CORPUS_ROOT}/catalogue/catalogue.json`]).toBe(
+    catalogueBefore,
+  );
+});
+
+test("catalogue: writeCatalogueSources removes a deleted edition's document", async () => {
+  // A deleted edition: its document must be removed (the caller passes its
+  // docKey), so the computer never reads a stale, orphaned document file.
+  const files = corpus()
+    .author("a", { forename: "Ann", surname: "Aa" })
+    .work("a", "w", { title: "W", breadcrumb: "W", canonical: "1700" })
+    .edition(
+      "a",
+      "w",
+      "1700",
+      { imported: true, title: "W", breadcrumb: "W", published: [1700] },
+      '## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nAlpha text.',
+    )
+    .edition(
+      "a",
+      "w",
+      "1710",
+      { imported: true, title: "W", breadcrumb: "W", published: [1710] },
+      '## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nBeta text.',
+    )
+    .build();
+  const fs = writableCorpus(files);
+  const first = await buildCatalogue(fs, CORPUS_ROOT);
+  await writeCatalogue(fs, CORPUS_ROOT, first.catalogue, first.warnings);
+  const doc1710 = `${CORPUS_ROOT}/catalogue/documents/a/w/1710.json`;
+  expect(files[doc1710]).toBeDefined();
+
+  // Delete 1710, rebuild the structure (it is gone), and write back its removal.
+  delete files[`${CORPUS_ROOT}/data/works/a/w/1710.mit`];
+  const second = await buildCatalogue(fs, CORPUS_ROOT);
+  await writeCatalogueSources(
+    fs,
+    CORPUS_ROOT,
+    second.catalogue,
+    second.warnings,
+    new Map(),
+    new Set(["a/w/1710"]),
+  );
+
+  expect(files[doc1710]).toBeUndefined();
+  // The catalogue still loads, now with only the 1700 edition.
+  const loaded = await loadCatalogue(catalogueReader(fs), CORPUS_ROOT);
+  const slugs = loaded.catalogue.byAuthor
+    .get("a")!.works[0].editions.map((e) => e.slug);
+  expect(slugs).toEqual(["1700"]);
 });
 
 test("dictionary: readDictionaryShards reads only the shard files", async () => {
