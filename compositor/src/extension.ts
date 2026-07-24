@@ -11,84 +11,61 @@
  */
 
 import * as vscode from "vscode";
-import { type CorpusModel, createCorpusModel } from "./corpusModel.ts";
-import { createCorpusTree } from "./surface/corpusTree.ts";
-import { registerDoubleClickOpen } from "./surface/doubleClickOpen.ts";
-import { authorPath, type TreeNode, workDocId } from "./lib/nodes.ts";
-import { registerDiagnostics } from "./surface/diagnostics.ts";
-import { registerHover } from "./surface/hover.ts";
+import { type CorpusModel, createCorpusModel } from "./core/corpusModel.ts";
+import { findCorpusRoot, viewMessage } from "./core/workspace.ts";
+import { createCorpusWatcher } from "./adapters/vscode/corpusWatcher.ts";
+import { vscodeNotifier } from "./adapters/vscode/notifier.ts";
+import { createCorpusTree } from "./adapters/vscode/corpusTree.ts";
+import { registerDoubleClickOpen } from "./adapters/vscode/doubleClickOpen.ts";
+import { authorPath, type TreeNode, workDocId } from "./core/nodes.ts";
+import { registerDiagnostics } from "./adapters/vscode/diagnostics.ts";
+import { registerHover } from "./adapters/vscode/hover.ts";
 import { nodeCorpusFs } from "@earlytexts/corpus";
 import {
   newAuthor,
   newEdition,
   newWork,
-} from "./surface/commands/scaffolds.ts";
-import { fixFormatting } from "./surface/commands/fixFormatting.ts";
-import { insertBorrowedRef } from "./surface/commands/insertBorrowedRef.ts";
+} from "./adapters/vscode/commands/scaffolds.ts";
+import { fixFormatting } from "./adapters/vscode/commands/fixFormatting.ts";
+import { insertBorrowedRef } from "./adapters/vscode/commands/insertBorrowedRef.ts";
 import {
   compareEditions,
   compareWithNext,
-} from "./surface/commands/compareEditions.ts";
+} from "./adapters/vscode/commands/compareEditions.ts";
 import {
   createSuggestionController,
   type SuggestionController,
-} from "./surface/commands/suggestMarkup.ts";
+} from "./adapters/vscode/commands/suggestMarkup.ts";
 import {
   createDictionaryController,
   type DictionaryController,
-} from "./surface/commands/dictionaryDiagnostics.ts";
-import { configureDiagnostics } from "./surface/commands/configureDiagnostics.ts";
-import { runSetup } from "./git/setup.ts";
+} from "./adapters/vscode/commands/dictionaryDiagnostics.ts";
+import { configureDiagnostics } from "./adapters/vscode/commands/configureDiagnostics.ts";
+import { runSetup } from "./adapters/git/setup.ts";
 import {
   createDictionaryPanel,
   type DictionaryPanel,
-} from "./surface/dictionaryPanel.ts";
-import { createSearchPanel, type SearchPanel } from "./surface/searchPanel.ts";
+} from "./adapters/vscode/dictionaryPanel.ts";
+import {
+  createSearchPanel,
+  type SearchPanel,
+} from "./adapters/vscode/searchPanel.ts";
 import {
   type ContributionPanel,
   createContributionPanel,
   GIT_SCHEME,
-} from "./surface/contributionPanel.ts";
+} from "./adapters/vscode/contributionPanel.ts";
 
-/** The first workspace folder that looks like the corpus (has data/authors),
- * honouring the compositor.corpusRoot setting. */
-const findCorpusRoot = async (): Promise<string | undefined> => {
-  const configured = vscode.workspace
-    .getConfiguration("compositor")
-    .get<string>("corpusRoot", "")
-    .replace(/\/$/, "");
-  for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    const root =
-      configured === ""
-        ? folder.uri.fsPath
-        : `${folder.uri.fsPath}/${configured}`;
-    const authors = await nodeCorpusFs.stat(`${root}/data/authors`);
-    // Canonicalised, so the model's precompiled-document keys line up with the
-    // paths buildCatalogue resolves internally.
-    if (authors !== null && !authors.isFile) {
-      return await nodeCorpusFs.realPath(root);
-    }
-  }
-  return undefined;
-};
-
-/** The tree view's status message for the model's current phase, or undefined
- * to fall back to the view's welcome content (package.json viewsWelcome). With
- * no model there is no corpus attached, so the welcome content ("No corpus
- * found…") is exactly right. Otherwise the model's own `status` decides — never
- * the raw `loading`/`state` pair, which reads the pre-first-load window as a
- * failure. */
-const viewMessage = (model: CorpusModel | undefined): string | undefined => {
-  if (model === undefined) return undefined;
-  switch (model.status) {
-    case "loading":
-      return "Loading the corpus…";
-    case "failed":
-      return "The corpus failed to load.";
-    case "ready":
-      return undefined;
-  }
-};
+/** The corpus root among the open folders, honouring the compositor.corpusRoot
+ * setting — the config read and folder→path mapping the pure finder needs. */
+const locateCorpusRoot = (): Promise<string | undefined> =>
+  findCorpusRoot(
+    nodeCorpusFs,
+    (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
+    vscode.workspace
+      .getConfiguration("compositor")
+      .get<string>("corpusRoot", ""),
+  );
 
 export const activate = async (
   context: vscode.ExtensionContext,
@@ -165,9 +142,13 @@ export const activate = async (
   /** Look for the corpus and attach the model to it; true if attached. */
   const attach = async (): Promise<boolean> => {
     if (model !== undefined) return true;
-    const root = await findCorpusRoot();
+    const root = await locateCorpusRoot();
     if (root === undefined) return false;
-    model = createCorpusModel(root);
+    model = createCorpusModel(root, {
+      fs: nodeCorpusFs,
+      watch: createCorpusWatcher,
+      notify: vscodeNotifier,
+    });
     context.subscriptions.push(
       { dispose: () => model?.dispose() },
       // One fan-out on each corpus change: refresh the view and let every

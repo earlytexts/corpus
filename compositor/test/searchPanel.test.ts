@@ -9,17 +9,25 @@
 import { expect, test } from "vitest";
 import { compileWithPositions } from "@jsr/earlytexts__markit";
 import { buildCatalogue } from "@earlytexts/corpus";
+import type { Author, Catalogue, Work } from "@earlytexts/corpus";
 import { CORPUS_ROOT, corpus, memoryCorpus } from "@earlytexts/corpus/test";
 import {
   authorRows,
   buildMatcher,
+  distinctTargetFiles,
+  type LiveDoc,
+  MAX_PER_FILE,
+  MAX_TOTAL,
   plural,
+  planReplace,
+  type ReplaceTarget,
   replacementFor,
   scopedEditions,
   searchableLines,
+  searchCorpus,
   searchFile,
   type SearchQuery,
-} from "../src/lib/searchPanel.ts";
+} from "../src/core/searchPanel.ts";
 
 /* ------------------------------- helpers -------------------------------- */
 
@@ -128,6 +136,32 @@ test("only block content lines are searchable — never metadata, titles, or tag
     "Nested paragraph, of treason.",
   ].map((text) => lines.indexOf(text));
   expect(searchable).toEqual(expected);
+});
+
+test("a block's own inline metadata line is dropped from the searchable lines", () => {
+  const src = [
+    "# A.B.1700",
+    "",
+    "[metadata]",
+    'title = "T"',
+    "",
+    '{#1, note = "editorial"}',
+    "First content line, of reason.",
+    "",
+  ].join("\n");
+  const { document, errors } = compileWithPositions(src);
+  expect(errors).toEqual([]);
+  const lines = src.split("\n");
+  const searchable = [...searchableLines(document, lines)];
+  // Only the paragraph line; the `{#1, …}` tag-and-metadata line is not offered.
+  expect(searchable).toEqual([lines.indexOf("First content line, of reason.")]);
+});
+
+test("searchableLines skips any line the source array does not reach", () => {
+  const { doc } = compiled();
+  // A lines array shorter than the document: each read falls back to "" and is
+  // skipped, so nothing is offered.
+  expect(searchableLines(doc, []).size).toBe(0);
 });
 
 /* ------------------------------ file search ------------------------------ */
@@ -358,12 +392,136 @@ test("authorRows lists every author, sorted by surname, for the filter autocompl
   ]);
 });
 
+test("an edition label falls back to the author slug when a surname is missing", async () => {
+  const files = corpus()
+    .author("anon", { forename: "Anonymous" }) // no surname
+    .work("anon", "tract", {
+      title: "A Tract",
+      breadcrumb: "Tract",
+      canonical: "1700",
+    })
+    .edition(
+      "anon",
+      "tract",
+      "1700",
+      {
+        imported: false,
+        title: "A Tract",
+        breadcrumb: "Tract",
+        published: [1700],
+      },
+      "{#1}\nText.",
+    )
+    .build();
+  const { catalogue } = await buildCatalogue(memoryCorpus(files), CORPUS_ROOT);
+  expect(scopedEditions(catalogue, [], [])[0].label).toBe(
+    "anon · Tract · 1700",
+  );
+});
+
+test("a borrowed edition, listed under two works, is scoped once", async () => {
+  // Borrowing makes one edition document (and so one source path) reachable
+  // under more than one work — a distinct Work object sharing the same Edition.
+  // The collection is listed under an author not in `byAuthor`, so its label
+  // falls back to the host slug (the unresolved-author path), and the shared
+  // path is kept once when the standalone work reaches it again.
+  const cat = await catalogue();
+  const hume = cat.byAuthor.get("hume")!;
+  const treatise = hume.works.find((work) => work.slug === "treatise")!;
+  const collection: Work = {
+    ...treatise,
+    authorSlugs: ["society"],
+    hostSlug: "society",
+  };
+  const society: Author = {
+    slug: "society",
+    forename: "",
+    surname: "",
+    works: [collection],
+  };
+  const withBorrow: Catalogue = { ...cat, authors: [society, ...cat.authors] };
+
+  const scoped = scopedEditions(withBorrow, [], []);
+  const treatisePath = path("hume", "treatise", "1739");
+  expect(
+    scoped.filter((edition) => edition.path === treatisePath),
+  ).toHaveLength(1);
+  // The collection reaches the shared edition first, labelling it by its slug.
+  expect(scoped[0]).toEqual({
+    path: treatisePath,
+    label: "society · Treatise · 1739",
+  });
+});
+
+test("an edition whose document has no known source is skipped", async () => {
+  const cat = await catalogue();
+  // A sources map that resolves nothing — every edition's path is undefined.
+  expect(scopedEditions({ ...cat, sources: new WeakMap() }, [], [])).toEqual(
+    [],
+  );
+});
+
+test("authorRows breaks a shared surname by forename", async () => {
+  const files = corpus()
+    .author("johnmill", { forename: "John", surname: "Mill" })
+    .work("johnmill", "logic", {
+      title: "A System of Logic",
+      breadcrumb: "Logic",
+      canonical: "1843",
+    })
+    .edition(
+      "johnmill",
+      "logic",
+      "1843",
+      {
+        imported: false,
+        title: "A System of Logic",
+        breadcrumb: "Logic",
+        published: [1843],
+      },
+      "{#1}\nText.",
+    )
+    .author("jamesmill", { forename: "James", surname: "Mill" })
+    .work("jamesmill", "history", {
+      title: "History of India",
+      breadcrumb: "History",
+      canonical: "1817",
+    })
+    .edition(
+      "jamesmill",
+      "history",
+      "1817",
+      {
+        imported: false,
+        title: "History of India",
+        breadcrumb: "History",
+        published: [1817],
+      },
+      "{#1}\nText.",
+    )
+    .build();
+  const { catalogue } = await buildCatalogue(memoryCorpus(files), CORPUS_ROOT);
+  // Same surname, so the forename comparison decides: James before John.
+  expect(authorRows(catalogue).map((row) => row.name)).toEqual([
+    "James Mill",
+    "John Mill",
+  ]);
+});
+
 /* ------------------------------ replacement ------------------------------ */
 
 test("a literal replacement is the replace text verbatim", () => {
   expect(replacementFor("Vertue", query({ term: "vertue" }), "virtue")).toBe(
     "virtue",
   );
+});
+
+test("replacementFor returns the replace text when the query's regex will not compile", () => {
+  // The search compiles before any replace runs, so this guard is unreachable
+  // through the panel; exercised directly it keeps a broken pattern from
+  // silently expanding.
+  const q = query({ term: "(unclosed", isRegex: true });
+  expect(replacementFor("x", q, "y")).toBe("y");
 });
 
 test("a regex replacement expands capture groups against the matched text", () => {
@@ -378,4 +536,212 @@ test("a regex replacement expands capture groups against the matched text", () =
 test("plural pluralises", () => {
   expect(plural(1, "match")).toBe("1 match");
   expect(plural(2, "file")).toBe("2 files");
+});
+
+/* --------------------------- scan over the model -------------------------- */
+
+const EMPTY = { files: [], totalMatches: 0, truncated: false };
+
+/** A compiled edition with one block whose body is `body`. */
+const compiledDoc = (body: string) => {
+  const text = `# A.B.1700\n\n[metadata]\ntitle = "T"\n\n{#1}\n${body}\n`;
+  const { document } = compileWithPositions(text);
+  return { text, doc: document };
+};
+
+/** Serve the same compiled file for every request. */
+const always = (file: ReturnType<typeof compiledDoc>) => () =>
+  Promise.resolve(file);
+
+/** A catalogue of `n` Hume editions, one per year from 1700 — enough files to
+ * exercise the scan's total cap. */
+const manyEditions = async (n: number) => {
+  let builder = corpus()
+    .author("hume", { forename: "David", surname: "Hume" })
+    .work("hume", "essays", {
+      title: "Essays",
+      breadcrumb: "Essays",
+      canonical: "1700",
+    });
+  for (let i = 0; i < n; i++) {
+    const year = String(1700 + i);
+    builder = builder.edition(
+      "hume",
+      "essays",
+      year,
+      {
+        imported: false,
+        title: "Essays",
+        breadcrumb: "Essays",
+        published: [1700 + i],
+      },
+      "{#1}\nText.",
+    );
+  }
+  const { catalogue } = await buildCatalogue(
+    memoryCorpus(builder.build()),
+    CORPUS_ROOT,
+  );
+  return catalogue;
+};
+
+test("an absent catalogue or an empty term yields empty results, posted to clear the view", async () => {
+  const cat = await catalogue();
+  const get = () => Promise.resolve(undefined);
+  expect(
+    await searchCorpus(
+      query({ term: "x" }),
+      undefined,
+      CORPUS_ROOT,
+      get,
+      () => true,
+    ),
+  ).toEqual(EMPTY);
+  expect(
+    await searchCorpus(query({ term: "" }), cat, CORPUS_ROOT, get, () => true),
+  ).toEqual(EMPTY);
+});
+
+test("an unparsable regex yields the error rather than a scan", async () => {
+  const cat = await catalogue();
+  const result = await searchCorpus(
+    query({ term: "(unclosed", isRegex: true }),
+    cat,
+    CORPUS_ROOT,
+    () => Promise.resolve(undefined),
+    () => true,
+  );
+  expect(result).toMatchObject({ ...EMPTY, error: expect.any(String) });
+});
+
+test("a scan groups each matching edition with its catalogue label", async () => {
+  const cat = await catalogue();
+  const result = await searchCorpus(
+    query({ term: "reason" }),
+    cat,
+    CORPUS_ROOT,
+    always(compiledDoc("of reason")),
+    () => true,
+  );
+  // Five editions in the fixture, each served a file with one "reason".
+  expect(result?.files).toHaveLength(5);
+  expect(result?.totalMatches).toBe(5);
+  expect(result?.truncated).toBe(false);
+  expect(result?.files[0].label).toBe("Astell & Norris · Letters · 1695");
+  expect(result?.files[0].matches).toHaveLength(1);
+});
+
+test("editions with no match, or with no compiled source, are dropped from the results", async () => {
+  const cat = await catalogue();
+  const noMatch = await searchCorpus(
+    query({ term: "reason" }),
+    cat,
+    CORPUS_ROOT,
+    always(compiledDoc("nothing to see")),
+    () => true,
+  );
+  expect(noMatch).toEqual(EMPTY);
+  const noSource = await searchCorpus(
+    query({ term: "reason" }),
+    cat,
+    CORPUS_ROOT,
+    () => Promise.resolve(undefined),
+    () => true,
+  );
+  expect(noSource).toEqual(EMPTY);
+});
+
+test("a path outside the root's data/ folder is skipped without a fetch", async () => {
+  const cat = await catalogue();
+  const result = await searchCorpus(
+    query({ term: "reason" }),
+    cat,
+    "/some/other/root",
+    always(compiledDoc("of reason")),
+    () => true,
+  );
+  expect(result).toEqual(EMPTY);
+});
+
+test("a run superseded mid-scan is dropped rather than posted", async () => {
+  const cat = await catalogue();
+  const result = await searchCorpus(
+    query({ term: "reason" }),
+    cat,
+    CORPUS_ROOT,
+    always(compiledDoc("of reason")),
+    () => false, // a newer query landed before the first file finished
+  );
+  expect(result).toBeUndefined();
+});
+
+test("the total cap stops the scan and flags truncation once the ceiling is reached", async () => {
+  // Enough editions to overflow MAX_TOTAL at MAX_PER_FILE each, plus one more
+  // whose turn trips the ceiling check.
+  const needed = Math.ceil(MAX_TOTAL / MAX_PER_FILE) + 2;
+  const cat = await manyEditions(needed);
+  const heavy = compiledDoc(
+    Array.from({ length: MAX_PER_FILE + 100 }, () => "word").join("\n"),
+  );
+  const result = await searchCorpus(
+    query({ term: "word" }),
+    cat,
+    CORPUS_ROOT,
+    always(heavy),
+    () => true,
+  );
+  expect(result?.totalMatches).toBe(MAX_TOTAL);
+  expect(result?.truncated).toBe(true);
+  // Each file fills to MAX_PER_FILE, so exactly MAX_TOTAL / MAX_PER_FILE land.
+  expect(result?.files).toHaveLength(MAX_TOTAL / MAX_PER_FILE);
+});
+
+/* ---------------------------- replace planning --------------------------- */
+
+/** A LiveDoc backed by fixed readers per path; an absent key means the file is
+ * gone since the search. */
+const openDocFrom =
+  (
+    readers: Record<
+      string,
+      ((line: number, start: number, end: number) => string) | undefined
+    >,
+  ): LiveDoc =>
+  (path) =>
+    Promise.resolve(readers[path]);
+
+test("distinctTargetFiles counts the files a set of targets touches", () => {
+  const targets: ReplaceTarget[] = [
+    { path: "a.mit", line: 0, start: 0, end: 1, matchText: "x" },
+    { path: "a.mit", line: 1, start: 0, end: 1, matchText: "y" },
+    { path: "b.mit", line: 0, start: 0, end: 1, matchText: "z" },
+  ];
+  expect(distinctTargetFiles(targets)).toBe(2);
+});
+
+test("planReplace keeps targets that still match, and skips moved and gone ones", async () => {
+  const targets: ReplaceTarget[] = [
+    { path: "keep.mit", line: 0, start: 0, end: 6, matchText: "vertue" },
+    { path: "keep.mit", line: 5, start: 0, end: 6, matchText: "vertue" }, // moved
+    { path: "stale.mit", line: 0, start: 0, end: 6, matchText: "vertue" }, // all moved
+    { path: "gone.mit", line: 0, start: 0, end: 6, matchText: "vertue" }, // file gone
+  ];
+  const plan = await planReplace(
+    query({ term: "vertue" }),
+    "virtue",
+    targets,
+    openDocFrom({
+      "keep.mit": (line) => (line === 0 ? "vertue" : "moved!"),
+      "stale.mit": () => "moved!",
+      "gone.mit": undefined,
+    }),
+  );
+
+  expect(plan.edits).toEqual([
+    { path: "keep.mit", line: 0, start: 0, end: 6, newText: "virtue" },
+  ]);
+  // keep.mit is the only file with a surviving edit.
+  expect(plan.filesTouched).toBe(1);
+  // one moved in keep.mit, one moved in stale.mit, one gone in gone.mit.
+  expect(plan.skipped).toBe(3);
 });

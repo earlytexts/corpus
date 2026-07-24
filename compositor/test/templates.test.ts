@@ -14,7 +14,7 @@ import {
   type Violation,
 } from "@earlytexts/corpus";
 import { CORPUS_ROOT, corpus, memoryCorpus } from "@earlytexts/corpus/test";
-import { authorFile, editionFile, stubFile } from "../src/lib/templates.ts";
+import { authorFile, editionFile, stubFile } from "../src/core/templates.ts";
 
 const author = authorFile({
   slug: "hume",

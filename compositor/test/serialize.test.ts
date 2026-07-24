@@ -8,7 +8,7 @@
  */
 
 import { expect, test } from "vitest";
-import { serial } from "../src/lib/serialize.ts";
+import { serial } from "../src/core/serialize.ts";
 
 /** A read-modify-write with a gap between read and write — the window in which
  * the real bug let a second edit see a truncated (empty) shard. */

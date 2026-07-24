@@ -7,17 +7,21 @@
  */
 
 import { expect, test } from "vitest";
-import { compileWithPositions } from "@jsr/earlytexts__markit";
+import {
+  compileWithPositions,
+  type MarkitDocument,
+} from "@jsr/earlytexts__markit";
 import { buildCatalogue } from "@earlytexts/corpus";
 import { corpus, CORPUS_ROOT, memoryCorpus } from "@earlytexts/corpus/test";
 import {
   buildHints,
+  buildHintsFrom,
   type Hints,
   type MarkupSuggestion,
   phraseLexicon,
   scanSource,
-} from "../src/lib/hints.ts";
-import { foldWord } from "../src/lib/sourceTokens.ts";
+} from "../src/core/hints.ts";
+import { foldWord } from "../src/core/sourceTokens.ts";
 
 /** @std/assert-style shims over vitest's expect, so the cases read unchanged. */
 const assert: (cond: unknown, msg?: string) => asserts cond = (cond, msg) => {
@@ -241,6 +245,93 @@ test("hints: phraseLexicon dedups repeated phrases and keeps longest first", () 
   // "John Locke" is added once despite the repeat; both hang off the "john"
   // head, the longer sequence first.
   assertEquals(lexicon.get("john"), [["john", "locke"], ["john"]]);
+});
+
+const docOf = (source: string): MarkitDocument =>
+  compileWithPositions(source).document;
+
+test("hints: an author title seeds the people lexicon", async () => {
+  const hints = buildHintsFrom(
+    [],
+    [{ forename: "Henry", surname: "Bolingbroke", title: "Lord Bolingbroke" }],
+    [],
+  );
+  assert(hasPhrase(hints.people, "lord", "bolingbroke")); // from the title seed
+  assert(hasPhrase(hints.people, "henry", "bolingbroke")); // and the full name
+});
+
+test("hints: a document is walked once however often it is fed", () => {
+  const doc = docOf("# T\n\n{#1}\nBy [p:Mr Twice] here.\n");
+  const hints = buildHintsFrom([doc, doc], [], []);
+  assert(hasPhrase(hints.people, "mr", "twice"));
+});
+
+test("hints: a document's children are walked too", () => {
+  const child = docOf("# C\n\n{#1}\nBy [p:Mr Child] here.\n");
+  const parent = {
+    ...docOf("# P\n\n{#1}\nBy [p:Mr Parent] here.\n"),
+    children: [child],
+  };
+  const hints = buildHintsFrom([parent], [], []);
+  assert(hasPhrase(hints.people, "mr", "parent"));
+  assert(hasPhrase(hints.people, "mr", "child")); // reached through the child
+});
+
+test("hints: an unknown block type is walked like a run of paragraphs", () => {
+  // A block-level element newer than the pinned markit (e.g. a stage direction)
+  // holds a list of paragraphs; the walk descends into them regardless, and
+  // tolerates a content-less element or paragraph (both fall back to nothing).
+  const exotic = {
+    blocks: [
+      {
+        content: [
+          {
+            type: "stageDirection",
+            content: [
+              {
+                content: [
+                  {
+                    type: "person",
+                    content: [{ type: "plainText", content: "Mr Ghost" }],
+                  },
+                ],
+              },
+              {}, // a paragraph with no content
+            ],
+          },
+          { type: "chorus" }, // an element with no content at all
+        ],
+      },
+    ],
+    children: [],
+  } as unknown as MarkitDocument;
+  const hints = buildHintsFrom([exotic], [], []);
+  assert(hasPhrase(hints.people, "mr", "ghost"));
+});
+
+test("hints: markup inside a blockquote paragraph is mined, but not its lists", () => {
+  const doc = docOf(
+    "# T\n\n{#1}\n> A quote [p:Mr Quote] here.\n>\n> - item [p:Dr List]\n",
+  );
+  const hints = buildHintsFrom([doc], [], []);
+  assert(hasPhrase(hints.people, "mr", "quote")); // the blockquote's paragraph
+  assert(!hasPhrase(hints.people, "dr", "list")); // a non-paragraph child is skipped
+});
+
+test("hints: markup inside inline emphasis is seen through and mined", () => {
+  // *…* is a formatting wrapper, not semantic markup: the walk descends through
+  // it to the person span nested inside.
+  const doc = docOf("# T\n\n{#1}\nThen *meet [p:Mr Emph] now* here.\n");
+  const hints = buildHintsFrom([doc], [], []);
+  assert(hasPhrase(hints.people, "mr", "emph"));
+});
+
+test("hints: transparent inline marks inside a span are text-transparent", () => {
+  // A `~` join reads as a space (so "Mr" stays its own word) and a page break
+  // contributes nothing while fusing the words it sits between (Cato + Jones).
+  const doc = docOf("# T\n\n{#1}\nSee [p:Mr~Cato //9// Jones] pass.\n");
+  const hints = buildHintsFrom([doc], [], []);
+  assert(hasPhrase(hints.people, "mr", "catojones"));
 });
 
 /* ------------------------------ scanSource ----------------------------- */
@@ -561,4 +652,38 @@ test("scan: co-located suggestions of different types sort by type", () => {
     "citation Hume",
     "person Hume",
   ]);
+});
+
+test("scan: co-located language suggestions of different codes sort by code", () => {
+  const hints = emptyHints({
+    languages: new Map([
+      ["la", { strong: new Set(["amen"]), weak: new Set<string>() }],
+      ["fr", { strong: new Set(["amen"]), weak: new Set<string>() }],
+    ]),
+  });
+  // "amen" is strong in both lexicons, so it matches over the very same span
+  // for each; the sort ties through type "language" to the language code.
+  assertEquals(scanBody("Say amen now.", hints).map(brief), [
+    "language:fr amen",
+    "language:la amen",
+  ]);
+});
+
+test("scan: a source shorter than the compiled document is tolerated", () => {
+  // The document is compiled from a longer source than the one scanned (a stale
+  // buffer, say): its {#2} block lies beyond the truncated lines. The scan
+  // still runs, placing the out-of-range match at an empty text rather than
+  // throwing on the missing lines.
+  const long = "# T\n\n{#1}\nEnglish.\n\n{#2}\nBy John Locke here.\n";
+  const short = "# T\n\n{#1}\nEnglish.\n";
+  const hints = emptyHints({ people: phraseLexicon(["John Locke"]) });
+  const suggestions = scanSource(
+    short,
+    compileWithPositions(long).document,
+    hints,
+  );
+  assertEquals(
+    suggestions.map((s) => [s.type, s.startLine, s.text]),
+    [["person", 6, ""]],
+  );
 });

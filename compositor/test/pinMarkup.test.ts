@@ -7,7 +7,7 @@
 
 import { expect, test } from "vitest";
 import { compileWithPositions, tokenize } from "@jsr/earlytexts__markit";
-import { wordMarkup } from "../src/lib/pinMarkup.ts";
+import { wordMarkup } from "../src/core/pinMarkup.ts";
 
 /** The single word token of a one-block document built from `body`. */
 const onlyToken = (body: string) => {

@@ -15,7 +15,7 @@
  * file so every const arrow it calls is already defined.
  */
 
-import { filterByLetter, page } from "../lib/dictionaryPanel.ts";
+import { filterByLetter, page } from "../core/dictionaryPanel.ts";
 
 type VariantRow = {
   surface: string;

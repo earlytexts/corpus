@@ -5,14 +5,14 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { MarkupSuggestion } from "../src/lib/hints.ts";
+import type { MarkupSuggestion } from "../src/core/hints.ts";
 import {
   fixTitle,
   languageLabel,
   suggestionKey,
   suggestionMessage,
   wrapText,
-} from "../src/lib/suggestions.ts";
+} from "../src/core/suggestions.ts";
 
 const at = (
   type: MarkupSuggestion["type"],
@@ -84,5 +84,17 @@ describe("labels", () => {
     expect(fixTitle(at("language", "quod", "la"))).toBe(
       "Mark up as Latin ($la:…$)",
     );
+  });
+});
+
+describe("a language suggestion carrying no code", () => {
+  // The scanner always tags a language span, but the type leaves `lang`
+  // optional; every code-driven field falls back cleanly when it is absent.
+  const codeless = at("language", "λόγος");
+  it("keys, wraps, messages, and titles without a code", () => {
+    expect(suggestionKey(codeless)).toBe("language:");
+    expect(wrapText(codeless)).toBe("$λόγος$");
+    expect(suggestionMessage(codeless)).toBe("Possible  — mark up as ?");
+    expect(fixTitle(codeless)).toBe("Mark up as  ($…$)");
   });
 });

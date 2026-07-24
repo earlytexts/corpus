@@ -13,7 +13,7 @@ import {
   unaccountedMessage,
   unattestedLemmaMessage,
   unattestedRejectMessage,
-} from "../src/lib/dictionaryEntryText.ts";
+} from "../src/core/dictionaryEntryText.ts";
 
 test("entryWords folds a single word", () => {
   expect(entryWords("Virtue")).toEqual(["virtue"]);

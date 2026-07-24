@@ -12,7 +12,7 @@ import {
   type FileDiagnostics,
   type ModelPhase,
   planDiagnostics,
-} from "../src/lib/diagnosticsPlan.ts";
+} from "../src/core/diagnosticsPlan.ts";
 
 const ROOT = "/corpus";
 const abs = (path: string) => `${ROOT}/data/${path}`;
@@ -127,6 +127,21 @@ test("endLine/endColumn fall back to the start when only a column is known", () 
     startColumn: 1,
     endLine: 3,
     endColumn: 2,
+  });
+});
+
+test("a column without a line anchors the range at the first line", () => {
+  const plan = planDiagnostics(
+    loaded([{ rule: "r", path: "a.mit", message: "m", column: 3 }]),
+  );
+  const diag = filesOf(plan)[0].diagnostics[0];
+  // No line and no endLine: both default to line 1 (0-based 0); the column
+  // still narrows the range (col 3, end col 4 → 0-based 2 / 3).
+  expect(diag).toMatchObject({
+    startLine: 0,
+    startColumn: 2,
+    endLine: 0,
+    endColumn: 3,
   });
 });
 

@@ -7,7 +7,7 @@
 
 import { expect, test } from "vitest";
 import { parseDictionary, type RawDictionary } from "@earlytexts/corpus";
-import { dictionaryViews, letterOf } from "../src/lib/dictionaryViews.ts";
+import { dictionaryViews, letterOf } from "../src/core/dictionaryViews.ts";
 
 /** Parse shard text into a RawDictionary, asserting it is well-formed so a
  * test never silently feeds the view a dropped entry. */

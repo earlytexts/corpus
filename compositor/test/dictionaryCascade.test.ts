@@ -12,7 +12,7 @@ import {
   type CascadePrompts,
   type Decisions,
   groupDecisionsByShard,
-} from "../src/lib/dictionaryCascade.ts";
+} from "../src/core/dictionaryCascade.ts";
 
 /** A context whose register/corpus membership is the given word sets. */
 const ctxOf = (dictionary: string[], corpus: string[]) => {
@@ -109,6 +109,20 @@ test("each word of an expansion is resolved before the entry is written", async 
   );
   expect(step).toBe("ok");
   expect(ctx.decisions.get("'tis")).toBe("it is");
+});
+
+test("a stated lemma whose citation form is already registered writes just the form", async () => {
+  // "increase" already has an entry, so its citation form resolves at once —
+  // no add, no prompt beyond the citation form itself.
+  const ctx = ctxOf(["increase"], []);
+  const step = await addEntry(
+    "encrease",
+    "lemma",
+    ctx,
+    promptsOf({ words: ["increase"] }),
+  );
+  expect(step).toBe("ok");
+  expect([...ctx.decisions]).toEqual([["encrease", "=increase"]]);
 });
 
 test("a stated lemma whose citation form is attested is added silently", async () => {

@@ -18,7 +18,8 @@ import {
   buildTokenIndex,
   curationList,
   curationRows,
-} from "../src/lib/curation.ts";
+  type DerivedFile,
+} from "../src/core/curation.ts";
 
 const fixture = () =>
   corpus()
@@ -109,6 +110,25 @@ test("curationRows tags each surface with its shard letter", async () => {
     ["and", "a"],
     ["sleep", "s"],
   ]);
+});
+
+test("a surface with no attested line falls back to line 0", () => {
+  // A file derived from a position-less compile carries no line for a surface;
+  // the example still opens, at the file's top.
+  const file: DerivedFile = {
+    path: "works/x.mit",
+    derived: {
+      formatted: true,
+      marked: [],
+      surfaces: new Map([["foo", { candidates: 3 }]]),
+      exemptSurfaces: new Set(),
+    },
+  };
+  const index = buildTokenIndex([file], "/root");
+  expect(index.get("foo")?.example).toEqual({
+    path: "/root/data/works/x.mit",
+    line: 0,
+  });
 });
 
 test("curationRows caps to the most frequent and reports the true total", async () => {

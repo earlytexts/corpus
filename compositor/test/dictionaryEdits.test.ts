@@ -12,7 +12,7 @@ import {
   removeEntryText,
   upsertEntriesText,
   upsertEntryText,
-} from "../src/lib/dictionaryEdits.ts";
+} from "../src/core/dictionaryEdits.ts";
 
 test("adds a modern word to an existing shard, keeping keys sorted", () => {
   const before = '{\n  "apple": null\n}\n';

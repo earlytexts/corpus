@@ -7,7 +7,7 @@
 import { expect, test } from "vitest";
 import { buildCatalogue } from "@earlytexts/corpus";
 import { CORPUS_ROOT, corpus, memoryCorpus } from "@earlytexts/corpus/test";
-import { comparableWorks, nextEdition } from "../src/lib/compareScope.ts";
+import { comparableWorks, nextEdition } from "../src/core/compareScope.ts";
 
 // Hume: the Enquiry (two editions) and the Treatise (one edition only).
 const fixture = () =>

@@ -6,7 +6,7 @@
  */
 
 import { expect, test } from "vitest";
-import { reloadKind } from "../src/lib/reloadKind.ts";
+import { reloadKind } from "../src/core/reloadKind.ts";
 
 test("a .mit file recompiles just itself", () => {
   expect(reloadKind("authors/hume/ehu/1748/index.mit")).toBe("recompile");

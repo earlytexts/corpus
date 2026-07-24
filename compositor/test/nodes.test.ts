@@ -1,6 +1,6 @@
 /**
  * The pure tree model shared between the corpus tree and the commands
- * (../src/lib/nodes.ts): the node→file-path lookups, author indexing, the
+ * (../src/core/nodes.ts): the node→file-path lookups, author indexing, the
  * document→edition map and borrowed-child traversal, and the label helpers.
  * editionPath is exercised through the replace-scope planner; authorPath is only
  * reached from the VSCode surface, so it is pinned here directly, over a real
@@ -18,12 +18,13 @@ import {
   authorPath,
   borrowedChildren,
   capitalize,
+  editionPath,
   editionsByDocument,
   letterGroups,
   lifespan,
   type TreeNode,
   workDocId,
-} from "../src/lib/nodes.ts";
+} from "../src/core/nodes.ts";
 
 const author = (surname: string, forename = "", slug = "x"): Author =>
   ({ slug, surname, forename }) as Author;
@@ -68,6 +69,44 @@ test("authorPath resolves an author to its .mit file under the root", async () =
   expect(authorPath(CORPUS_ROOT, author)).toBe(
     `${CORPUS_ROOT}/data/authors/hume.mit`,
   );
+});
+
+test("editionPath resolves an edition to its source .mit from the catalogue", async () => {
+  const files = corpus()
+    .author("hume", { forename: "David", surname: "Hume" })
+    .work("hume", "enquiry", {
+      title: "An Enquiry",
+      breadcrumb: "Enquiry",
+      canonical: "1748",
+    })
+    .edition(
+      "hume",
+      "enquiry",
+      "1748",
+      {
+        imported: false,
+        title: "An Enquiry",
+        breadcrumb: "Enquiry",
+        published: [1748],
+      },
+      "{#1}\nText.",
+    )
+    .build();
+  const { catalogue } = await buildCatalogue(memoryCorpus(files), CORPUS_ROOT);
+  const edition = catalogue.byAuthor.get("hume")!.works[0].editions[0];
+  expect(editionPath(catalogue, edition)).toBe(
+    `${CORPUS_ROOT}/data/works/hume/enquiry/1748.mit`,
+  );
+});
+
+test("letterGroups sorts equal surnames by forename", () => {
+  const johnMill = author("Mill", "John");
+  const jamesMill = author("Mill", "James");
+  // Same surname, so the tie falls through to the forename: James before John.
+  expect(authorsOf(letterGroups([johnMill, jamesMill])[0])).toEqual([
+    jamesMill,
+    johnMill,
+  ]);
 });
 
 test("letterGroups files authors by initial, sorting the letters and each group", () => {

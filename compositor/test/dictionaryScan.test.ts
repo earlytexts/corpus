@@ -19,7 +19,7 @@ import {
   scanUnaccounted,
   type UnaccountedWord,
   unaccountedSurfaces,
-} from "../src/lib/dictionaryScan.ts";
+} from "../src/core/dictionaryScan.ts";
 
 /** Build an expanded dictionary from on-disk micro-syntax, the real pipeline. */
 const dict = (entries: Record<string, unknown>): Dictionary =>
@@ -202,6 +202,33 @@ test("a ~-fused run with no entry is flagged as one unit", () => {
       endColumn: 15,
     },
   ]);
+});
+
+test("a brace-widened run that folds to a key is flagged without a ~ fix", () => {
+  // `{a priori}` is character mode: the two words fold to the registered key,
+  // but each token's range is widened over the whole `{…}` span (it no longer
+  // starts/ends on its own characters), so the run can't be safely fused — the
+  // occurrences are squiggled plain.
+  const found = scan("known {a priori} here", {
+    known: null,
+    here: null,
+    "a priori": null,
+  });
+  expect(found.map((w) => w.surface)).toEqual(["a", "priori"]);
+  expect(found.every((w) => w.fuse === undefined)).toBe(true);
+});
+
+test("a run separated by non-whitespace source (a char-mode span) is not fused", () => {
+  // `a{ }priori` reads "a priori" and the tokens sit on their own characters,
+  // but the source gap between them is `{ }`, not plain whitespace — replacing
+  // it with `~` would corrupt the braces, so no ~ fix is offered.
+  const found = scan("known a{ }priori too", {
+    known: null,
+    too: null,
+    "a priori": null,
+  });
+  expect(found.map((w) => w.surface)).toEqual(["a", "priori"]);
+  expect(found.every((w) => w.fuse === undefined)).toBe(true);
 });
 
 test("unaccountedSurfaces collects the folded surfaces with no entry", () => {
