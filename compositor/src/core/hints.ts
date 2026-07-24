@@ -548,7 +548,7 @@ const matchCitationPatterns = (
   const push = (num: number, at: number, length: number): void => {
     out.push({
       type: "citation",
-      text: (lines[num] ?? "").slice(at, at + length),
+      text: lines[num]!.slice(at, at + length),
       startLine: num,
       startColumn: at,
       endLine: num,
@@ -645,7 +645,10 @@ const byPosition = (a: MarkupSuggestion, b: MarkupSuggestion): number =>
   a.endLine - b.endLine ||
   a.endColumn - b.endColumn ||
   a.type.localeCompare(b.type) ||
-  (a.lang ?? "").localeCompare(b.lang ?? "");
+  // Only two suggestions sharing a span and a type reach here, and `prune`
+  // collapses those unless their language codes differ — so both are languages
+  // and both carry a code.
+  a.lang!.localeCompare(b.lang!);
 
 /** Drop a suggestion contained in another of the same type and language —
  * exact repeats (Greek matched by script and by lexicon at once) and partial

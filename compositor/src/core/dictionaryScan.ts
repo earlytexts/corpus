@@ -170,10 +170,6 @@ const runGaps = (
   for (let i = 1; i < run.length; i++) {
     const a = run[i - 1]!;
     const b = run[i]!;
-    // Brace-widening can leave the two positions inverted; that run can't fuse.
-    if (b.line < a.line || (b.line === a.line && b.start < a.end)) {
-      return undefined;
-    }
     const between = sliceRange(lines, a.line, a.end, b.line, b.start);
     if (!/^[ \n]+$/.test(between)) return undefined;
     gaps.push({
@@ -189,7 +185,7 @@ const runGaps = (
 /** Whether a token's range really starts and ends on its own first and last
  * characters (a brace-widened token, for one, does not). */
 const anchored = (token: SourceToken, lines: string[]): boolean => {
-  const line = lines[token.line] ?? "";
+  const line = lines[token.line]!;
   return (
     line[token.start] === token.display[0] &&
     line[token.end - 1] === token.display[token.display.length - 1]

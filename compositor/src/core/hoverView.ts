@@ -88,7 +88,9 @@ export const buildHover = (
   );
   if (!isAccounted(info)) return undefined;
   const range: Range4 = [token.line, token.start, token.line, token.end];
-  const paradigm = forms(input.dictionary).get(info.lemma) ?? [info.form];
+  // The lemma is always one indexed by `forms` (it is read off a reading of the
+  // same entry `forms` walked), so the paradigm is always present.
+  const paradigm = forms(input.dictionary).get(info.lemma)!;
   return { range, markdown: render(info, paradigm, input.uri, range) };
 };
 

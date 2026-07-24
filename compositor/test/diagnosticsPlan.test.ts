@@ -130,6 +130,21 @@ test("endLine/endColumn fall back to the start when only a column is known", () 
   });
 });
 
+test("a column without a line anchors the range at the first line", () => {
+  const plan = planDiagnostics(
+    loaded([{ rule: "r", path: "a.mit", message: "m", column: 3 }]),
+  );
+  const diag = filesOf(plan)[0].diagnostics[0];
+  // No line and no endLine: both default to line 1 (0-based 0); the column
+  // still narrows the range (col 3, end col 4 → 0-based 2 / 3).
+  expect(diag).toMatchObject({
+    startLine: 0,
+    startColumn: 2,
+    endLine: 0,
+    endColumn: 3,
+  });
+});
+
 test("violations in the same file are grouped; distinct files stay separate", () => {
   const plan = planDiagnostics(
     loaded([

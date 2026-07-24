@@ -86,3 +86,15 @@ describe("labels", () => {
     );
   });
 });
+
+describe("a language suggestion carrying no code", () => {
+  // The scanner always tags a language span, but the type leaves `lang`
+  // optional; every code-driven field falls back cleanly when it is absent.
+  const codeless = at("language", "λόγος");
+  it("keys, wraps, messages, and titles without a code", () => {
+    expect(suggestionKey(codeless)).toBe("language:");
+    expect(wrapText(codeless)).toBe("$λόγος$");
+    expect(suggestionMessage(codeless)).toBe("Possible  — mark up as ?");
+    expect(fixTitle(codeless)).toBe("Mark up as  ($…$)");
+  });
+});

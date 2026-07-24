@@ -183,6 +183,20 @@ test("a submission branch with no pull request never finished sending", () => {
   });
 });
 
+test("a submission branch with no pull request and no known title reads as unsent work", () => {
+  const state = describeState({
+    branch: "submission/2026-07-20-x",
+    changes: [CHANGE],
+    signedIn: true,
+  });
+  expect(state).toEqual({
+    kind: "unfinished",
+    branch: "submission/2026-07-20-x",
+    title: "Your unsent work",
+    changes: [CHANGE],
+  });
+});
+
 /* ------------------------------ branch names ------------------------------ */
 
 const JULY = new Date("2026-07-23T09:00:00Z");
@@ -319,6 +333,25 @@ test("backing out of a conflict sends nothing", async () => {
   expect(submission).toBeUndefined();
   expect(git.calls.some((call) => call.startsWith("push"))).toBe(false);
   expect(gh.created).toHaveLength(0);
+});
+
+test("backing out of a conflict while adding sends nothing", async () => {
+  const git = fakeGit({
+    branch: "submission/2026-07-20-x",
+    changes: [CHANGE],
+    conflicts: [["data/authors/hume.mit"]],
+  });
+  const added = await addToSubmission({
+    git,
+    who: ME,
+    branch: "submission/2026-07-20-x",
+    description: "More fixes",
+    onProgress: () => {},
+    resolveConflicts: () => Promise.resolve(undefined),
+  });
+
+  expect(added).toBe(false);
+  expect(git.calls.some((call) => call.startsWith("push"))).toBe(false);
 });
 
 test("adding to a submission commits and pushes without opening a second one", async () => {

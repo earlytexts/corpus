@@ -231,10 +231,9 @@ export const branchNameFor = (
   taken: string[],
 ): string => {
   const base = `${BRANCH_PREFIX}${now.toISOString().slice(0, 10)}-${slugify(description)}`;
-  if (!taken.includes(base)) return base;
-  for (let n = 2; ; n++) {
-    if (!taken.includes(`${base}-${n}`)) return `${base}-${n}`;
-  }
+  let name = base;
+  for (let n = 2; taken.includes(name); n++) name = `${base}-${n}`;
+  return name;
 };
 
 /** Merge in the fetched corpus, asking the contributor about any file that

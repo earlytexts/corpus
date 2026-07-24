@@ -9,6 +9,7 @@ import { expect, test } from "vitest";
 import {
   formEntry,
   lemmaEntry,
+  removeSurfaceFromShard,
   variantEntry,
 } from "../src/core/dictionaryPanelInput.ts";
 
@@ -87,4 +88,22 @@ test("variantEntry rejects a spelling equal to the surface", () => {
   expect(variantEntry("show", "show")).toEqual({
     error: "A variant must point at a different spelling.",
   });
+});
+
+test("removeSurfaceFromShard returns the shard text with the entry gone", () => {
+  const shard = '{\n  "shew": "show",\n  "sundry": null\n}\n';
+  expect(removeSurfaceFromShard(shard, "s.json", "shew")).toBe(
+    '{\n  "sundry": null\n}\n',
+  );
+});
+
+test("removeSurfaceFromShard reads a blank shard as empty (nothing to remove)", () => {
+  expect(removeSurfaceFromShard("", "s.json", "shew")).toBe("{}\n");
+});
+
+test("removeSurfaceFromShard refuses an ambiguous entry, leaving it for the quick-fix", () => {
+  const shard = '{\n  "lay": [null, "=lie"]\n}\n';
+  expect(() => removeSurfaceFromShard(shard, "l.json", "lay")).toThrow(
+    "“lay” is an ambiguous entry",
+  );
 });

@@ -80,7 +80,8 @@ export const buildMatcher = (
         // fall through to report the unicode-mode error below
       }
     }
-    return { error: error instanceof Error ? error.message : String(error) };
+    // `new RegExp` only ever throws a SyntaxError, so the message is always there.
+    return { error: (error as Error).message };
   }
 };
 

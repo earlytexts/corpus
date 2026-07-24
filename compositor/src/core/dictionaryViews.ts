@@ -90,5 +90,7 @@ export const letterOf = (surface: string): string =>
   shardOf(surface).replace(/\.json$/, "");
 
 /** Codepoint order — the same ordering the corpus's `shardDictionary` sorts
- * keys by, so a view row sits where its entry sits in the shard file. */
-const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+ * keys by, so a view row sits where its entry sits in the shard file. Every
+ * call compares two *distinct* keys (surfaces, lemmas and forms are each
+ * unique), so the equal case never arises. */
+const compare = (a: string, b: string): number => (a < b ? -1 : 1);

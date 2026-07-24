@@ -8,6 +8,26 @@ import path from "node:path";
 // throughout. (Since markit 4 source positions are plain properties, a second
 // copy would no longer break anything — one instance is now just tidiness.)
 export default defineConfig({
+  test: {
+    // The hexagon (src/core/**) is held at 100% against mocked outbound ports
+    // (see COMPOSITOR_PORTS_PLAN.md). The adapters are excluded by design —
+    // their quality criterion is thinness (reviewable at a glance), not
+    // coverage; the boundary test keeps the core honest. Thresholds only bite
+    // under `--coverage` (the `test:coverage` task), so plain `test` is
+    // unaffected. `all` counts every core file, so a new untested one fails the
+    // gate rather than passing unseen.
+    coverage: {
+      provider: "v8",
+      all: true,
+      include: ["src/core/**"],
+      thresholds: {
+        statements: 100,
+        branches: 100,
+        functions: 100,
+        lines: 100,
+      },
+    },
+  },
   resolve: {
     alias: {
       "@earlytexts/corpus/test": path.resolve(

@@ -111,6 +111,20 @@ test("each word of an expansion is resolved before the entry is written", async 
   expect(ctx.decisions.get("'tis")).toBe("it is");
 });
 
+test("a stated lemma whose citation form is already registered writes just the form", async () => {
+  // "increase" already has an entry, so its citation form resolves at once —
+  // no add, no prompt beyond the citation form itself.
+  const ctx = ctxOf(["increase"], []);
+  const step = await addEntry(
+    "encrease",
+    "lemma",
+    ctx,
+    promptsOf({ words: ["increase"] }),
+  );
+  expect(step).toBe("ok");
+  expect([...ctx.decisions]).toEqual([["encrease", "=increase"]]);
+});
+
 test("a stated lemma whose citation form is attested is added silently", async () => {
   const ctx = ctxOf([], ["increase"]);
   const step = await addEntry(
