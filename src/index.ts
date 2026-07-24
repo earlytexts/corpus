@@ -21,6 +21,7 @@
 // that drives it (build/node).
 export * from "./catalogue/compile.ts";
 export * from "./build/write.ts";
+export * from "./build/derivations.ts";
 export * from "./build/node.ts";
 
 // Validation: the corpus rules that drive corpus validation (part of

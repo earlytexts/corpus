@@ -1,19 +1,24 @@
 /**
- * The in-memory corpus shared by the tree view, the diagnostics, and the
- * commands: one compile pass feeds both the validation rules and the catalogue
- * build (which reuses the compiled documents instead of compiling again), and
- * computes each file's register-independent derivations (formatting verdict,
- * marked tokens, surface tallies) so no later reload re-tokenizes or
- * re-formats an unchanged file. A filesystem watcher keeps it fresh — saving a
- * .mit file recompiles just that file, and saving a dictionary shard reuses
- * every compiled file and the token index outright, so either reload costs
- * well under a second rather than the ~10s of a cold start.
+ * The corpus the tree view, diagnostics, and commands share — held **body-free**
+ * so its resident memory scales with the corpus's vocabulary and structure, not
+ * its file count (see COMPOSITOR_MEMORY_PLAN.md). Instead of a compiled copy of
+ * every document, the model keeps one `DerivationRecord` per source file (its
+ * register-independent `derived`, its `FileProjection`, its per-file violations,
+ * and a block-empty structure `skeleton`) plus a stub-bodied catalogue built
+ * from the skeletons. Positioned documents — needed only by search and the
+ * edited buffer — are compiled on demand through a bounded cache and released.
  *
- * The cold start itself is masked by the corpus's compiled `catalogue/`: if it is
- * present the tree shows from it immediately (no violations yet — serialised
- * documents carry no source ranges, so diagnostics always wait for the real
- * compile), and every completed load writes `catalogue/` back, keeping the cache —
- * which is also the computer's input — fresh for next time.
+ * Cold start seeds everything from the build's `catalogue/derivations.json`
+ * (structure via `buildCatalogue` over the skeletons, indexes and doc-free
+ * violations via the persisted records) with **no compiles**, so the tree and
+ * Problems appear in well under a second rather than after the ~20s cold
+ * compile. A background sweep then hashes the sources and, if any changed
+ * out-of-session, reconciles (recompiling only the changed files, or a full
+ * streamed compile when the set of files changed). A missing or stale
+ * derivations file falls back to that full compile, which also rewrites the
+ * build output. In-session edits recompile just the touched file and rebuild the
+ * indexes/violations/structure from the resident records — no whole-corpus
+ * recompile, and no whole-corpus documents resident.
  */
 
 import * as vscode from "vscode";
@@ -21,45 +26,46 @@ import { compileWithPositions } from "@jsr/earlytexts__markit";
 import {
   buildCatalogue,
   type Catalogue,
-  catalogueReader,
   type CorpusFile,
+  type DerivationRecord,
+  derivationRecord,
   deriveFile,
-  loadCatalogue,
+  hashText,
   loadCorpus,
   nodeCorpusFs,
   normalizePath,
-  validateCorpus,
+  parseDictionary,
+  precompiledSkeletons,
+  readDerivations,
+  readDictionaryShards,
+  validateCrossFile,
+  validateDictionary,
+  validateWordAndOverride,
   type Violation,
-  type Work,
   writeCatalogue,
-  writeCatalogueDictionary,
-  writeCatalogueSources,
+  writeDerivations,
 } from "@earlytexts/corpus";
-import {
-  createCatalogueWriteBack,
-  type WriteScope,
-} from "./lib/catalogueWriteBack.ts";
 import { createCompiledFileCache } from "./lib/compiledFileCache.ts";
 import { buildTokenIndex, type TokenIndex } from "./lib/curation.ts";
 import { vocabularyFromFiles } from "./lib/dictionaryResolve.ts";
 import { reloadKind } from "./lib/reloadKind.ts";
 
 export type CorpusState = {
+  /** Structure only — each `Edition.document` is a stub (its block bodies are
+   * empty), rebuilt from the persisted skeletons by `buildCatalogue`. Serves the
+   * tree, scoping, compare, scaffolds, and insert-borrowed-ref; consumers that
+   * need a positioned body take `getCompiledFile`. */
   catalogue: Catalogue;
   /** Catalogue-build warnings (unresolved children, missing authors, …). */
   warnings: string[];
+  /** Every corpus violation, recomposed from the doc-free validation tiers over
+   * the resident records (per-file persisted, dict-dependent + cross-file +
+   * dictionary recomputed) — never a whole-corpus recompile. */
   violations: Violation[];
-  /** The corpus-wide candidate tally per folded surface (see lib/curation.ts)
-   * — merged from the files' per-compile summaries, reused untouched across
-   * dictionary-only reloads, and empty until the first full load (the
-   * catalogue cache carries no token data). */
+  /** The corpus-wide candidate tally per folded surface (see lib/curation.ts),
+   * merged from the records' per-file summaries. */
   tokenIndex: TokenIndex;
-  /** Every folded surface the corpus attests (see dictionaryResolve.ts,
-   * `vocabularyFromFiles`): register-independent, so — like the token index —
-   * built once per document generation and reused untouched across
-   * dictionary-only reloads; empty until the first full load. The quick-fix
-   * reads it to resolve a respelling/lemma target without re-walking the
-   * corpus. */
+  /** Every folded surface the corpus attests (see dictionaryResolve.ts). */
   vocabulary: Set<string>;
 };
 
@@ -68,33 +74,23 @@ export type CorpusModel = {
   readonly root: string;
   /** Undefined until the first load completes; stale while `loading`. */
   readonly state: CorpusState | undefined;
-  /** The compiled files keyed by data/-relative path — the same map the loads
-   * keep fresh incrementally. Empty until the first full compile (the
-   * catalogue cache seeds `state` alone; serialised documents carry no source
-   * ranges, so consumers that need positions must read from here). */
-  readonly compiledFiles: ReadonlyMap<string, CorpusFile>;
-  /** The compiled file for a data/-relative path: from the resident set when a
-   * full compile still holds it, else compiled on demand and cached (a bounded
-   * working set — see lib/compiledFileCache). Undefined when the source is
-   * gone. This is the path a consumer that needs one file's positioned body
-   * should take, so it never depends on the whole corpus being resident. */
+  /** The compiled file for a data/-relative path, compiled on demand and cached
+   * (a bounded working set — see lib/compiledFileCache), or undefined when the
+   * source is gone. The one path to a positioned body, so no consumer depends on
+   * the whole corpus being resident. */
   getCompiledFile: (path: string) => Promise<CorpusFile | undefined>;
+  /** The resident `works/**` source paths — the set the markup-hint miner
+   * streams through `getCompiledFile` (see suggestMarkup). */
+  workSourcePaths: () => string[];
   readonly loading: boolean;
-  /** What to tell the user about the model right now. `loading` covers the whole
-   * run-up to the first result (the constructor always kicks a load off, so the
-   * model is never idly stateless) and any later reload; `ready` once there is
-   * state; `failed` only once a completed load has left none. This is the single
-   * source of truth for the tree and status-bar messages — never derive the
-   * phase from `loading`/`state` directly, or the pre-first-load window reads as
-   * a failure. */
+  /** What to tell the user about the model right now (see the tree/status bar). */
   readonly status: "loading" | "ready" | "failed";
-  /** True once a full load has completed — the token index and violations then
-   * reflect a real compile, not the provisional catalogue-cache seed (whose
-   * token index is empty). Stays true across later reloads, so consumers of the
-   * token index (the curation backlog) don't flicker during a reload. */
+  /** True once a first load has completed — the indexes and violations then
+   * reflect real data rather than nothing. */
   readonly loaded: boolean;
   readonly onDidChange: vscode.Event<void>;
-  /** Recompile everything from disk. */
+  /** Recompile everything from disk and rewrite the build output — the
+   * "Rebuild catalogue" escape hatch. */
   reload: () => Promise<void>;
   dispose: () => void;
 };
@@ -103,265 +99,333 @@ const RELOAD_DEBOUNCE_MS = 300;
 
 export const createCorpusModel = (root: string): CorpusModel => {
   const emitter = new vscode.EventEmitter<void>();
-  /** Compiled files keyed by data/-relative path, kept fresh incrementally. */
-  const files = new Map<string, CorpusFile>();
-  /** The on-demand working set behind getCompiledFile, for files a full compile
-   * no longer holds resident (and, once it is retired, for every read). */
+  /** One record per source `.mit`, keyed by data/-relative path: the whole
+   * resident corpus, bounded by file count in structure but never holding a
+   * positioned body. */
+  const records = new Map<string, DerivationRecord>();
+  /** The on-demand working set of positioned documents (search, the edited
+   * buffer): the only place bodies live, and byte-bounded. */
   const compiledCache = createCompiledFileCache((path) =>
     nodeCorpusFs.readFile(`${root}/data/${path}`),
   );
   let state: CorpusState | undefined;
   let loading = false;
-  /** Whether a full load() body has ever run to completion. Distinguishes the
-   * pre-first-load window (state undefined but nothing has failed) from a real
-   * failure, and marks the token index as real rather than cache-seeded. */
   let loaded = false;
-  /** Changes that arrived mid-load, replayed afterwards. undefined = idle. */
-  let queuedFull = false;
-  let queuedPaths: Set<string> | undefined;
-  /** The background `catalogue/` refresh — a latest-wins drainer that keeps a
-   * burst of edits from stacking full catalogues in memory (see its module). */
-  const writeBack = createCatalogueWriteBack(
-    async (catalogue, warnings) => {
-      await writeCatalogue(nodeCorpusFs, root, catalogue, warnings);
-    },
-    async (catalogue, warnings) => {
-      await writeCatalogueDictionary(nodeCorpusFs, root, catalogue, warnings);
-    },
-    async (catalogue, warnings, paths) => {
-      await writeCatalogueSources(
-        nodeCorpusFs,
-        root,
-        catalogue,
-        warnings,
-        paths,
-      );
-    },
-  );
 
-  /**
-   * Seed the tree from the compiled `catalogue/` (written by the corpus build or by
-   * a previous session's write-back) so it shows in ~a second instead of after
-   * the ~20s cold compile. Validation still needs the compile — serialised
-   * documents carry no source ranges — so violations start empty and the full
-   * load, which follows immediately, replaces the whole state. The wire format
-   * keeps paths relative to the corpus root; the tree expects the absolute
-   * paths buildCatalogue produces, so absolutise them on the way in. A missing or
-   * partial catalogue/ (e.g. a write-back cut off mid-way) is simply skipped.
-   */
-  const loadFromCache = async (): Promise<void> => {
-    try {
-      const { catalogue, warnings } = await loadCatalogue(
-        catalogueReader(nodeCorpusFs),
-        root,
-      );
-      const seen = new Set<Work>();
-      for (const author of catalogue.authors) {
-        for (const work of author.works) {
-          if (seen.has(work)) continue; // co-authored works are shared
-          seen.add(work);
-          work.dir = `${root}/${work.dir}`;
-          for (const edition of work.editions) {
-            const source = catalogue.sources.get(edition.document);
-            if (source !== undefined) {
-              catalogue.sources.set(edition.document, `${root}/${source}`);
-            }
+  /* -------------------------- reductions -------------------------- */
+
+  /** The records as the indexes read them: path + derivations. */
+  const derivedFiles = (): {
+    path: string;
+    derived: DerivationRecord["derived"];
+  }[] => [...records].map(([path, r]) => ({ path, derived: r.derived }));
+
+  /** Rebuild the token index and attested vocabulary from the records. */
+  const seedIndexes = (): {
+    tokenIndex: TokenIndex;
+    vocabulary: Set<string>;
+  } => ({
+    tokenIndex: buildTokenIndex(derivedFiles(), root),
+    vocabulary: vocabularyFromFiles(derivedFiles()),
+  });
+
+  /** Recompose every violation from the doc-free tiers over the records: the
+   * per-file violations are persisted; the dict-dependent, cross-file, and
+   * dictionary tiers recompute (from `derived`/projections/shards + fs). */
+  const recomputeViolations = async (): Promise<Violation[]> => {
+    const recs = [...records.values()];
+    const raw = parseDictionary(
+      await readDictionaryShards(nodeCorpusFs, root),
+    ).dictionary;
+    const wordEntries = recs.map((r) => ({
+      path: r.projection.path,
+      clean: r.projection.clean,
+      marked: r.derived.marked,
+      overrides: r.projection.overrides,
+    }));
+    return [
+      ...recs.flatMap((r) => r.violations),
+      ...validateWordAndOverride(wordEntries, raw),
+      ...(await validateCrossFile(
+        recs.map((r) => r.projection),
+        { fs: nodeCorpusFs, root },
+      )),
+      ...(await validateDictionary({ fs: nodeCorpusFs, root })),
+    ];
+  };
+
+  /** Rebuild the stub-bodied catalogue from the records' skeletons — a fast
+   * (~compile-free) `buildCatalogue`, so structure stays correct after any edit
+   * without a whole-corpus recompile. */
+  const buildStructure = (): Promise<{
+    catalogue: Catalogue;
+    warnings: string[];
+  }> => buildCatalogue(nodeCorpusFs, root, precompiledSkeletons(records, root));
+
+  /** Rebuild the whole resident state from the current records. */
+  const stateFromRecords = async (): Promise<CorpusState> => {
+    const [{ catalogue, warnings }, violations] = await Promise.all([
+      buildStructure(),
+      recomputeViolations(),
+    ]);
+    return { catalogue, warnings, violations, ...seedIndexes() };
+  };
+
+  /* --------------------------- disk write-back --------------------------- */
+
+  // A latest-wins background writer: keeps the build output fresh (the
+  // Compositor's own next cold start, and the computer's dev input) without
+  // stacking writes or blocking a load. A newer task replaces a pending one.
+  let pendingWrite: (() => Promise<void>) | undefined;
+  let writing = false;
+  const enqueueWrite = (task: () => Promise<void>): void => {
+    pendingWrite = task;
+    if (writing) return;
+    writing = true;
+    void (async () => {
+      try {
+        while (pendingWrite !== undefined) {
+          const next = pendingWrite;
+          pendingWrite = undefined;
+          try {
+            await next();
+          } catch {
+            // a failed write only costs the cache; the next load refreshes it
           }
         }
+      } finally {
+        writing = false;
       }
-      if (state === undefined) {
-        state = {
-          catalogue,
-          warnings,
-          violations: [],
-          tokenIndex: new Map(),
-          vocabulary: new Set(),
-        };
-        emitter.fire();
-      }
-    } catch {
-      // no compiled catalogue (or a stale/partial one): wait for the full load
-    }
+    })();
   };
 
-  /** Recompile one file in place (or drop it, if it's gone). */
-  const refreshFile = async (path: string): Promise<void> => {
-    // Its previous compile in the on-demand cache is now stale either way.
-    compiledCache.invalidate(path);
+  /* ----------------------------- compiling ----------------------------- */
+
+  /** Compile one source into a full `CorpusFile` (or undefined if it is gone). */
+  const compileOne = async (path: string): Promise<CorpusFile | undefined> => {
     const text = await nodeCorpusFs.readFile(`${root}/data/${path}`);
-    if (text === null) {
-      files.delete(path);
+    if (text === null) return undefined;
+    const { document: doc, errors } = compileWithPositions(text);
+    return { path, text, doc, errors, derived: deriveFile(text, doc) };
+  };
+
+  /* ------------------------------- loads ------------------------------- */
+
+  /**
+   * A full streamed compile: compile every source (transient peak), reduce each
+   * to its record, then release the documents. Rewrites the whole build output
+   * (`catalogue/` for the computer, with real bodies, plus `derivations.json`).
+   * The fallback when the derivations cache is missing/stale, and the path a
+   * structural change and the Rebuild command take.
+   */
+  const loadFull = async (): Promise<void> => {
+    const files = await loadCorpus(nodeCorpusFs, root);
+    records.clear();
+    compiledCache.clear();
+    for (const file of files) {
+      records.set(
+        file.path,
+        await derivationRecord(file, {
+          fs: nodeCorpusFs,
+          root,
+        }),
+      );
+    }
+    state = await stateFromRecords();
+    // Write the computer's catalogue/ from the full-bodied documents (this needs
+    // the bodies, so it happens before they are dropped), plus derivations.
+    const precompiled = new Map(
+      files.map(
+        (f) => [normalizePath(`${root}/data/${f.path}`), f.doc] as const,
+      ),
+    );
+    const full = await buildCatalogue(nodeCorpusFs, root, precompiled);
+    const snapshot = new Map(records);
+    enqueueWrite(async () => {
+      await writeCatalogue(nodeCorpusFs, root, full.catalogue, full.warnings);
+      await writeDerivations(nodeCorpusFs, root, snapshot);
+    });
+    // `files`/`full` fall out of scope here — only the records and stubs remain.
+  };
+
+  /** Recompile just the touched sources and rebuild the resident state from the
+   * records. Structure is rebuilt only when a skeleton actually changed (a body
+   * edit leaves it untouched), so a plain content save skips the catalogue pass. */
+  const loadIncremental = async (paths: Set<string>): Promise<void> => {
+    let skeletonChanged = false;
+    for (const path of paths) {
+      compiledCache.invalidate(path);
+      const file = await compileOne(path);
+      if (file === undefined) {
+        if (records.delete(path)) skeletonChanged = true;
+        continue;
+      }
+      const before = records.get(path);
+      const record = await derivationRecord(file, { fs: nodeCorpusFs, root });
+      records.set(path, record);
+      skeletonChanged ||=
+        before === undefined ||
+        JSON.stringify(before.skeleton) !== JSON.stringify(record.skeleton);
+    }
+    const catalogue =
+      skeletonChanged || state === undefined
+        ? await buildStructure()
+        : { catalogue: state.catalogue, warnings: state.warnings };
+    state = {
+      ...catalogue,
+      violations: await recomputeViolations(),
+      ...seedIndexes(),
+    };
+    // The derivations cache is not rewritten per save (it is 10s of MB): the
+    // next cold start's hash sweep recompiles just these touched files, so the
+    // in-memory state is fresh now and the disk cache reconciles cheaply later.
+  };
+
+  /** A dictionary-shard edit: the documents are untouched (records stay valid),
+   * so only the dictionary-dependent and dictionary tiers re-run — no recompiles,
+   * and the token index/vocabulary (register-independent) are reused. */
+  const loadDictionary = async (): Promise<void> => {
+    if (state === undefined) return loadFull();
+    state = { ...state, violations: await recomputeViolations() };
+  };
+
+  /* ---------------------------- cold start ---------------------------- */
+
+  /**
+   * Seed from `catalogue/derivations.json` with no compiles, then reconcile in
+   * the background. A missing/stale/foreign cache (a fresh clone has none — it is
+   * gitignored) falls through to a full compile.
+   */
+  const coldStart = async (): Promise<void> => {
+    const derivations = await readDerivations(nodeCorpusFs, root).catch(
+      () => null,
+    );
+    const real = await nodeCorpusFs.realPath(root).catch(() => root);
+    if (derivations === null || derivations.root !== real) {
+      await loadFull();
       return;
     }
-    const { document: doc, errors } = compileWithPositions(text);
-    files.set(path, {
-      path,
-      text,
-      doc,
-      errors,
-      derived: deriveFile(text, doc),
-    });
+    records.clear();
+    for (const [path, record] of derivations.records) records.set(path, record);
+    state = await stateFromRecords();
+    // Reconcile out-of-session changes in the background (below), after the
+    // instant seed has been shown.
   };
 
-  const load = async (full: boolean, paths?: Set<string>): Promise<void> => {
-    if (loading) {
-      queuedFull ||= full;
-      if (paths !== undefined) {
-        queuedPaths = new Set([...(queuedPaths ?? []), ...paths]);
+  /** After the instant seed, hash every source and reconcile: unchanged → done;
+   * only contents changed → recompile those; the file set changed → full reload. */
+  const sweep = async (): Promise<void> => {
+    const diskPaths = await sourcePaths(nodeCorpusFs, root);
+    const changed = new Set<string>();
+    let structural = false;
+    for (const path of diskPaths) {
+      const text = await nodeCorpusFs.readFile(`${root}/data/${path}`);
+      if (text === null) continue;
+      const record = records.get(path);
+      if (
+        record !== undefined &&
+        record.size === text.length &&
+        record.hash === hashText(text)
+      ) {
+        continue;
       }
+      changed.add(path);
+      if (record === undefined) structural = true; // a new file
+    }
+    for (const path of records.keys()) {
+      if (!diskPaths.has(path)) structural = true; // a removed file
+    }
+    if (structural) return run(loadFull);
+    if (changed.size > 0) return run(() => loadIncremental(changed));
+  };
+
+  /* --------------------------- orchestration --------------------------- */
+
+  // One load at a time; a request arriving mid-load is coalesced and replayed.
+  let queued: (() => Promise<void>) | undefined;
+  const run = (task: () => Promise<void>): void => {
+    if (loading) {
+      queued = task; // latest-wins: a newer request supersedes a queued one
       return;
     }
     loading = true;
     emitter.fire();
-    // Whether any *documents* change in this load. A dictionary-only reload
-    // (full=false, no paths) reuses the compiled files, the token index, and —
-    // via the write-back — the serialised documents on disk.
-    const docsChanged =
-      full || files.size === 0 || (paths !== undefined && paths.size > 0);
-    try {
-      if (full || files.size === 0) {
-        files.clear();
-        // A full reload follows a structural change; any on-demand compiles it
-        // holds may be stale, so start the working set fresh.
-        compiledCache.clear();
-        for (const file of await loadCorpus(nodeCorpusFs, root)) {
-          files.set(file.path, file);
-        }
-      } else {
-        for (const path of paths ?? []) await refreshFile(path);
+    void (async () => {
+      try {
+        await task();
+      } catch (error) {
+        state = undefined;
+        const message = error instanceof Error ? error.message : String(error);
+        void vscode.window.showErrorMessage(
+          `Compositor: corpus load failed: ${message}`,
+        );
+      } finally {
+        loading = false;
+        loaded = true;
+        emitter.fire();
       }
-      const list = [...files.values()].sort((a, b) =>
-        a.path.localeCompare(b.path),
-      );
-      const violations = await validateCorpus({
-        files: list,
-        fs: nodeCorpusFs,
-        root,
-      });
-      // The catalogue reuses the documents compiled above (keyed the way
-      // buildCatalogue looks them up: normalised absolute paths).
-      const precompiled = new Map(
-        list.map((f) => [normalizePath(`${root}/data/${f.path}`), f.doc]),
-      );
-      const { catalogue, warnings } = await buildCatalogue(
-        nodeCorpusFs,
-        root,
-        precompiled,
-      );
-      // The token index survives dictionary-only reloads untouched — it is
-      // register-independent, and rebuilding it is the merge of every file's
-      // summary. (Until the first full load completes, docsChanged is always
-      // true, so a cache-seeded state's empty index is never carried forward.)
-      const tokenIndex =
-        docsChanged || state === undefined
-          ? buildTokenIndex(files.values(), root)
-          : state.tokenIndex;
-      // The attested vocabulary is register-independent too, so it rides the
-      // same reuse rule as the token index (see CorpusState.vocabulary).
-      const vocabulary =
-        docsChanged || state === undefined
-          ? vocabularyFromFiles(files.values())
-          : state.vocabulary;
-      state = { catalogue, warnings, violations, tokenIndex, vocabulary };
-      // Refresh the compiled catalogue/ in the background (next startup's instant
-      // tree, and the computer's dev input). A full reload rewrites everything; a
-      // per-file reload rewrites only its documents; a dictionary-only reload
-      // refreshes just catalogue.json/dictionary.json — so a single save no
-      // longer serialises all ~1300 documents (the memory spike). The latest
-      // catalogue supersedes any still-unwritten one, so rapid edits can't pin
-      // more than one extra generation; a failure only costs the cache.
-      const scope: WriteScope =
-        full || files.size === 0
-          ? { kind: "full" }
-          : paths !== undefined && paths.size > 0
-            ? {
-                kind: "docs",
-                paths: new Set([...paths].map((p) => `data/${p}`)),
-              }
-            : { kind: "dictionary" };
-      writeBack.enqueue(catalogue, warnings, scope);
-    } catch (error) {
-      state = undefined;
-      const message = error instanceof Error ? error.message : String(error);
-      void vscode.window.showErrorMessage(
-        `Compositor: corpus load failed: ${message}`,
-      );
-    } finally {
-      loading = false;
-      loaded = true;
-      emitter.fire();
-    }
-    if (queuedFull || queuedPaths !== undefined) {
-      const nextFull = queuedFull;
-      const nextPaths = queuedPaths;
-      queuedFull = false;
-      queuedPaths = undefined;
-      await load(nextFull, nextPaths);
-    }
+      if (queued !== undefined) {
+        const next = queued;
+        queued = undefined;
+        run(next);
+      }
+    })();
   };
 
-  /** Watcher events, debounced into one load. A change to a .mit file reloads
-   * just that file; a dictionary shard revalidates without recompiling any
-   * documents (they stay valid — see reloadKind); anything else (directory
-   * create/delete/rename, a non-.mit metadata file) is structural and forces a
-   * full reload. A bare revalidate leaves both pending flags clear: load(false,
-   * <no paths>) reuses the compiled files and just re-runs validation and the
-   * catalogue build, both of which re-read the dictionary from disk. */
+  /* ------------------------------ watcher ------------------------------ */
+
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pendingFull = false;
   let pendingPaths = new Set<string>();
-  const onEvent = (uri: vscode.Uri, isDelete = false): void => {
+  const onEvent = (uri: vscode.Uri): void => {
     const path = uri.fsPath;
     const rel = path.startsWith(`${root}/data/`)
       ? path.slice(`${root}/data/`.length)
       : undefined;
     const kind = rel === undefined ? "full" : reloadKind(rel);
-    if (kind === "recompile" && !isDelete) {
-      pendingPaths.add(rel!);
-    } else if (kind === "full" || (kind === "recompile" && isDelete)) {
-      // A deleted .mit would otherwise leave its stale documents/<docKey>.json
-      // behind the incremental write (catalogue/ is also the computer's input),
-      // so a delete forces a full rewrite rather than a per-file one.
-      pendingFull = true;
-    }
-    // "revalidate": nothing to flag — the debounced load below revalidates.
+    // A .mit create/change/delete is handled incrementally: the touched file is
+    // recompiled (or dropped) and the structure/indexes/violations rebuilt from
+    // the records. A dictionary shard revalidates without recompiling. Anything
+    // else is structural and takes the full reload.
+    if (kind === "recompile") pendingPaths.add(rel!);
+    else if (kind === "full") pendingFull = true;
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
       const full = pendingFull;
       const paths = pendingPaths;
       pendingFull = false;
       pendingPaths = new Set();
-      void load(full, paths);
+      if (full) run(loadFull);
+      else if (paths.size > 0) run(() => loadIncremental(paths));
+      else run(loadDictionary);
     }, RELOAD_DEBOUNCE_MS);
   };
 
   const watcher = vscode.workspace.createFileSystemWatcher(
     new vscode.RelativePattern(root, "data/**"),
   );
-  watcher.onDidCreate((uri) => onEvent(uri));
-  watcher.onDidChange((uri) => onEvent(uri));
-  watcher.onDidDelete((uri) => onEvent(uri, true));
+  watcher.onDidCreate(onEvent);
+  watcher.onDidChange(onEvent);
+  watcher.onDidDelete(onEvent);
 
-  void loadFromCache().then(() => load(true));
+  // Kick off: instant seed (or full compile), then the background reconcile.
+  run(async () => {
+    await coldStart();
+    void sweep();
+  });
 
   return {
     root,
     get state() {
       return state;
     },
-    compiledFiles: files,
-    getCompiledFile: (path) =>
-      // The resident full compile shadows the cache while it still holds the
-      // file; otherwise the working-set cache compiles it on demand.
-      files.has(path)
-        ? Promise.resolve(files.get(path))
-        : compiledCache.get(path),
+    getCompiledFile: (path) => compiledCache.get(path),
+    workSourcePaths: () =>
+      [...records.keys()].filter((p) => p.startsWith("works/")),
     get loading() {
       return loading;
     },
     get status() {
-      // Not-yet-loaded and mid-load both read as "loading"; a settled load with
-      // no state is the only "failed".
       if (loading || !loaded) return "loading";
       return state === undefined ? "failed" : "ready";
     },
@@ -369,11 +433,41 @@ export const createCorpusModel = (root: string): CorpusModel => {
       return loaded;
     },
     onDidChange: emitter.event,
-    reload: () => load(true),
+    reload: () => {
+      // Fire-and-forget: the tree and Problems refresh via onDidChange when the
+      // rebuild settles, so the command need not block on it.
+      run(loadFull);
+      return Promise.resolve();
+    },
     dispose: () => {
       if (timer !== undefined) clearTimeout(timer);
       watcher.dispose();
       emitter.dispose();
     },
   };
+};
+
+/** Every `.mit` source under `data/authors` and `data/works`, data/-relative —
+ * the set the sweep hashes and the full load walks. */
+const sourcePaths = async (
+  fs: typeof nodeCorpusFs,
+  root: string,
+): Promise<Set<string>> => {
+  const out = new Set<string>();
+  const walk = async (dir: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await fs.readDir(`${root}/data/${dir}`);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory) await walk(rel);
+      else if (entry.name.endsWith(".mit")) out.add(rel);
+    }
+  };
+  await walk("authors");
+  await walk("works");
+  return out;
 };
