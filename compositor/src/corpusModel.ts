@@ -39,6 +39,7 @@ import {
   createCatalogueWriteBack,
   type WriteScope,
 } from "./lib/catalogueWriteBack.ts";
+import { createCompiledFileCache } from "./lib/compiledFileCache.ts";
 import { buildTokenIndex, type TokenIndex } from "./lib/curation.ts";
 import { vocabularyFromFiles } from "./lib/dictionaryResolve.ts";
 import { reloadKind } from "./lib/reloadKind.ts";
@@ -72,6 +73,12 @@ export type CorpusModel = {
    * catalogue cache seeds `state` alone; serialised documents carry no source
    * ranges, so consumers that need positions must read from here). */
   readonly compiledFiles: ReadonlyMap<string, CorpusFile>;
+  /** The compiled file for a data/-relative path: from the resident set when a
+   * full compile still holds it, else compiled on demand and cached (a bounded
+   * working set — see lib/compiledFileCache). Undefined when the source is
+   * gone. This is the path a consumer that needs one file's positioned body
+   * should take, so it never depends on the whole corpus being resident. */
+  getCompiledFile: (path: string) => Promise<CorpusFile | undefined>;
   readonly loading: boolean;
   /** What to tell the user about the model right now. `loading` covers the whole
    * run-up to the first result (the constructor always kicks a load off, so the
@@ -98,6 +105,11 @@ export const createCorpusModel = (root: string): CorpusModel => {
   const emitter = new vscode.EventEmitter<void>();
   /** Compiled files keyed by data/-relative path, kept fresh incrementally. */
   const files = new Map<string, CorpusFile>();
+  /** The on-demand working set behind getCompiledFile, for files a full compile
+   * no longer holds resident (and, once it is retired, for every read). */
+  const compiledCache = createCompiledFileCache((path) =>
+    nodeCorpusFs.readFile(`${root}/data/${path}`),
+  );
   let state: CorpusState | undefined;
   let loading = false;
   /** Whether a full load() body has ever run to completion. Distinguishes the
@@ -174,6 +186,8 @@ export const createCorpusModel = (root: string): CorpusModel => {
 
   /** Recompile one file in place (or drop it, if it's gone). */
   const refreshFile = async (path: string): Promise<void> => {
+    // Its previous compile in the on-demand cache is now stale either way.
+    compiledCache.invalidate(path);
     const text = await nodeCorpusFs.readFile(`${root}/data/${path}`);
     if (text === null) {
       files.delete(path);
@@ -207,6 +221,9 @@ export const createCorpusModel = (root: string): CorpusModel => {
     try {
       if (full || files.size === 0) {
         files.clear();
+        // A full reload follows a structural change; any on-demand compiles it
+        // holds may be stale, so start the working set fresh.
+        compiledCache.clear();
         for (const file of await loadCorpus(nodeCorpusFs, root)) {
           files.set(file.path, file);
         }
@@ -333,6 +350,12 @@ export const createCorpusModel = (root: string): CorpusModel => {
       return state;
     },
     compiledFiles: files,
+    getCompiledFile: (path) =>
+      // The resident full compile shadows the cache while it still holds the
+      // file; otherwise the working-set cache compiles it on demand.
+      files.has(path)
+        ? Promise.resolve(files.get(path))
+        : compiledCache.get(path),
     get loading() {
       return loading;
     },
