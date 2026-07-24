@@ -12,7 +12,7 @@ import type { MarkitDocument } from "@jsr/earlytexts__markit";
 import {
   distinctEditionDocuments,
   distinctWorks,
-} from "../src/lib/catalogueWalk.ts";
+} from "../src/core/catalogueWalk.ts";
 
 const doc = (children: MarkitDocument[] = []): MarkitDocument =>
   ({ children }) as MarkitDocument;

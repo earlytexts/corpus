@@ -5,14 +5,14 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { MarkupSuggestion } from "../src/lib/hints.ts";
+import type { MarkupSuggestion } from "../src/core/hints.ts";
 import {
   fixTitle,
   languageLabel,
   suggestionKey,
   suggestionMessage,
   wrapText,
-} from "../src/lib/suggestions.ts";
+} from "../src/core/suggestions.ts";
 
 const at = (
   type: MarkupSuggestion["type"],

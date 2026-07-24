@@ -16,11 +16,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import git from "isomorphic-git";
-import {
-  type GitPort,
-  type Identity,
-  nodeGitPort,
-} from "../src/git/gitPort.ts";
+import { type GitPort, type Identity } from "../src/core/gitPort.ts";
+import { nodeGitPort } from "../src/adapters/git/gitPort.ts";
 
 const ME: Identity = { name: "Ada", email: "ada@example.com" };
 const CORPUS_REF = "refs/remotes/upstream/main";

@@ -5,7 +5,7 @@
  */
 
 import { expect, test } from "vitest";
-import { filterByLetter, page } from "../src/lib/dictionaryPanel.ts";
+import { filterByLetter, page } from "../src/core/dictionaryPanel.ts";
 
 const rows = (letters: string) =>
   [...letters].map((letter, i) => ({ letter, id: i }));

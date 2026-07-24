@@ -1,6 +1,6 @@
 /**
  * The pure tree model shared between the corpus tree and the commands
- * (../src/lib/nodes.ts): the node→file-path lookups, author indexing, the
+ * (../src/core/nodes.ts): the node→file-path lookups, author indexing, the
  * document→edition map and borrowed-child traversal, and the label helpers.
  * editionPath is exercised through the replace-scope planner; authorPath is only
  * reached from the VSCode surface, so it is pinned here directly, over a real
@@ -23,7 +23,7 @@ import {
   lifespan,
   type TreeNode,
   workDocId,
-} from "../src/lib/nodes.ts";
+} from "../src/core/nodes.ts";
 
 const author = (surname: string, forename = "", slug = "x"): Author =>
   ({ slug, surname, forename }) as Author;

@@ -26,7 +26,7 @@ import {
   letterGroups,
   lifespan,
   type TreeNode,
-} from "../lib/nodes.ts";
+} from "../core/nodes.ts";
 
 type Lookup = Map<MarkitDocument, EditionRef>;
 

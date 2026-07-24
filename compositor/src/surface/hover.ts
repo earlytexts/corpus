@@ -40,15 +40,15 @@ import {
   blockSourceTokens,
   collectBlocks,
   type SourceToken,
-} from "../lib/sourceTokens.ts";
+} from "../core/sourceTokens.ts";
 import {
   type AccountedInfo,
   type HoverInfo,
   lemmaForms,
   type OtherReading,
   resolveHoverInfo,
-} from "../lib/hoverInfo.ts";
-import { wordMarkup } from "../lib/pinMarkup.ts";
+} from "../core/hoverInfo.ts";
+import { wordMarkup } from "../core/pinMarkup.ts";
 
 /** The internal command a pin link fires. Not a palette command — invoked only
  * from the trusted hover Markdown, so it needs no package.json contribution. */

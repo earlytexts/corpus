@@ -8,7 +8,7 @@
  */
 
 import * as vscode from "vscode";
-import { authorPath, type TreeNode } from "../lib/nodes.ts";
+import { authorPath, type TreeNode } from "../core/nodes.ts";
 import type { CorpusModel } from "../corpusModel.ts";
 
 const DOUBLE_CLICK_MS = 500;

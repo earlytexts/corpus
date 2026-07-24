@@ -13,7 +13,7 @@ import {
   resolveLemmaTarget,
   resolveSpellingTarget,
   vocabularyFromFiles,
-} from "../src/lib/dictionaryResolve.ts";
+} from "../src/core/dictionaryResolve.ts";
 
 const yes = () => true;
 const no = () => false;

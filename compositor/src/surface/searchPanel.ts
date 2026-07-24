@@ -29,7 +29,7 @@ import {
   scopedEditions,
   searchFile,
   type SearchQuery,
-} from "../lib/searchPanel.ts";
+} from "../core/searchPanel.ts";
 import { panelHtml } from "./panelShell.ts";
 import { SEARCH_CSS } from "./searchPanelCss.ts";
 import type { CorpusModel } from "../corpusModel.ts";

@@ -6,7 +6,7 @@ import {
   expandDictionary,
   parseDictionary,
 } from "@earlytexts/corpus";
-import { scanUnaccounted } from "../src/lib/dictionaryScan.ts";
+import { scanUnaccounted } from "../src/core/dictionaryScan.ts";
 
 const dict = (entries: Record<string, unknown>): Dictionary =>
   expandDictionary(

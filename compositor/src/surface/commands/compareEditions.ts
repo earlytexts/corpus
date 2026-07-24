@@ -8,8 +8,8 @@
 import * as vscode from "vscode";
 import type { Catalogue, Edition, Work } from "@earlytexts/corpus";
 import type { CorpusModel } from "../../corpusModel.ts";
-import { editionPath, type TreeNode } from "../../lib/nodes.ts";
-import { comparableWorks, nextEdition } from "../../lib/compareScope.ts";
+import { editionPath, type TreeNode } from "../../core/nodes.ts";
+import { comparableWorks, nextEdition } from "../../core/compareScope.ts";
 
 /** Open the native diff view on two editions (left = base), or explain why not. */
 const openDiff = async (

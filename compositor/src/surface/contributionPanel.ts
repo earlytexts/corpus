@@ -20,12 +20,12 @@
 import * as vscode from "vscode";
 import {
   type FileChange,
-  findRepoRoot,
   type GitPort,
-  nodeGitPort,
   type Resolutions,
-} from "../git/gitPort.ts";
-import { type GitHubClient, githubClient, type Viewer } from "../git/github.ts";
+} from "../core/gitPort.ts";
+import { findRepoRoot, nodeGitPort } from "../adapters/git/gitPort.ts";
+import { type GitHubClient, type Viewer } from "../core/github.ts";
+import { githubClient } from "../adapters/git/github.ts";
 import {
   addToSubmission,
   type ConflictResolver,
@@ -36,10 +36,10 @@ import {
   type Submission,
   tidyUp,
   type WorkState,
-} from "../git/workflow.ts";
+} from "../core/workflow.ts";
 import { panelHtml } from "./panelShell.ts";
 import { CONTRIBUTE_CSS } from "./contributionPanelCss.ts";
-import { scopedEditions } from "../lib/searchPanel.ts";
+import { scopedEditions } from "../core/searchPanel.ts";
 import type { CorpusModel } from "../corpusModel.ts";
 
 const VIEW_ID = "compositor.contributionPanel";

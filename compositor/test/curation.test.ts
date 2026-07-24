@@ -18,7 +18,7 @@ import {
   buildTokenIndex,
   curationList,
   curationRows,
-} from "../src/lib/curation.ts";
+} from "../src/core/curation.ts";
 
 const fixture = () =>
   corpus()

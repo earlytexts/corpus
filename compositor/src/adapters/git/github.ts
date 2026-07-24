@@ -1,64 +1,22 @@
 /**
- * The GitHub REST calls the contribution workflow needs — the operations that
- * are *not* git: reading the signed-in user, finding or creating their fork of
- * the corpus, and opening and following the pull requests that carry their work
- * back. Everything here talks to api.github.com over `fetch` with the OAuth
- * token from VSCode's built-in GitHub sign-in; no SDK.
+ * The GitHub REST calls the contribution workflow needs — the `GitHubClient`
+ * implementation the core declares: reading the signed-in user, finding or
+ * creating their fork of the corpus, and opening and following the pull
+ * requests that carry their work back. Everything here talks to api.github.com
+ * over `fetch` with the OAuth token from VSCode's built-in GitHub sign-in; no
+ * SDK.
  *
  * `ensureFork` is the pure branch of the flow (fork exists → use it; missing →
  * create and poll; name collision → refuse), written over the small
  * `GitHubClient` port so it can be tested without a network.
  */
 
+import type { GitHubClient, PullSummary, Repo } from "../../core/github.ts";
+
 /** The canonical corpus every contributor forks from. */
 export const UPSTREAM = { owner: "earlytexts", repo: "corpus" } as const;
 
 export const UPSTREAM_URL = `https://github.com/${UPSTREAM.owner}/${UPSTREAM.repo}.git`;
-
-/** The slice of a GitHub repository object we care about. */
-export type Repo = {
-  readonly full_name: string;
-  readonly clone_url: string;
-  readonly fork: boolean;
-  /** Present when the repo is a fork: the ultimate ancestor. */
-  readonly source?: { readonly full_name: string };
-};
-
-/** The signed-in user, as git and GitHub each need them. */
-export type Viewer = {
-  readonly login: string;
-  readonly name: string;
-  readonly email: string;
-};
-
-/** The slice of a pull request the panel reports on. */
-export type PullSummary = {
-  readonly number: number;
-  readonly title: string;
-  readonly url: string;
-  readonly state: "open" | "closed";
-  readonly merged: boolean;
-  readonly createdAt: string;
-};
-
-/** The GitHub operations the workflow depends on, as a port. */
-export type GitHubClient = {
-  /** The signed-in user's login, display name and commit email. */
-  getViewer: () => Promise<Viewer>;
-  /** A repository, or undefined if it does not exist (404). */
-  getRepo: (owner: string, repo: string) => Promise<Repo | undefined>;
-  /** Kick off a fork of owner/repo into the signed-in user's account. */
-  createFork: (owner: string, repo: string) => Promise<void>;
-  /** The newest pull request from `head` ("login:branch"), open or closed. */
-  findPull: (head: string) => Promise<PullSummary | undefined>;
-  createPull: (args: {
-    head: string;
-    title: string;
-    body: string;
-  }) => Promise<PullSummary>;
-  /** Remove a branch from the user's fork (tidying up after a decision). */
-  deleteBranch: (owner: string, branch: string) => Promise<void>;
-};
 
 /**
  * Resolve the user's fork of the corpus to a clone URL, creating it if needed.

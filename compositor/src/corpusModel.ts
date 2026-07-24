@@ -50,10 +50,10 @@ import {
   writeCatalogueSources,
   writeDerivations,
 } from "@earlytexts/corpus";
-import { createCompiledFileCache } from "./lib/compiledFileCache.ts";
-import { buildTokenIndex, type TokenIndex } from "./lib/curation.ts";
-import { vocabularyFromFiles } from "./lib/dictionaryResolve.ts";
-import { reloadKind } from "./lib/reloadKind.ts";
+import { createCompiledFileCache } from "./core/compiledFileCache.ts";
+import { buildTokenIndex, type TokenIndex } from "./core/curation.ts";
+import { vocabularyFromFiles } from "./core/dictionaryResolve.ts";
+import { reloadKind } from "./core/reloadKind.ts";
 
 export type CorpusState = {
   /** Structure only — each `Edition.document` is a stub (its block bodies are

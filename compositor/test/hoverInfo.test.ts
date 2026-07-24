@@ -17,7 +17,7 @@ import {
   readingLemma,
   selectReading,
 } from "@earlytexts/corpus";
-import { lemmaForms, resolveHoverInfo } from "../src/lib/hoverInfo.ts";
+import { lemmaForms, resolveHoverInfo } from "../src/core/hoverInfo.ts";
 
 /** Build an expanded dictionary from on-disk micro-syntax, the real pipeline. */
 const dict = (entries: Record<string, unknown>): Dictionary =>

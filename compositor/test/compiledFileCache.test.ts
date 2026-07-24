@@ -11,7 +11,7 @@ import { expect, test } from "vitest";
 import {
   createCompiledFileCache,
   type FileReader,
-} from "../src/lib/compiledFileCache.ts";
+} from "../src/core/compiledFileCache.ts";
 
 /** A reader over a fixed file map that tallies how often it is read, so a test
  * can assert a hit did not recompile. */

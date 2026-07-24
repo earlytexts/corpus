@@ -15,7 +15,7 @@
  */
 
 import * as vscode from "vscode";
-import { serial } from "../lib/serialize.ts";
+import { serial } from "../core/serialize.ts";
 
 /** The one queue every shard write runs through (see the module note). */
 const runExclusive = serial();

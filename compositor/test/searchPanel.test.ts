@@ -19,7 +19,7 @@ import {
   searchableLines,
   searchFile,
   type SearchQuery,
-} from "../src/lib/searchPanel.ts";
+} from "../src/core/searchPanel.ts";
 
 /* ------------------------------- helpers -------------------------------- */
 

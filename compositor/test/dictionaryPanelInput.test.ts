@@ -10,7 +10,7 @@ import {
   formEntry,
   lemmaEntry,
   variantEntry,
-} from "../src/lib/dictionaryPanelInput.ts";
+} from "../src/core/dictionaryPanelInput.ts";
 
 test("lemmaEntry writes a single folded word as a modern headword", () => {
   expect(lemmaEntry("  Increase ")).toEqual({

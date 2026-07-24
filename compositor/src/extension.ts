@@ -14,7 +14,7 @@ import * as vscode from "vscode";
 import { type CorpusModel, createCorpusModel } from "./corpusModel.ts";
 import { createCorpusTree } from "./surface/corpusTree.ts";
 import { registerDoubleClickOpen } from "./surface/doubleClickOpen.ts";
-import { authorPath, type TreeNode, workDocId } from "./lib/nodes.ts";
+import { authorPath, type TreeNode, workDocId } from "./core/nodes.ts";
 import { registerDiagnostics } from "./surface/diagnostics.ts";
 import { registerHover } from "./surface/hover.ts";
 import { nodeCorpusFs } from "@earlytexts/corpus";
@@ -38,7 +38,7 @@ import {
   type DictionaryController,
 } from "./surface/commands/dictionaryDiagnostics.ts";
 import { configureDiagnostics } from "./surface/commands/configureDiagnostics.ts";
-import { runSetup } from "./git/setup.ts";
+import { runSetup } from "./adapters/git/setup.ts";
 import {
   createDictionaryPanel,
   type DictionaryPanel,

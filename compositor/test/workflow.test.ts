@@ -11,8 +11,8 @@ import type {
   GitPort,
   Identity,
   Resolutions,
-} from "../src/git/gitPort.ts";
-import type { GitHubClient, PullSummary, Repo } from "../src/git/github.ts";
+} from "../src/core/gitPort.ts";
+import type { GitHubClient, PullSummary, Repo } from "../src/core/github.ts";
 import {
   addToSubmission,
   branchNameFor,
@@ -20,7 +20,7 @@ import {
   getLatest,
   sendForReview,
   tidyUp,
-} from "../src/git/workflow.ts";
+} from "../src/core/workflow.ts";
 
 const ME: Identity = { name: "Ada", email: "ada@example.com" };
 

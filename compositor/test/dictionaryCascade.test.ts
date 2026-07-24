@@ -12,7 +12,7 @@ import {
   type CascadePrompts,
   type Decisions,
   groupDecisionsByShard,
-} from "../src/lib/dictionaryCascade.ts";
+} from "../src/core/dictionaryCascade.ts";
 
 /** A context whose register/corpus membership is the given word sets. */
 const ctxOf = (dictionary: string[], corpus: string[]) => {

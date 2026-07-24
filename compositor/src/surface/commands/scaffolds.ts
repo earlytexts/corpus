@@ -10,8 +10,8 @@ import * as vscode from "vscode";
 import type { Author } from "@earlytexts/corpus";
 import { nodeCorpusFs, YEAR } from "@earlytexts/corpus";
 import type { CorpusModel } from "../../corpusModel.ts";
-import { capitalize, type TreeNode, workDocId } from "../../lib/nodes.ts";
-import { authorFile, editionFile, stubFile } from "../../lib/templates.ts";
+import { capitalize, type TreeNode, workDocId } from "../../core/nodes.ts";
+import { authorFile, editionFile, stubFile } from "../../core/templates.ts";
 
 const SLUG = /^[a-z0-9]+$/;
 

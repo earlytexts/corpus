@@ -28,18 +28,18 @@ import { compileWithPositions } from "@jsr/earlytexts__markit";
 import {
   scanUnaccounted,
   type UnaccountedWord,
-} from "../../lib/dictionaryScan.ts";
+} from "../../core/dictionaryScan.ts";
 import {
   actionsFor,
   type EntryAction,
   upsertEntriesText,
-} from "../../lib/dictionaryEdits.ts";
+} from "../../core/dictionaryEdits.ts";
 import {
   addEntry,
   type CascadePrompts,
   type Decisions,
   groupDecisionsByShard,
-} from "../../lib/dictionaryCascade.ts";
+} from "../../core/dictionaryCascade.ts";
 import {
   addTargetTitle,
   entryActionTitle,
@@ -47,8 +47,8 @@ import {
   fuseActionTitle,
   unaccountedMessage,
   unattestedLemmaMessage,
-} from "../../lib/dictionaryEntryText.ts";
-import { corpusVocabulary } from "../../lib/dictionaryResolve.ts";
+} from "../../core/dictionaryEntryText.ts";
+import { corpusVocabulary } from "../../core/dictionaryResolve.ts";
 import {
   readShardText,
   updateShards,

@@ -12,7 +12,7 @@ import {
   type FileDiagnostics,
   type ModelPhase,
   planDiagnostics,
-} from "../src/lib/diagnosticsPlan.ts";
+} from "../src/core/diagnosticsPlan.ts";
 
 const ROOT = "/corpus";
 const abs = (path: string) => `${ROOT}/data/${path}`;

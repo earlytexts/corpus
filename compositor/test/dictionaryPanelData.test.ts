@@ -11,8 +11,8 @@ import { parseDictionary, type RawDictionary } from "@earlytexts/corpus";
 import {
   dropCuratedRows,
   replaceShardEntries,
-} from "../src/lib/dictionaryPanelData.ts";
-import type { CurationRow } from "../src/lib/curation.ts";
+} from "../src/core/dictionaryPanelData.ts";
+import type { CurationRow } from "../src/core/curation.ts";
 
 const dictOf = (shards: Record<string, string>): RawDictionary => {
   const { dictionary, problems } = parseDictionary(

@@ -24,19 +24,19 @@ import {
   readDictionaryShards,
   shardOf,
 } from "@earlytexts/corpus";
-import { dictionaryViews } from "../lib/dictionaryViews.ts";
-import { type CurationRow, curationRows } from "../lib/curation.ts";
+import { dictionaryViews } from "../core/dictionaryViews.ts";
+import { type CurationRow, curationRows } from "../core/curation.ts";
 import {
   dropCuratedRows,
   replaceShardEntries,
-} from "../lib/dictionaryPanelData.ts";
-import { removeEntryText, upsertEntryText } from "../lib/dictionaryEdits.ts";
+} from "../core/dictionaryPanelData.ts";
+import { removeEntryText, upsertEntryText } from "../core/dictionaryEdits.ts";
 import {
   type EntryEdit,
   formEntry,
   lemmaEntry,
   variantEntry,
-} from "../lib/dictionaryPanelInput.ts";
+} from "../core/dictionaryPanelInput.ts";
 import { readShardText, updateShard } from "./dictionaryShardIO.ts";
 import { PANEL_CSS } from "./dictionaryPanelCss.ts";
 import { panelHtml } from "./panelShell.ts";
