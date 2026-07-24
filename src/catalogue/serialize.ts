@@ -35,20 +35,26 @@ import type {
  * the dictionary.json text — the dictionary already lives expanded in memory
  * (explicit spelling + lemma per word per reading), so its wire form is a
  * plain stringify and consumers never parse the entry micro-syntax.
- * `skipDocuments` leaves the documents map empty (their keys still serialise
- * into the structure) — the dictionary-only write path, where the documents
- * on disk are already current and stringifying them is the bulk of the cost.
+ * `emitDocuments` selects which document JSONs to serialise (their keys always
+ * serialise into the structure regardless): `true` (the default) all of them;
+ * `false` none — the dictionary-only write path, where the documents on disk
+ * are already current and stringifying them is the bulk of the cost; a
+ * predicate only those docKeys it accepts — the incremental per-source path
+ * (writeCatalogueSources), where a handful changed and the rest stay current.
  */
 export const serializeCatalogue = (
   catalogue: Catalogue,
   warnings: string[],
   root: string,
-  skipDocuments = false,
+  emitDocuments: boolean | ((docKey: string) => boolean) = true,
 ): {
   catalogue: CatalogueFile;
   documents: Map<string, string>;
   dictionary: string;
 } => {
+  const includeDocument = typeof emitDocuments === "function"
+    ? emitDocuments
+    : () => emitDocuments;
   // Map every edition document to its key, so a borrowed child (which is another
   // edition's document instance) serialises as a ref rather than an inlined copy.
   const docKeys = new WeakMap<MarkitDocument, string>();
@@ -67,7 +73,7 @@ export const serializeCatalogue = (
   const serializeEdition = (work: Work, edition: Edition): CatalogueEdition => {
     const { document, ...meta } = edition;
     const docKey = docKeyOf(work, edition);
-    if (!skipDocuments) {
+    if (includeDocument(docKey)) {
       documents.set(docKey, JSON.stringify(serializeDoc(document, docKeys)));
     }
     return {
@@ -110,6 +116,34 @@ export const serializeCatalogue = (
 /** The document key (and `documents/<docKey>.json` path) for an edition. */
 export const docKeyOf = (work: Work, edition: Edition): string =>
   `${work.hostSlug}/${work.slug}/${edition.slug}`;
+
+/**
+ * Map each edition's serialised source path (relative to `root`, the form the
+ * catalogue's `source` fields carry) to its document key — the inverse the
+ * incremental write needs to turn a set of changed `.mit` files into the
+ * documents to re-emit. Each work is visited once (a co-authored work lists
+ * under each author).
+ */
+export const sourceDocKeys = (
+  catalogue: Catalogue,
+  root: string,
+): Map<string, string> => {
+  const map = new Map<string, string>();
+  const seen = new Set<Work>();
+  for (const author of catalogue.authors) {
+    for (const work of author.works) {
+      if (seen.has(work)) continue;
+      seen.add(work);
+      for (const edition of work.editions) {
+        map.set(
+          relative(catalogue.sources.get(edition.document) ?? "", root),
+          docKeyOf(work, edition),
+        );
+      }
+    }
+  }
+  return map;
+};
 
 /**
  * Convert a (composed) document to its serialised form, replacing every child

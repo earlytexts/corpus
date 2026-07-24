@@ -13,7 +13,7 @@
 
 import type { Catalogue, CatalogueFile } from "../catalogue/types.ts";
 import type { CorpusFsWrite } from "../fs/ports.ts";
-import { serializeCatalogue } from "../catalogue/serialize.ts";
+import { serializeCatalogue, sourceDocKeys } from "../catalogue/serialize.ts";
 
 export const writeCatalogue = async (
   fs: CorpusFsWrite,
@@ -61,7 +61,7 @@ export const writeCatalogueDictionary = async (
   warnings: string[],
 ): Promise<void> => {
   const real = await fs.realPath(root);
-  const serialized = serializeCatalogue(catalogue, warnings, real, true);
+  const serialized = serializeCatalogue(catalogue, warnings, real, false);
   await fs.writeFile(
     `${real}/catalogue/catalogue.json`,
     JSON.stringify(serialized.catalogue),
@@ -70,4 +70,48 @@ export const writeCatalogueDictionary = async (
     `${real}/catalogue/dictionary.json`,
     serialized.dictionary,
   );
+};
+
+/**
+ * Refresh `catalogue.json`, `dictionary.json`, and only the `documents/` files
+ * for the given changed source `.mit` files (root-relative, e.g.
+ * `data/works/hume/enquiry/1748.mit`) — the incremental write behind a single
+ * document save, so a save no longer serialises and rewrites all ~1300
+ * documents (the memory spike that ran the extension host out of memory). Like
+ * `writeCatalogueDictionary`, only sound over a `catalogue/` whose *other*
+ * documents are already current; a deleted or renamed source is not covered
+ * (its stale document file would linger), so the caller forces a full
+ * `writeCatalogue` then (see the Compositor's corpusModel).
+ */
+export const writeCatalogueSources = async (
+  fs: CorpusFsWrite,
+  root: string,
+  catalogue: Catalogue,
+  warnings: string[],
+  sources: ReadonlySet<string>,
+): Promise<void> => {
+  const real = await fs.realPath(root);
+  const bySource = sourceDocKeys(catalogue, real);
+  const docKeys = new Set<string>();
+  for (const source of sources) {
+    const docKey = bySource.get(source);
+    if (docKey !== undefined) docKeys.add(docKey);
+  }
+  const serialized = serializeCatalogue(
+    catalogue,
+    warnings,
+    real,
+    (docKey) => docKeys.has(docKey),
+  );
+  const catalogueDir = `${real}/catalogue`;
+  await fs.writeFile(
+    `${catalogueDir}/catalogue.json`,
+    JSON.stringify(serialized.catalogue),
+  );
+  await fs.writeFile(`${catalogueDir}/dictionary.json`, serialized.dictionary);
+  for (const [docKey, json] of serialized.documents) {
+    const path = `${catalogueDir}/documents/${docKey}.json`;
+    await fs.mkdir(path.slice(0, path.lastIndexOf("/")));
+    await fs.writeFile(path, json);
+  }
 };

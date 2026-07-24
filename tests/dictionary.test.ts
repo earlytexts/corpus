@@ -58,6 +58,7 @@ import { buildCatalogue } from "../src/catalogue/compile.ts";
 import {
   writeCatalogue,
   writeCatalogueDictionary,
+  writeCatalogueSources,
 } from "../src/build/write.ts";
 import {
   catalogueReader,
@@ -1303,6 +1304,62 @@ test("catalogue: writeCatalogueDictionary refreshes the dictionary and warnings,
       ),
     ),
   ).toEqual(documentsBefore);
+});
+
+test("catalogue: writeCatalogueSources rewrites only the changed document", async () => {
+  // Two editions, each its own document. A save to one must rewrite only that
+  // document's JSON (plus catalogue.json/dictionary.json), leaving the other's
+  // byte-identical — the incremental write that keeps a save off the ~60MB
+  // full rewrite.
+  const files = corpus()
+    .author("a", { forename: "Ann", surname: "Aa" })
+    .work("a", "w", { title: "W", breadcrumb: "W", canonical: "1700" })
+    .edition(
+      "a",
+      "w",
+      "1700",
+      { imported: true, title: "W", breadcrumb: "W", published: [1700] },
+      '## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nAlpha text.',
+    )
+    .edition(
+      "a",
+      "w",
+      "1710",
+      { imported: true, title: "W", breadcrumb: "W", published: [1710] },
+      '## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nBeta text.',
+    )
+    .build();
+  const fs = writableCorpus(files);
+  const first = await buildCatalogue(fs, CORPUS_ROOT);
+  await writeCatalogue(fs, CORPUS_ROOT, first.catalogue, first.warnings);
+  const docPath = (slug: string) =>
+    `${CORPUS_ROOT}/catalogue/documents/a/w/${slug}.json`;
+  const before = { 1700: files[docPath("1700")], 1710: files[docPath("1710")] };
+  expect(before[1700]).toBeDefined();
+  expect(before[1710]).toBeDefined();
+
+  // Edit only the 1700 edition, rebuild, and write back just its source.
+  files[`${CORPUS_ROOT}/data/works/a/w/1700.mit`] =
+    '# a.w.1700\n\n[metadata]\nimported = true\ntitle = "W"\nbreadcrumb = "W"\npublished = [1700]\n\n## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nGamma text.\n';
+  const second = await buildCatalogue(fs, CORPUS_ROOT);
+  await writeCatalogueSources(
+    fs,
+    CORPUS_ROOT,
+    second.catalogue,
+    second.warnings,
+    new Set(["data/works/a/w/1700.mit"]),
+  );
+
+  // The changed document was rewritten (now carries "gamma"); the untouched one
+  // is byte-for-byte what it was.
+  expect(files[docPath("1700")]).not.toBe(before[1700]);
+  expect(files[docPath("1700")]).toContain("Gamma text.");
+  expect(files[docPath("1710")]).toBe(before[1710]);
+  // The whole catalogue still round-trips (both documents load).
+  const loaded = await loadCatalogue(catalogueReader(fs), CORPUS_ROOT);
+  const slugs = loaded.catalogue.byAuthor
+    .get("a")!.works[0].editions.map((e) => e.slug);
+  expect(slugs).toEqual(["1700", "1710"]);
 });
 
 test("dictionary: readDictionaryShards reads only the shard files", async () => {

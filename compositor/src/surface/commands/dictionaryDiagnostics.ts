@@ -55,7 +55,7 @@ import {
   writeShardText,
 } from "../dictionaryShardIO.ts";
 import { createOverlay } from "../overlay.ts";
-import type { CorpusModel } from "../../corpusModel.ts";
+import type { CorpusModel, CorpusState } from "../../corpusModel.ts";
 
 const SOURCE = "compositor-dictionary";
 const SETTING = "flagUnaccountedWords";
@@ -151,6 +151,29 @@ const writeDecisions = (root: string, decisions: Decisions): Promise<void> =>
     }
   });
 
+/** Shared by the `modern` path, which never reads it. */
+const EMPTY_VOCABULARY: ReadonlySet<string> = new Set();
+
+/** The attested vocabulary a respelling/lemma target resolves against. Once the
+ * first full load has completed the model holds it (register-independent,
+ * rebuilt only when documents change), so this is O(1) and the prompt opens at
+ * once. Only the pre-first-load window — seeded from the catalogue cache, which
+ * carries no token data — falls back to walking the catalogue, behind a
+ * progress notification since that is a few seconds on a cold corpus. */
+const resolveVocabulary = async (
+  model: CorpusModel,
+  state: CorpusState,
+): Promise<ReadonlySet<string>> => {
+  if (model.loaded) return state.vocabulary;
+  return await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Compositor: indexing the corpus vocabulary…",
+    },
+    () => Promise.resolve(corpusVocabulary(state.catalogue)),
+  );
+};
+
 /** Render unaccounted words as warning diagnostics under this overlay's source,
  * carrying the surface as the code so the code-action provider can find them. */
 const unaccountedDiagnostics = (
@@ -241,10 +264,10 @@ export type DictionaryController = {
 export const createDictionaryController = (
   getModel: () => CorpusModel | undefined,
   context: vscode.ExtensionContext,
-  /** Called after a curation cascade lands its entries (the shards are on disk
-   * by then) — the dictionary panel hangs its immediate re-rank off this,
+  /** Called with the surfaces a curation cascade just wrote (the shards are on
+   * disk by then) — the dictionary panel patches them in immediately off this,
    * rather than waiting for the corpus watcher's debounced reload. */
-  onEntriesWritten?: () => void,
+  onEntriesWritten?: (surfaces: ReadonlySet<string>) => void,
 ): DictionaryController => {
   const overlay = createOverlay(context, {
     setting: SETTING,
@@ -287,7 +310,14 @@ export const createDictionaryController = (
     const { root, state } = model;
     const dictionary = state.catalogue.dictionary;
     if (dictionary === undefined) return;
-    const vocabulary = corpusVocabulary(state.catalogue);
+    // `modern` bottoms out without consulting the corpus vocabulary; every
+    // other kind needs it, but only after the user types a target — and the
+    // model holds it ready (O(1)), so the input box opens at once instead of
+    // waiting on a whole-corpus walk (see resolveVocabulary).
+    const vocabulary =
+      kind === "modern"
+        ? EMPTY_VOCABULARY
+        : await resolveVocabulary(model, state);
     const decisions: Decisions = new Map();
     const step = await addEntry(
       surface,
@@ -306,9 +336,10 @@ export const createDictionaryController = (
       return;
     }
     try {
+      const written = new Set(decisions.keys());
       await writeDecisions(root, decisions);
-      clearSurfaces(new Set(decisions.keys()));
-      onEntriesWritten?.();
+      clearSurfaces(written);
+      onEntriesWritten?.(written);
     } catch (error) {
       void vscode.window.showErrorMessage(
         `Compositor: ${error instanceof Error ? error.message : String(error)}`,

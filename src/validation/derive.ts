@@ -46,6 +46,13 @@ export type FileDerivations = {
   marked: MarkedToken[];
   /** Folded surface → its candidate occurrences within this file. */
   surfaces: Map<string, SurfaceSummary>;
+  /** Folded surfaces of tokens inside exempting markup (person / place / org /
+   * citation / language). Out of the register but printed, so — unioned with
+   * `surfaces` — they complete the corpus's attested vocabulary the way the
+   * accounting rule's own walk does (see account.ts `statusOf`, which classes a
+   * token exempt before mechanical; the compositor's `vocabularyFromFiles`
+   * reads this). */
+  exemptSurfaces: Set<string>;
 };
 
 /** Derive a compiled file's register-independent data: one walk of every
@@ -57,6 +64,7 @@ export const deriveFile = (
 ): FileDerivations => {
   const marked: MarkedToken[] = [];
   const surfaces = new Map<string, SurfaceSummary>();
+  const exemptSurfaces = new Set<string>();
   const walk = (docText: MarkitDocument): void => {
     for (const block of docText.blocks) {
       const line = block.source?.start.line;
@@ -65,9 +73,13 @@ export const deriveFile = (
         if (token.word !== undefined) {
           marked.push({ folded, word: token.word, textId: docText.id, line });
         }
-        if (exemptionOf(token) !== undefined || isMechanical(token.text)) {
+        // Exemption before the mechanical class, as `statusOf` orders them: a
+        // token inside exempting markup is out of the register but printed.
+        if (exemptionOf(token) !== undefined) {
+          exemptSurfaces.add(folded);
           continue;
         }
+        if (isMechanical(token.text)) continue;
         const summary = surfaces.get(folded);
         if (summary === undefined) {
           surfaces.set(folded, { candidates: 1, line });
@@ -79,5 +91,5 @@ export const deriveFile = (
     for (const child of docText.children) walk(child);
   };
   walk(doc);
-  return { formatted: format(text) === text, marked, surfaces };
+  return { formatted: format(text) === text, marked, surfaces, exemptSurfaces };
 };

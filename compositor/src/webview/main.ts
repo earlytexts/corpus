@@ -64,6 +64,11 @@ let data: Data = { variants: [], lemmas: [], curation: [] };
 /** The panel starts up not-yet-loaded: render a spinner note, not "0 entries",
  * until the first data message settles this. */
 let status: Status = "loading";
+/** Whether the shown data is an optimistic patch the corpus reload has yet to
+ * confirm (the backlog re-rank runs in the background). While true a small
+ * "Updating…" pill shows and the curation count defers to it; the reload's
+ * authoritative refresh clears it. */
+let stale = false;
 /** Whether the curation backlog reflects a completed compile. The lemma and
  * variant views are ready as soon as the shards are read, but the backlog is
  * keyed on the corpus token index, which is empty until the first full load — so
@@ -87,6 +92,7 @@ const container = (className: string): HTMLDivElement => {
   return element;
 };
 const tabsEl = container("tabs");
+const statusEl = container("status");
 const lettersEl = container("letters");
 const addEl = container("add");
 const rowsEl = container("rows");
@@ -97,9 +103,17 @@ const pagerEl = container("pager");
 const render = (): void => {
   vscode.setState({ tab, letter, pageIndex });
   renderTabs();
+  renderStatus();
   renderLetters();
   renderAdd();
   renderRows();
+};
+
+/** A small "Updating…" pill while an optimistic edit awaits the reload's
+ * re-rank; empty otherwise. Its own container so flipping it never disturbs the
+ * rows. */
+const renderStatus = (): void => {
+  statusEl.replaceChildren(...(stale ? [span("pill", "Updating…")] : []));
 };
 
 /** The rows area: a status note while the panel is loading or corpus-less (so a
@@ -208,15 +222,18 @@ const renderAdd = (): void => {
   } else {
     // Curation has no add field — its rows carry the actions. Instead the header
     // reports the backlog, noting when only the most-frequent slice is shown.
+    // While stale the total is provisional (the re-rank is pending), so defer.
     const shown = data.curation.length;
     addEl.replaceChildren(
       div(
         "count",
-        curationTotal > shown
-          ? `The ${shown} most frequent of ${curationTotal} unaccounted surfaces — biggest wins first.`
-          : `${curationTotal} unaccounted ${
-              curationTotal === 1 ? "surface" : "surfaces"
-            } to curate.`,
+        stale
+          ? "Updating the backlog…"
+          : curationTotal > shown
+            ? `The ${shown} most frequent of ${curationTotal} unaccounted surfaces — biggest wins first.`
+            : `${curationTotal} unaccounted ${
+                curationTotal === 1 ? "surface" : "surfaces"
+              } to curate.`,
       ),
     );
   }
@@ -393,23 +410,33 @@ const block = (
 
 /* ------------------------------- bootstrap ------------------------------- */
 
-document.body.append(tabsEl, lettersEl, addEl, rowsEl, pagerEl);
+document.body.append(tabsEl, statusEl, lettersEl, addEl, rowsEl, pagerEl);
 
 window.addEventListener("message", (event: MessageEvent) => {
   const message = event.data as { type: string } & Partial<Data> & {
       status?: Status;
       curationTotal?: number;
       curationReady?: boolean;
+      stale?: boolean;
     };
+  // A bare "stale" message just flips the pill (the reload's start), leaving the
+  // shown data in place until the authoritative refresh arrives.
+  if (message.type === "stale") {
+    stale = message.stale ?? false;
+    render();
+    return;
+  }
   if (message.type === "data") {
-    status = message.status ?? "ready";
-    curationReady = message.curationReady ?? false;
+    // Merge, not replace: a payload may omit fields it did not recompute.
+    status = message.status ?? status;
+    curationReady = message.curationReady ?? curationReady;
     data = {
-      variants: message.variants ?? [],
-      lemmas: message.lemmas ?? [],
-      curation: message.curation ?? [],
+      variants: message.variants ?? data.variants,
+      lemmas: message.lemmas ?? data.lemmas,
+      curation: message.curation ?? data.curation,
     };
-    curationTotal = message.curationTotal ?? data.curation.length;
+    curationTotal = message.curationTotal ?? curationTotal;
+    stale = message.stale ?? false;
     render();
   }
 });

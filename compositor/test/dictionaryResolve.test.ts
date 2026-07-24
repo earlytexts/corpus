@@ -6,12 +6,13 @@
  */
 
 import { expect, test } from "vitest";
-import { buildCatalogue } from "@earlytexts/corpus";
+import { buildCatalogue, loadCorpus } from "@earlytexts/corpus";
 import { CORPUS_ROOT, corpus, memoryCorpus } from "@earlytexts/corpus/test";
 import {
   corpusVocabulary,
   resolveLemmaTarget,
   resolveSpellingTarget,
+  vocabularyFromFiles,
 } from "../src/lib/dictionaryResolve.ts";
 
 const yes = () => true;
@@ -51,8 +52,8 @@ test("an unattested lemma is allowed only on confirmation", () => {
   expect(resolveLemmaTarget("datum", no, no)).toEqual({ kind: "confirm" });
 });
 
-const vocabulary = async (text: string): Promise<Set<string>> => {
-  const fixture = corpus()
+const fixtureOf = (text: string): Record<string, string> =>
+  corpus()
     .author("hume", { forename: "David", surname: "Hume" })
     .work("hume", "enquiry", {
       title: "An Enquiry",
@@ -72,8 +73,10 @@ const vocabulary = async (text: string): Promise<Set<string>> => {
       text,
     )
     .build();
+
+const vocabulary = async (text: string): Promise<Set<string>> => {
   const { catalogue } = await buildCatalogue(
-    memoryCorpus(fixture),
+    memoryCorpus(fixtureOf(text)),
     CORPUS_ROOT,
   );
   return corpusVocabulary(catalogue);
@@ -86,4 +89,22 @@ test("corpusVocabulary folds every word token but drops the mechanical ones", as
   expect(vocab.has("sleeps")).toBe(true);
   expect(vocab.has("1739")).toBe(false); // digits are mechanical
   expect(vocab.has("mdccxl")).toBe(false); // a roman numeral is mechanical
+});
+
+test("vocabularyFromFiles reproduces corpusVocabulary from the derivations", async () => {
+  // The same set the quick-fix needs, but read off the per-file derivations
+  // (surfaces ∪ exemptSurfaces over works/ files) rather than re-walking every
+  // edition — exempting markup, folding, and mechanical exclusion all agree.
+  const text =
+    "{#1}\nThe Wombat sleeps in [p:*Will*] on MDCCXL, page 42; the bishop's cat.";
+  const fixture = memoryCorpus(fixtureOf(text));
+  const { catalogue } = await buildCatalogue(fixture, CORPUS_ROOT);
+  const files = await loadCorpus(fixture, CORPUS_ROOT);
+  const fromFiles = vocabularyFromFiles(files);
+  expect(fromFiles).toEqual(corpusVocabulary(catalogue));
+  expect(fromFiles.has("will")).toBe(true); // exempt but printed
+  expect(fromFiles.has("wombat")).toBe(true);
+  expect(fromFiles.has("bishop's")).toBe(true); // possessive, own key
+  expect(fromFiles.has("mdccxl")).toBe(false); // mechanical
+  expect(fromFiles.has("42")).toBe(false);
 });

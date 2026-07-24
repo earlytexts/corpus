@@ -130,9 +130,9 @@ export const activate = async (
   const dictionary: DictionaryController = createDictionaryController(
     () => model,
     context,
-    // A curation cascade's entries are on disk the moment it completes: re-rank
-    // the panel now rather than after the watcher's debounced reload.
-    () => dictionaryPanel.onCorpusChanged(),
+    // A curation cascade's entries are on disk the moment it completes: patch
+    // them into the panel now rather than after the watcher's debounced reload.
+    (surfaces) => dictionaryPanel.onEntriesWritten(surfaces),
   );
   context.subscriptions.push({ dispose: () => dictionary.dispose() });
 
@@ -178,7 +178,10 @@ export const activate = async (
         dictionary.onCorpusChanged();
         dictionaryPanel.onCorpusChanged();
         searchPanel.onCorpusChanged();
-        contribution.onCorpusChanged();
+        // The model fires twice per load (start and finish); the git working
+        // tree can't have changed mid-reload, and statusMatrix over the whole
+        // tree is not cheap, so only re-read once the reload has settled.
+        if (model?.loading === false) contribution.onCorpusChanged();
       }),
     );
     registerDiagnostics(model, context);
