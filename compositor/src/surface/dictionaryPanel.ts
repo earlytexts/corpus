@@ -20,11 +20,16 @@ import * as vscode from "vscode";
 import {
   nodeCorpusFs,
   parseDictionary,
+  type RawDictionary,
   readDictionaryShards,
   shardOf,
 } from "@earlytexts/corpus";
 import { dictionaryViews } from "../lib/dictionaryViews.ts";
-import { curationRows } from "../lib/curation.ts";
+import { type CurationRow, curationRows } from "../lib/curation.ts";
+import {
+  dropCuratedRows,
+  replaceShardEntries,
+} from "../lib/dictionaryPanelData.ts";
 import { removeEntryText, upsertEntryText } from "../lib/dictionaryEdits.ts";
 import {
   type EntryEdit,
@@ -32,7 +37,7 @@ import {
   lemmaEntry,
   variantEntry,
 } from "../lib/dictionaryPanelInput.ts";
-import { updateShard } from "./dictionaryShardIO.ts";
+import { readShardText, updateShard } from "./dictionaryShardIO.ts";
 import { PANEL_CSS } from "./dictionaryPanelCss.ts";
 import { panelHtml } from "./panelShell.ts";
 import type { CorpusModel } from "../corpusModel.ts";
@@ -62,8 +67,26 @@ type Incoming =
   | { type: "openExample"; path: string; line: number };
 
 export type DictionaryPanel = {
-  /** The corpus reloaded (or a shard was written elsewhere): re-derive. */
+  /** The corpus reloaded (or a shard was written elsewhere): re-derive. While a
+   * reload is mid-flight the panel only flags itself stale (the corpus-wide
+   * re-rank is not ready yet); a completed reload re-derives in full. */
   onCorpusChanged: () => void;
+  /** A quick-fix cascade just wrote these surfaces' entries (the shards are on
+   * disk): patch them in immediately, the same as a panel edit, rather than
+   * waiting for the watcher's debounced reload. */
+  onEntriesWritten: (surfaces: ReadonlySet<string>) => void;
+};
+
+/** The panel's cached derivation, kept so a single-surface edit can patch just
+ * its shard instead of re-reading all of them and re-ranking the whole backlog.
+ * The variant/lemma views are re-derived from `dictionary` on each post (a
+ * cheap in-memory pass); the curation backlog is held ranked so an edit only
+ * drops the rows it accounts for, deferring the corpus-wide re-rank to the
+ * reload. */
+type PanelCache = {
+  dictionary: RawDictionary;
+  curation: CurationRow[];
+  curationTotal: number;
 };
 
 export const createDictionaryPanel = (
@@ -75,19 +98,37 @@ export const createDictionaryPanel = (
   context: vscode.ExtensionContext,
 ): DictionaryPanel => {
   let view: vscode.WebviewView | undefined;
+  let cache: PanelCache | undefined;
 
-  /** Read the shards, derive the two views, tally the curation backlog, and post
-   * all three to the webview, tagged with the panel's status so the webview can
-   * tell "still loading" from "genuinely empty". The lemma/variant views come
-   * straight from the shards on disk, so they are ready the moment a corpus root
-   * is known — but the curation backlog is keyed on the token index, which is
-   * empty until the first full compile completes (`model.loaded`), so it carries
-   * its own readiness flag. */
-  const refresh = async (): Promise<void> => {
+  /** Derive the two views from a dictionary and post everything to the webview,
+   * tagged with the panel's status and whether it is `stale` (an optimistic
+   * patch the reload has yet to confirm — the webview shows an "Updating…"
+   * hint). The curation backlog is keyed on the token index, empty until the
+   * first full compile (`model.loaded`), so it carries its own readiness flag. */
+  const postReady = (data: PanelCache, stale: boolean): void => {
+    const { variants, lemmas } = dictionaryViews(data.dictionary);
+    void view?.webview.postMessage({
+      type: "data",
+      status: "ready",
+      variants,
+      lemmas,
+      curation: data.curation,
+      curationTotal: data.curationTotal,
+      curationReady: getModel()?.loaded ?? false,
+      stale,
+    });
+  };
+
+  /** Re-read every shard, re-rank the whole backlog, cache it, and post — the
+   * authoritative refresh, run on open, on an external change, and after a
+   * reload settles. Straight from the shards on disk, so the views are ready the
+   * moment a corpus root is known. */
+  const refreshFull = async (): Promise<void> => {
     if (view === undefined || !view.visible) return;
     const model = getModel();
     const root = model?.root;
     if (root === undefined) {
+      cache = undefined;
       void view.webview.postMessage({
         type: "data",
         status: corpusSettled() ? "no-corpus" : "loading",
@@ -96,32 +137,56 @@ export const createDictionaryPanel = (
         curation: [],
         curationTotal: 0,
         curationReady: false,
+        stale: false,
       });
       return;
     }
     const { dictionary } = parseDictionary(
       await readDictionaryShards(nodeCorpusFs, root),
     );
-    const { variants, lemmas } = dictionaryViews(dictionary);
     const { rows, total } = curationRows(
       model?.state?.tokenIndex ?? new Map(),
       dictionary,
       MAX_CURATION,
     );
-    void view.webview.postMessage({
-      type: "data",
-      status: "ready",
-      variants,
-      lemmas,
-      curation: rows,
-      curationTotal: total,
-      curationReady: model?.loaded ?? false,
-    });
+    cache = { dictionary, curation: rows, curationTotal: total };
+    postReady(cache, false);
   };
 
-  /** Run one edit against the corpus root, then re-derive; surface any error
-   * (a validation rejection or a bad write) as a message. */
-  const edit = async (run: (root: string) => Promise<void>): Promise<void> => {
+  /** Patch just the written surfaces into the cache and post at once: re-read
+   * only their shards (byte-identical to a full re-read for those entries),
+   * swap them in, drop the curation rows they account for, and mark the result
+   * stale — the reload that follows re-ranks the backlog and clears the flag.
+   * Falls back to a full refresh before the first one has cached anything. */
+  const patch = async (surfaces: string[]): Promise<void> => {
+    if (view === undefined || !view.visible) return;
+    const root = getModel()?.root;
+    if (root === undefined || cache === undefined) {
+      await refreshFull();
+      return;
+    }
+    let dictionary = cache.dictionary;
+    for (const shard of new Set(surfaces.map(shardOf))) {
+      const text = await readShardText(root, shard);
+      const { dictionary: entries } = parseDictionary(
+        new Map([[shard, text.trim() === "" ? "{}" : text]]),
+      );
+      dictionary = replaceShardEntries(dictionary, shard, entries);
+    }
+    cache = {
+      dictionary,
+      curation: dropCuratedRows(cache.curation, new Set(surfaces)),
+      curationTotal: cache.curationTotal,
+    };
+    postReady(cache, true);
+  };
+
+  /** Run one edit against the corpus root, then patch its surfaces in; surface
+   * any error (a validation rejection or a bad write) as a message. */
+  const edit = async (
+    surfaces: string[],
+    run: (root: string) => Promise<void>,
+  ): Promise<void> => {
     const root = getModel()?.root;
     if (root === undefined) {
       void vscode.window.showWarningMessage("Compositor: no corpus loaded.");
@@ -129,7 +194,7 @@ export const createDictionaryPanel = (
     }
     try {
       await run(root);
-      await refresh();
+      await patch(surfaces);
     } catch (error) {
       void vscode.window.showErrorMessage(
         `Compositor: ${error instanceof Error ? error.message : String(error)}`,
@@ -140,23 +205,27 @@ export const createDictionaryPanel = (
   const onMessage = (message: Incoming): void => {
     switch (message.type) {
       case "ready":
-        void refresh();
+        void refreshFull();
         return;
       case "addLemma":
-        void edit((root) => writeAdd(root, lemmaEntry(message.lemma)));
+        void edit([message.lemma], (root) =>
+          writeAdd(root, lemmaEntry(message.lemma)),
+        );
         return;
       case "addForm":
-        void edit((root) =>
+        void edit([message.form], (root) =>
           writeAdd(root, formEntry(message.lemma, message.form)),
         );
         return;
       case "addVariant":
-        void edit((root) =>
+        void edit([message.surface], (root) =>
           writeAdd(root, variantEntry(message.surface, message.spelling)),
         );
         return;
       case "removeEntry":
-        void edit((root) => removeEntry(root, message.surface));
+        void edit([message.surface], (root) =>
+          removeEntry(root, message.surface),
+        );
         return;
       case "curate":
         // The Curation tab reuses the editor quick-fix's full resolution
@@ -181,6 +250,19 @@ export const createDictionaryPanel = (
     }
   };
 
+  /** A corpus reload: while it is mid-flight the token index (and so the backlog
+   * re-rank) is stale, so only flag the panel; a completed reload re-derives in
+   * full. This collapses the reload's two fires (start and finish) — and the
+   * optimistic patch that preceded them — to a single authoritative refresh. */
+  const onCorpusChanged = (): void => {
+    if (view === undefined || !view.visible) return;
+    if (getModel()?.loading) {
+      void view.webview.postMessage({ type: "stale", stale: true });
+      return;
+    }
+    void refreshFull();
+  };
+
   const provider: vscode.WebviewViewProvider = {
     resolveWebviewView: (webviewView) => {
       view = webviewView;
@@ -195,8 +277,11 @@ export const createDictionaryPanel = (
         "webview.js",
       );
       webviewView.webview.onDidReceiveMessage(onMessage);
-      webviewView.onDidChangeVisibility(() => void refresh());
-      void refresh();
+      webviewView.onDidChangeVisibility(() => void refreshFull());
+      webviewView.onDidDispose(() => {
+        view = undefined;
+      });
+      void refreshFull();
     },
   };
 
@@ -204,7 +289,10 @@ export const createDictionaryPanel = (
     vscode.window.registerWebviewViewProvider(VIEW_ID, provider),
   );
 
-  return { onCorpusChanged: () => void refresh() };
+  return {
+    onCorpusChanged,
+    onEntriesWritten: (surfaces) => void patch([...surfaces]),
+  };
 };
 
 /** Write a validated add edit, or throw its validation error. */

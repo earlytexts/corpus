@@ -11,7 +11,11 @@
  * these decisions and writes the resulting entries across their shards.
  */
 
-import { accountTokens, type Catalogue } from "@earlytexts/corpus";
+import {
+  accountTokens,
+  type Catalogue,
+  type CorpusFile,
+} from "@earlytexts/corpus";
 import { distinctEditionDocuments } from "./catalogueWalk.ts";
 
 /**
@@ -72,6 +76,35 @@ export const corpusVocabulary = (catalogue: Catalogue): Set<string> => {
     for (const token of accountTokens(document, catalogue.dictionary)) {
       if (token.status !== "mechanical") vocab.add(token.folded);
     }
+  }
+  return vocab;
+};
+
+/**
+ * The same attested vocabulary, read off the model's per-file derivations
+ * instead of re-walking the whole catalogue — O(entries), so the quick-fix can
+ * hold it ready rather than rebuilding it (which re-tokenizes every edition)
+ * before every prompt. Each work file's derivation already has its candidate
+ * `surfaces` (register-independent) and, since A1, its `exemptSurfaces`; their
+ * union over `works/` files is `corpusVocabulary` (proven equal in the tests),
+ * with two accepted, provably-inert differences:
+ *
+ *   - it walks loaded work files rather than catalogue edition documents, so
+ *     work-stub `index.mit` metadata tokens could in principle count — but a
+ *     stub carries no body, so in practice it adds nothing (see the test);
+ *   - a mechanical-shaped surface that is *registered* (or possessive of one)
+ *     is in `corpusVocabulary` but not here — irrelevant to the cascade, which
+ *     checks `inDictionary` before ever consulting `inCorpus`, so a registered
+ *     word never reaches this set.
+ */
+export const vocabularyFromFiles = (
+  files: Iterable<CorpusFile>,
+): Set<string> => {
+  const vocab = new Set<string>();
+  for (const file of files) {
+    if (!file.path.startsWith("works/")) continue;
+    for (const surface of file.derived.surfaces.keys()) vocab.add(surface);
+    for (const surface of file.derived.exemptSurfaces) vocab.add(surface);
   }
   return vocab;
 };

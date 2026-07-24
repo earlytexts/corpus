@@ -45,6 +45,22 @@ test("derive: exempt and mechanical tokens are not candidates", () => {
   expect(surfaces.get("writ")?.candidates).toBe(1);
 });
 
+test("derive: exemptSurfaces are the folded surfaces inside exempting markup", () => {
+  const { exemptSurfaces } = derive(
+    doc('Writ by [p:*Will* Shake] in ["A Treatise"] on MDCCXL, page 42.'),
+  );
+  // The attested-vocabulary twin of `surfaces`: exempt tokens are out of the
+  // register but still *printed*, so they belong to the corpus's vocabulary
+  // (the compositor unions the two — dictionaryResolve.ts). Exemption is
+  // checked before the mechanical class, so a roman-numeral-shaped word inside
+  // exempting markup would count as exempt; the plain mechanical tokens here
+  // (MDCCXL, 42) are outside any markup and so join neither set.
+  expect(exemptSurfaces).toEqual(new Set(["will", "shake", "a", "treatise"]));
+  expect(exemptSurfaces.has("mdccxl")).toBe(false);
+  expect(exemptSurfaces.has("42")).toBe(false);
+  expect(exemptSurfaces.has("writ")).toBe(false);
+});
+
 test("derive: possessives and fused units are candidates under their own key", () => {
   const { surfaces } = derive(doc("The bishop's reasoning a~priori."));
   // The possessive rule is the register's to apply — the summary just counts.

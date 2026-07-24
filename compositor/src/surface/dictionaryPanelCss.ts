@@ -111,4 +111,14 @@ button.link:hover { background: transparent; text-decoration: underline; }
 }
 .pager .spacer { flex: 1; }
 .empty, .count { opacity: 0.65; padding: 8px 2px; }
+.status { display: flex; min-height: 0; margin: -4px 0 6px; }
+.status:empty { display: none; }
+.pill {
+  font-size: 0.85em;
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+  border-radius: 10px;
+  padding: 1px 9px;
+  opacity: 0.85;
+}
 `;

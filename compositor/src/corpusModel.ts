@@ -33,9 +33,14 @@ import {
   type Work,
   writeCatalogue,
   writeCatalogueDictionary,
+  writeCatalogueSources,
 } from "@earlytexts/corpus";
-import { createCatalogueWriteBack } from "./lib/catalogueWriteBack.ts";
+import {
+  createCatalogueWriteBack,
+  type WriteScope,
+} from "./lib/catalogueWriteBack.ts";
 import { buildTokenIndex, type TokenIndex } from "./lib/curation.ts";
+import { vocabularyFromFiles } from "./lib/dictionaryResolve.ts";
 import { reloadKind } from "./lib/reloadKind.ts";
 
 export type CorpusState = {
@@ -48,6 +53,13 @@ export type CorpusState = {
    * dictionary-only reloads, and empty until the first full load (the
    * catalogue cache carries no token data). */
   tokenIndex: TokenIndex;
+  /** Every folded surface the corpus attests (see dictionaryResolve.ts,
+   * `vocabularyFromFiles`): register-independent, so — like the token index —
+   * built once per document generation and reused untouched across
+   * dictionary-only reloads; empty until the first full load. The quick-fix
+   * reads it to resolve a respelling/lemma target without re-walking the
+   * corpus. */
+  vocabulary: Set<string>;
 };
 
 export type CorpusModel = {
@@ -104,6 +116,15 @@ export const createCorpusModel = (root: string): CorpusModel => {
     async (catalogue, warnings) => {
       await writeCatalogueDictionary(nodeCorpusFs, root, catalogue, warnings);
     },
+    async (catalogue, warnings, paths) => {
+      await writeCatalogueSources(
+        nodeCorpusFs,
+        root,
+        catalogue,
+        warnings,
+        paths,
+      );
+    },
   );
 
   /**
@@ -137,7 +158,13 @@ export const createCorpusModel = (root: string): CorpusModel => {
         }
       }
       if (state === undefined) {
-        state = { catalogue, warnings, violations: [], tokenIndex: new Map() };
+        state = {
+          catalogue,
+          warnings,
+          violations: [],
+          tokenIndex: new Map(),
+          vocabulary: new Set(),
+        };
         emitter.fire();
       }
     } catch {
@@ -212,12 +239,30 @@ export const createCorpusModel = (root: string): CorpusModel => {
         docsChanged || state === undefined
           ? buildTokenIndex(files.values(), root)
           : state.tokenIndex;
-      state = { catalogue, warnings, violations, tokenIndex };
+      // The attested vocabulary is register-independent too, so it rides the
+      // same reuse rule as the token index (see CorpusState.vocabulary).
+      const vocabulary =
+        docsChanged || state === undefined
+          ? vocabularyFromFiles(files.values())
+          : state.vocabulary;
+      state = { catalogue, warnings, violations, tokenIndex, vocabulary };
       // Refresh the compiled catalogue/ in the background (next startup's instant
-      // tree, and the computer's dev input). The latest catalogue supersedes any
-      // still-unwritten one, so rapid edits can't pin more than one extra
-      // generation; a failure only costs the cache.
-      writeBack.enqueue(catalogue, warnings, docsChanged);
+      // tree, and the computer's dev input). A full reload rewrites everything; a
+      // per-file reload rewrites only its documents; a dictionary-only reload
+      // refreshes just catalogue.json/dictionary.json — so a single save no
+      // longer serialises all ~1300 documents (the memory spike). The latest
+      // catalogue supersedes any still-unwritten one, so rapid edits can't pin
+      // more than one extra generation; a failure only costs the cache.
+      const scope: WriteScope =
+        full || files.size === 0
+          ? { kind: "full" }
+          : paths !== undefined && paths.size > 0
+            ? {
+                kind: "docs",
+                paths: new Set([...paths].map((p) => `data/${p}`)),
+              }
+            : { kind: "dictionary" };
+      writeBack.enqueue(catalogue, warnings, scope);
     } catch (error) {
       state = undefined;
       const message = error instanceof Error ? error.message : String(error);
@@ -248,15 +293,18 @@ export const createCorpusModel = (root: string): CorpusModel => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pendingFull = false;
   let pendingPaths = new Set<string>();
-  const onEvent = (uri: vscode.Uri): void => {
+  const onEvent = (uri: vscode.Uri, isDelete = false): void => {
     const path = uri.fsPath;
     const rel = path.startsWith(`${root}/data/`)
       ? path.slice(`${root}/data/`.length)
       : undefined;
     const kind = rel === undefined ? "full" : reloadKind(rel);
-    if (kind === "recompile") {
+    if (kind === "recompile" && !isDelete) {
       pendingPaths.add(rel!);
-    } else if (kind === "full") {
+    } else if (kind === "full" || (kind === "recompile" && isDelete)) {
+      // A deleted .mit would otherwise leave its stale documents/<docKey>.json
+      // behind the incremental write (catalogue/ is also the computer's input),
+      // so a delete forces a full rewrite rather than a per-file one.
       pendingFull = true;
     }
     // "revalidate": nothing to flag — the debounced load below revalidates.
@@ -273,9 +321,9 @@ export const createCorpusModel = (root: string): CorpusModel => {
   const watcher = vscode.workspace.createFileSystemWatcher(
     new vscode.RelativePattern(root, "data/**"),
   );
-  watcher.onDidCreate(onEvent);
-  watcher.onDidChange(onEvent);
-  watcher.onDidDelete(onEvent);
+  watcher.onDidCreate((uri) => onEvent(uri));
+  watcher.onDidChange((uri) => onEvent(uri));
+  watcher.onDidDelete((uri) => onEvent(uri, true));
 
   void loadFromCache().then(() => load(true));
 
