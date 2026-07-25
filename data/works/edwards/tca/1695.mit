@@ -7,3 +7,5 @@ breadcrumb = "Thoughts Concerning Atheism"
 authors = ["edwards"]
 published = [1695]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A38046.0001.001?view=toc"
+estc = "R18870"
+tcp = "A38046"

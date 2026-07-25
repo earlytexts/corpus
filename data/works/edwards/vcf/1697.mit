@@ -7,3 +7,5 @@ breadcrumb = "Vindication of the Christian Faith"
 authors = ["edwards"]
 published = [1697]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A37972.0001.001?view=toc"
+estc = "R21772"
+tcp = "A37972"

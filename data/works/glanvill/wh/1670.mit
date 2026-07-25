@@ -7,3 +7,5 @@ breadcrumb = "Way of Happiness"
 authors = ["glanvill"]
 published = [1670]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A42834.0001.001?rgn=main;view=fulltext"
+estc = "R23021"
+tcp = "A42834"

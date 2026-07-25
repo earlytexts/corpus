@@ -7,3 +7,5 @@ breadcrumb = "Defence of the Discourse Concerning the Knowledge of Christ"
 authors = ["sherlock"]
 published = [1675]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A59809.0001.001?rgn=main;view=fulltext"
+estc = "R4375"
+tcp = "A59809"

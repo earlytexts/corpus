@@ -7,3 +7,5 @@ breadcrumb = "Philosophia Pia"
 authors = ["glanvill"]
 published = [1671]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A42819.0001.001?rgn=main;view=fulltext"
+estc = "R23327"
+tcp = "A42819"

@@ -6,6 +6,7 @@ title = "Essays, Moral and Political"
 breadcrumb = "Essays, Part 1"
 authors = ["hume"]
 published = [1741]
+estc = "T4004"
 
 {#title}
 ^1 ESSAYS,

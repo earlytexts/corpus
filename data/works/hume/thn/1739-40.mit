@@ -7,6 +7,7 @@ breadcrumb = "Treatise"
 authors = ["hume"]
 published = [1739, 1740]
 sourceDesc = "The first two Books of Hume's [Treatise of Human Nature] were published together in 1739. The third Book, which included an Appendix making some changes to Book 1, was published in 1740. There was only one edition published in Hume's lifetime, and this edition is therefore our copytext."
+estc = "T4002"
 
 {#title}
 ^5 A

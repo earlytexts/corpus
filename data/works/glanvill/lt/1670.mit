@@ -7,3 +7,5 @@ breadcrumb = "Logou Threskeia"
 authors = ["glanvill"]
 published = [1670]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A42816.0001.001?rgn=main;view=fulltext"
+estc = "R23387"
+tcp = "A42816"

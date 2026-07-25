@@ -18,6 +18,7 @@ import * as vscode from "vscode";
 import type { Author, Catalogue, Edition, Work } from "@earlytexts/corpus";
 import type { MarkitDocument } from "@jsr/earlytexts__markit";
 import type { CorpusModel } from "../../core/corpusModel.ts";
+import { authorLinks, editionLinks, linkTokens } from "../../core/links.ts";
 import {
   borrowedChildren,
   editionPath,
@@ -115,14 +116,18 @@ const authorItem = (author: Author): vscode.TreeItem => {
     `${author.surname}, ${author.forename}`.replace(/, $/, ""),
     vscode.TreeItemCollapsibleState.Collapsed,
   );
+  const links = authorLinks(author);
   item.description = lifespan(author);
   item.iconPath = new vscode.ThemeIcon("person");
-  item.contextValue = "author";
+  // The link tokens are what the "Open in VIAF/Wikidata" menu items match on, so
+  // each shows only for an author who records that identifier.
+  item.contextValue = `author${linkTokens(links)}`;
   item.tooltip = [
     author.title,
     `${author.forename} ${author.surname}`.trim(),
     lifespan(author),
     author.nationality,
+    ...links.map((link) => `${link.label} ${link.id}`),
   ]
     .filter((part) => part !== undefined && part !== "")
     .join(" · ");
@@ -162,10 +167,13 @@ const borrowedItem = (
   );
   item.description = edition.slug;
   item.iconPath = new vscode.ThemeIcon("references");
-  // As with edition nodes, a distinct value when a later edition follows (in
-  // the borrowed edition's own work) so "Compare with Next" can hide.
+  // As with edition nodes: a `next` token when a later edition follows (in the
+  // borrowed edition's own work) so "Compare with Next" can hide, plus a token
+  // per external identifier the edition records.
   const hasNext = work.editions.indexOf(edition) < work.editions.length - 1;
-  item.contextValue = hasNext ? "borrowedHasNext" : "borrowed";
+  item.contextValue = `borrowed${hasNext ? ".next" : ""}${linkTokens(
+    editionLinks(edition),
+  )}`;
   item.tooltip = `${edition.title} (borrowed into this collection)`;
   const path = editionPath(catalogue, edition);
   if (path !== undefined) item.command = openCommand(path);
@@ -187,14 +195,18 @@ const editionItem = (
       ? vscode.TreeItemCollapsibleState.Collapsed
       : vscode.TreeItemCollapsibleState.None,
   );
+  const links = editionLinks(edition);
   item.iconPath = new vscode.ThemeIcon(canonical ? "star-full" : "file");
-  // A distinct value when a later edition follows (editions are ascending by
-  // year), so "Compare with Next" can hide on the latest/only edition.
+  // A `next` token when a later edition follows (editions are ascending by
+  // year), so "Compare with Next" can hide on the latest/only edition, plus a
+  // token per external identifier so the ESTC/TCP items show only where there
+  // is one to open.
   const hasNext = work.editions.indexOf(edition) < work.editions.length - 1;
-  item.contextValue = hasNext ? "editionHasNext" : "edition";
-  item.tooltip = canonical
-    ? `${edition.title} (canonical edition)`
-    : edition.title;
+  item.contextValue = `edition${hasNext ? ".next" : ""}${linkTokens(links)}`;
+  item.tooltip = [
+    canonical ? `${edition.title} (canonical edition)` : edition.title,
+    ...links.map((link) => `${link.label} ${link.id}`),
+  ].join(" · ");
   const path = editionPath(catalogue, edition);
   if (path !== undefined) item.command = openCommand(path);
   return item;

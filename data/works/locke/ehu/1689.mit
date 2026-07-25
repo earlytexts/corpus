@@ -6,3 +6,5 @@ title = "An Essay Concerning Humane Understanding"
 breadcrumb = "Essay Concerning Humane Understanding"
 authors = ["locke"]
 published = [1689]
+estc = "R22993"
+tcp = "A48874"

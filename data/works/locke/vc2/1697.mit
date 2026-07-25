@@ -7,3 +7,5 @@ breadcrumb = "Second Vindication of Christianity"
 authors = ["locke"]
 published = [1697]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A48892.0001.001?view=toc"
+estc = "R39074"
+tcp = "A48892"

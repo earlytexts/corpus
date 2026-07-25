@@ -7,3 +7,5 @@ breadcrumb = "Account of Reason and Faith"
 authors = ["norris"]
 published = [1697]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A52412.0001.001?view=toc"
+estc = "R17698"
+tcp = "A52412"

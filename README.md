@@ -51,22 +51,24 @@ Keys are camelCase. Values use Markit's TOML-style `key = value` syntax. Keys no
 
 ### Author (root of `data/authors/<author>.mit`)
 
-| Key           | Type   | Required | Notes                          |
-| ------------- | ------ | -------- | ------------------------------ |
-| `forename`    | string | yes      |                                |
-| `surname`     | string | yes      |                                |
-| `title`       | string | no       | honorific, e.g. `"Lord Kames"` |
-| `birth`       | number | yes      | year                           |
-| `death`       | number | yes      | year                           |
-| `nationality` | string | yes      | e.g. `"Scottish"`, `"English"` |
-| `sex`         | string | yes      | `"Male"` or `"Female"`         |
+| Key           | Type   | Required | Notes                                                     |
+| ------------- | ------ | -------- | --------------------------------------------------------- |
+| `forename`    | string | yes      |                                                           |
+| `surname`     | string | yes      |                                                           |
+| `title`       | string | no       | honorific, e.g. `"Lord Kames"`                            |
+| `birth`       | number | yes      | year                                                      |
+| `death`       | number | yes      | year                                                      |
+| `nationality` | string | yes      | e.g. `"Scottish"`, `"English"`                             |
+| `sex`         | string | yes      | `"Male"` or `"Female"`                                    |
+| `viaf`        | string | no       | VIAF cluster ID, digits only, e.g. `"49226972"` (see below) |
+| `wikidata`    | string | no       | Wikidata item ID, e.g. `"Q37160"` (see below)             |
 
 ### Texts (document roots and sections in `data/works/`)
 
 One schema applies to every text, all the way down: document roots and sections take the same keys. The keys split into two groups:
 
 - **Identity keys** (`title`, `breadcrumb`, `canonical`, `standalone`) describe the text itself and are never inherited.
-- **Cascading keys** (`authors`, `imported`, `published`, `sourceUrl`, `sourceDesc`, `dictionary`) flow downward: a section without the key takes the nearest ancestor's value; setting it overrides the value for that text and its descendants. Don't set a cascading key on a section when the inherited value is already right. (`dictionary` cascades per surface: a section's map merges over its ancestors' rather than replacing them.)
+- **Cascading keys** (`authors`, `imported`, `published`, `sourceUrl`, `sourceDesc`, `estc`, `tcp`, `dictionary`) flow downward: a section without the key takes the nearest ancestor's value; setting it overrides the value for that text and its descendants. Don't set a cascading key on a section when the inherited value is already right. (`dictionary` cascades per surface: a section's map merges over its ancestors' rather than replacing them.)
 
 Inheritance operates within a file. Each file is valid on its own terms: required keys must be present on the document root, and present _or inherited_ on every section.
 
@@ -81,6 +83,8 @@ Inheritance operates within a file. Each file is valid on its own terms: require
 | `published`  | number[] | yes\*    | yes       | year(s) this edition was published — usually one, an array only for an edition printed over several years (e.g. a multi-volume first edition) |
 | `sourceUrl`  | string   | no       | yes       | online transcription/facsimile the text was derived from                                                                                      |
 | `sourceDesc` | string   | no       | yes       | prose note on the text's provenance and editorial choices                                                                                     |
+| `estc`       | string   | no       | yes       | ESTC citation number of the printed item this edition transcribes, e.g. `"T77181"` (see below)                                                |
+| `tcp`        | string   | no       | yes       | Text Creation Partnership text ID, e.g. `"A52437"` (see below)                                                                                 |
 | `dictionary` | map      | no       | yes       | `[metadata.dictionary]` section: per-surface default-reading overrides (see [Edition overrides](DICTIONARY.md#edition-overrides-metadatadictionary))       |
 
 Notes:
@@ -90,6 +94,23 @@ Notes:
 - A text is "imported" when its content is present in the corpus (directly or via its descendants) — i.e. when a site can usefully link to it rather than merely list it. A partially-transcribed work sets `imported = true` at the root and `imported = false` on the missing sections (or vice versa).
 - `published` on a section records that the section entered the work in a particular year — e.g. an essay added to a later edition of the _Essays_.
 - `standalone` governs index listing only. A work borrowed into a collection (its editions spliced in as borrowed children, e.g. the parts of _Essays and Treatises_) is also a directory of its own, so it lists independently by default. Set `standalone = false` on its stub to keep it out of the indexes while leaving it reachable through the collection(s) that borrow it. It does not affect search, retrieval, or the collection itself.
+- `estc` and `tcp` are edition-level, like `sourceUrl`: they belong on a dated edition, never on the work stub (a work is abstracted from any particular printing, so it has no ESTC record).
+
+### External identifiers
+
+Four optional keys tie the corpus's own entities to the authority records for them elsewhere. Each holds the bare identifier, not a URL — the URL is built from it, so a change of provider does not touch the data:
+
+| Key        | On      | Form                                            | Resolves to                                       |
+| ---------- | ------- | ----------------------------------------------- | ------------------------------------------------- |
+| `viaf`     | author  | digits, e.g. `49226972`                         | `https://viaf.org/viaf/<id>`                      |
+| `wikidata` | author  | `Q` + digits, e.g. `Q37160`                     | `https://www.wikidata.org/wiki/<id>`              |
+| `estc`     | edition | `N`/`P`/`R`/`S`/`T`/`W` + digits, e.g. `T77181` | `https://datb.cerl.org/estc/<id>`                 |
+| `tcp`      | edition | `A00002`, `K000039.000`                         | `https://github.com/textcreationpartnership/<id>` |
+
+- **`viaf`** — the [VIAF](https://viaf.org) cluster for the author: the identifier libraries agree on, and the hub from which the national authority files (LC, BnF, DNB, …) hang. Digits only; VIAF clusters do merge, in which case the old ID redirects.
+- **`wikidata`** — the [Wikidata](https://www.wikidata.org) item for the author. Preferred over a Wikipedia article title because it survives a page rename, and because it reaches the article in every language (and the author's other identifiers) from one stable ID.
+- **`estc`** — the citation number of the record in the [English Short Title Catalogue](https://datb.cerl.org/estc) describing the printed item this edition transcribes. ESTC describes items **as published**, so the key belongs on the edition that was itself a printed item. An edition that only ever appeared inside a collection (a single essay, or a part reprinted unchanged within a larger volume) has no ESTC record of its own and carries no `estc`; the collection edition that _was_ printed carries it. ESTC moved from the British Library to CERL, which serves the records at `datb.cerl.org` (the old `estc.bl.uk/<id>` URLs no longer resolve to a record).
+- **`tcp`** — the [Text Creation Partnership](https://github.com/textcreationpartnership) text ID, where a TCP transcription of this same edition exists. The prefix names the phase: `A`/`B` = EEBO-TCP 1/2, `K` = ECCO-TCP, `N` = Evans-TCP. Set it only when the TCP text transcribes _this_ edition, not merely the same work. The ID resolves to the TCP text's own repository, which is the project's distribution point for every phase; where the corpus took its text from a reading interface over TCP (Michigan's `quod.lib.umich.edu`), that URL is in `sourceUrl`.
 
 ### Block metadata
 

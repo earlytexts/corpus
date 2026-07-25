@@ -7,3 +7,5 @@ breadcrumb = "Discourse Concerning a Future Judgment"
 authors = ["sherlock"]
 published = [1692]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A59835.0001.001?rgn=main;view=fulltext"
+estc = "R14162"
+tcp = "A59835"

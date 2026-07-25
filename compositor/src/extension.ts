@@ -18,6 +18,7 @@ import { vscodeNotifier } from "./adapters/vscode/notifier.ts";
 import { createCorpusTree } from "./adapters/vscode/corpusTree.ts";
 import { registerDoubleClickOpen } from "./adapters/vscode/doubleClickOpen.ts";
 import { authorPath, type TreeNode, workDocId } from "./core/nodes.ts";
+import { type LinkKind, linkUrl, nodeLinks } from "./core/links.ts";
 import { registerDiagnostics } from "./adapters/vscode/diagnostics.ts";
 import { registerHover } from "./adapters/vscode/hover.ts";
 import { nodeCorpusFs } from "@earlytexts/corpus";
@@ -261,6 +262,17 @@ export const activate = async (
         vscode.Uri.file(`${node.work.dir}/index.mit`),
       );
     }),
+    // Open a node's authority record in the browser. Each menu item shows only
+    // when the node's contextValue carries that link's token (see corpusTree),
+    // so the URL is always there by the time the command runs.
+    ...(["viaf", "wikidata", "estc", "tcp"] as LinkKind[]).map((kind) =>
+      command(`compositor.open.${kind}`, (node) => {
+        const url = linkUrl(nodeLinks(node), kind);
+        if (url !== undefined) {
+          return vscode.env.openExternal(vscode.Uri.parse(url));
+        }
+      }),
+    ),
     command("compositor.copyDocId", (node) => {
       const id =
         node?.kind === "edition" || node?.kind === "borrowed"

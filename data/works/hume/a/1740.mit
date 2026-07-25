@@ -7,6 +7,7 @@ breadcrumb = "Abstract"
 authors = ["hume"]
 published = [1740]
 sourceDesc = "Hume's [Abstract] of his own [Treatise] was published in 1740. Our copytext is that sole edition."
+estc = "N14912"
 
 {#title}
 ^4 AN

@@ -21,6 +21,12 @@ Compositor adds the corpus layer:
   labelled from metadata (names, titles, years; the canonical edition is
   starred). Clicking an author or edition opens its file; works expand to
   their editions, with the metadata stub on the context menu.
+- **Authority records** — right-click an author for "Open in VIAF" and "Open in
+  Wikidata", or an edition for "Open in ESTC" and "Open the TCP Text", from the
+  `viaf`/`wikidata`/`estc`/`tcp` identifiers the corpus records (see the
+  corpus's [external identifiers](../README.md#external-identifiers)). Each item
+  appears only where that identifier is present, and the identifiers show in the
+  node's tooltip.
 - **Corpus Search** — a docked search-and-replace panel shaped like VSCode's
   native Search view, scoped to the corpus's works: it filters by author
   (include/exclude) rather than file glob, covers only catalogue editions, and
@@ -187,6 +193,9 @@ is a directory line: if it needs the editor it lives in `surface/`, otherwise in
 
 - `nodes.ts` — the tree's node vocabulary (`TreeNode`) and the catalogue→file
   path lookups shared by the tree and the commands
+- `links.ts` — the external authority records an author or edition links to
+  (VIAF, Wikidata, ESTC, TCP): URL building, and the `viewItem` tokens that
+  decide which link items a node's context menu offers
 - `hints.ts` — the markup-suggestion engine (mine lexicons, scan raw source,
   shared source tokenizer)
 - `suggestions.ts` — markup-suggestion helpers (categories, wrap text)

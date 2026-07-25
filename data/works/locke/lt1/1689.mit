@@ -7,3 +7,5 @@ breadcrumb = "First Letter Concerning Toleration"
 authors = ["locke"]
 published = [1689]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A48884.0001.001?view=toc"
+estc = "R14566"
+tcp = "A48884"

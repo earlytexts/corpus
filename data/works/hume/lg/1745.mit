@@ -7,6 +7,7 @@ breadcrumb = "Letter from a Gentleman"
 authors = ["hume"]
 published = [1745]
 sourceDesc = "Hume's [Letter to a Gentleman] was published in 1745. Our copytext is this sole original edition."
+estc = "T180964"
 
 {#title}
 ^3 A

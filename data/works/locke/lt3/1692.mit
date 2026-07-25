@@ -7,3 +7,5 @@ breadcrumb = "Third Letter Concerning Toleration"
 authors = ["locke"]
 published = [1692]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A48900.0001.001?view=toc"
+estc = "R5673"
+tcp = "A48900"

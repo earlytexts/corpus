@@ -8,6 +8,8 @@ authors = ["astell"]
 published = [1696]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A26096.0001.001?rgn=main;view=fulltext"
 sourceDesc = "Astell's [Six Familiar Essays] were published in 1696. This first and only edition is our copytext. The text here derives from the transcription of the work from EEBO-TCP."
+estc = "R16320"
+tcp = "A26096"
 
 {#title}
 ^2 SIX

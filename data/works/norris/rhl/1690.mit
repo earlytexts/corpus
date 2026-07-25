@@ -7,3 +7,5 @@ breadcrumb = "Reflections on Human Life"
 authors = ["norris"]
 published = [1690]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A52433.0001.001?view=toc"
+estc = "R15880"
+tcp = "A52433"

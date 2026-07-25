@@ -42,11 +42,14 @@ import {
   shardOf,
 } from "../dictionary/shards.ts";
 import {
+  authorIdentifiers,
   authorRequired,
   authorSchema,
   authorSexValues,
   blockSchema,
+  identifierViolations,
   keyViolations,
+  textIdentifiers,
   textSchema,
 } from "./schema.ts";
 import {
@@ -152,6 +155,9 @@ const authorFilesMatchSchema: Rule = {
       for (const message of keyViolations(metadata, authorSchema)) {
         push(message);
       }
+      for (const message of identifierViolations(metadata, authorIdentifiers)) {
+        push(message);
+      }
       for (const key of authorRequired) {
         if (!(key in metadata)) push(`missing "${key}"`);
       }
@@ -198,6 +204,9 @@ const textsMatchSchema: Rule = {
         const push = (message: string) =>
           violations.push({ path, locus, message, line });
         for (const message of keyViolations(metadata, textSchema)) {
+          push(message);
+        }
+        for (const message of identifierViolations(metadata, textIdentifiers)) {
           push(message);
         }
         for (const key of ["title", "breadcrumb"]) {
@@ -1116,6 +1125,18 @@ const stubKeyPlacement: { key: string; onStub: boolean; message: string }[] = [
     key: "published",
     onStub: false,
     message: `"published" is derived from editions, not set on the stub`,
+  },
+  // ESTC describes a printed item and TCP a transcription of one; a work is
+  // abstracted from any particular printing, so neither belongs on its stub.
+  {
+    key: "estc",
+    onStub: false,
+    message: `"estc" belongs on an edition, not on a work's index.mit stub`,
+  },
+  {
+    key: "tcp",
+    onStub: false,
+    message: `"tcp" belongs on an edition, not on a work's index.mit stub`,
   },
 ];
 
