@@ -7,3 +7,5 @@ breadcrumb = "Demonstration of the Existence of God"
 authors = ["edwards"]
 published = [1696]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A37987.0001.001?view=toc"
+estc = "R13760"
+tcp = "A37987"

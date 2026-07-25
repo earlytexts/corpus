@@ -7,3 +7,5 @@ breadcrumb = "Collection of Miscellanies"
 authors = ["norris"]
 published = [1687]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A52417.0001.001?view=toc"
+estc = "R14992"
+tcp = "A52417"

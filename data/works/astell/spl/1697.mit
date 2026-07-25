@@ -8,6 +8,7 @@ authors = ["astell"]
 published = [1697]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A26092.0001.001?rgn=main;view=fulltext"
 sourceDesc = "Our copytext is the second edition of 1697, which has some stylistic improvements over the first, and incorporates corrections from the original ERRATA sheet. The text is derived from a transcription of the first 1964 edition from EEBO-TCP. Several changes have been made to this source, correcting some errors and bringing the text in line with the 1697 edition."
+estc = "R213568"
 
 {#title}
 ^3 A Serious

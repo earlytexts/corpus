@@ -7,3 +7,5 @@ breadcrumb = "Reasons of Good and Evil"
 authors = ["edwards"]
 published = [1699]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A37996.0001.001?view=toc"
+estc = "R15422"
+tcp = "A37996"

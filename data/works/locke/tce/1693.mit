@@ -7,3 +7,5 @@ breadcrumb = "Thoughts Concerning Education"
 authors = ["locke"]
 published = [1693]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A48896.0001.001?view=toc"
+estc = "R213714"
+tcp = "A48896"

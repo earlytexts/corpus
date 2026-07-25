@@ -7,3 +7,5 @@ breadcrumb = "Reasonableness of Christianity"
 authors = ["locke"]
 published = [1695]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A48888.0001.001?view=toc"
+estc = "R22574"
+tcp = "A48888"

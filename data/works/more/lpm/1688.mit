@@ -7,3 +7,5 @@ breadcrumb = "Letters Philosophical and Moral"
 authors = ["more"]
 published = [1688]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A52437.0001.001?view=toc"
+estc = "R21881"
+tcp = "A52437"

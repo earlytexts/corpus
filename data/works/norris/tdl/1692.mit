@@ -7,3 +7,5 @@ breadcrumb = "Treatises Concerning the Divine Light"
 authors = ["norris"]
 published = [1692]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A52440.0001.001?view=toc"
+estc = "R2996"
+tcp = "A52440"

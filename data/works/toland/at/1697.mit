@@ -7,3 +7,5 @@ breadcrumb = "An Apology for Mr. Toland"
 authors = ["toland"]
 published = [1697]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A62842.0001.001?view=toc"
+estc = "R10393"
+tcp = "A62842"

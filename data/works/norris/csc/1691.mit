@@ -7,3 +7,5 @@ breadcrumb = "Charge of Schism Continued"
 authors = ["norris"]
 published = [1691]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A52414.0001.001?view=toc"
+estc = "R40651"
+tcp = "A52414"

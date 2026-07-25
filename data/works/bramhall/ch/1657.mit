@@ -7,3 +7,5 @@ breadcrumb = "Castigations of Hobbes"
 authors = ["bramhall"]
 published = [1657]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A29193.0001.001/1:1?rgn=div1;view=fulltext"
+estc = "R34272"
+tcp = "A29193"

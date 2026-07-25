@@ -7,3 +7,5 @@ breadcrumb = "Vanity of Dogmatizing"
 authors = ["glanvill"]
 published = [1661]
 sourceUrl = "https://quod.lib.umich.edu/e/eebo/A42833.0001.001?rgn=main;view=fulltext"
+estc = "R3090"
+tcp = "A42833"
