@@ -45,6 +45,26 @@ const isScalar = (value: unknown, type: string): boolean =>
     ? typeof value === "number"
     : typeof value === "boolean";
 
+/** The ways `metadata` breaks an identifier key's form: one message per key
+ * whose value does not match its pattern. Typed-string keys only, so a key of
+ * the wrong type is already reported by `keyViolations` and skipped here. */
+export const identifierViolations = (
+  metadata: Record<string, unknown>,
+  formats: Record<string, IdentifierFormat>,
+): string[] => {
+  const violations: string[] = [];
+  for (const [key, format] of Object.entries(formats)) {
+    const value = metadata[key];
+    if (typeof value !== "string" || format.pattern.test(value)) continue;
+    violations.push(`"${key}" should be ${format.shape}`);
+  }
+  return violations;
+};
+
+/** An external identifier's expected form: the pattern its value must match,
+ * and a human description of that pattern for the violation message. */
+export type IdentifierFormat = { pattern: RegExp; shape: string };
+
 /** Author metadata (root of `data/authors/<author>.mit`). */
 export const authorSchema: Record<string, ValueType> = {
   title: "string",
@@ -54,6 +74,8 @@ export const authorSchema: Record<string, ValueType> = {
   death: "number",
   nationality: "string",
   sex: "string",
+  viaf: "string",
+  wikidata: "string",
 };
 
 export const authorRequired = [
@@ -67,6 +89,15 @@ export const authorRequired = [
 
 export const authorSexValues = ["Male", "Female"];
 
+/** The external identifiers an author may carry (see ../../README.md#external-identifiers). */
+export const authorIdentifiers: Record<string, IdentifierFormat> = {
+  viaf: { pattern: /^[1-9]\d*$/, shape: "a VIAF cluster ID (digits)" },
+  wikidata: {
+    pattern: /^Q[1-9]\d*$/,
+    shape: 'a Wikidata item ID ("Q" + digits)',
+  },
+};
+
 /** Text metadata (work stubs and dated editions, and their sections). */
 export const textSchema: Record<string, ValueType> = {
   title: "string",
@@ -78,7 +109,23 @@ export const textSchema: Record<string, ValueType> = {
   standalone: "boolean",
   sourceUrl: "string",
   sourceDesc: "string",
+  estc: "string",
+  tcp: "string",
   dictionary: "map",
+};
+
+/** The external identifiers an edition may carry (see ../../README.md#external-identifiers). */
+export const textIdentifiers: Record<string, IdentifierFormat> = {
+  estc: {
+    pattern: /^[NPRSTW][1-9]\d*$/,
+    shape: 'an ESTC citation number ("N", "P", "R", "S", "T" or "W" + digits)',
+  },
+  // TCP IDs are fixed-width: EEBO-TCP (A, B) and Evans-TCP (N) are the prefix
+  // plus five zero-padded digits; ECCO-TCP (K) is six digits plus a part suffix.
+  tcp: {
+    pattern: /^(?:[ABN]\d{5}|K\d{6}\.\d{3})$/,
+    shape: 'a TCP text ID ("A00002", "K000039.000")',
+  },
 };
 
 /** Block-level metadata. */

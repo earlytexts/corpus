@@ -17,8 +17,8 @@
  *    is loaded recursively and spliced in at that point. Inline and borrowed
  *    children mix freely, letting composite works (collections like ETSS, FD,
  *    HE) interleave their own sections with text shared from other works.
- *  - Cascading metadata (imported, published, sourceUrl, sourceDesc) flows
- *    down the composed tree: a section without the key takes the nearest
+ *  - Cascading metadata (imported, published, sourceUrl, sourceDesc, estc, tcp)
+ *    flows down the composed tree: a section without the key takes the nearest
  *    ancestor's value.
  *
  * Reads top-down: `buildCatalogue` is the entry point, and each helper
@@ -247,6 +247,8 @@ const makeEdition = (
 ): Edition => {
   const sourceUrl = metaString(document, "sourceUrl");
   const sourceDesc = metaString(document, "sourceDesc");
+  const estc = metaString(document, "estc");
+  const tcp = metaString(document, "tcp");
   return {
     // An edition usually inherits the work's authors; it may name its own with
     // an `authors` key (e.g. a co-authored edition's root lists both).
@@ -267,6 +269,8 @@ const makeEdition = (
     // serialised form without undefined-valued properties.
     ...(sourceUrl !== undefined ? { sourceUrl } : {}),
     ...(sourceDesc !== undefined ? { sourceDesc } : {}),
+    ...(estc !== undefined ? { estc } : {}),
+    ...(tcp !== undefined ? { tcp } : {}),
     document,
   };
 };
@@ -277,6 +281,8 @@ const makeAuthor = (slug: string, doc: MarkitDocument | null): Author => {
   const death = metaNumber(doc, "death");
   const nationality = metaString(doc, "nationality");
   const sex = metaString(doc, "sex");
+  const viaf = metaString(doc, "viaf");
+  const wikidata = metaString(doc, "wikidata");
   return {
     slug,
     forename: metaString(doc, "forename") ?? "",
@@ -288,6 +294,8 @@ const makeAuthor = (slug: string, doc: MarkitDocument | null): Author => {
     ...(death !== undefined ? { death } : {}),
     ...(nationality !== undefined ? { nationality } : {}),
     ...(sex !== undefined ? { sex } : {}),
+    ...(viaf !== undefined ? { viaf } : {}),
+    ...(wikidata !== undefined ? { wikidata } : {}),
     works: [],
   };
 };

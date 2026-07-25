@@ -58,18 +58,21 @@ const sorted = (violations: Violation[]): string[] =>
 
 /**
  * A fixture that trips every tiered rule at least once:
- *  - file-only: a text missing schema keys, a bad root ID, a dotted heading;
+ *  - file-only: a text missing schema keys, a bad root ID, a dotted heading, a
+ *    malformed external identifier, and one on the wrong side of the stub divide;
  *  - dict-dependent: an unregistered `[w:]` markup, an unfolded override;
  *  - cross-file: an unknown author, a stub naming a missing canonical, an
  *    unresolvable borrowed child, an uppercase (non-slug) directory;
  *  - dictionary: a malformed shard.
  */
 const fixtureMap: Record<string, string> = {
+  // An author whose `viaf` holds a URL rather than the bare cluster ID.
   [`${CORPUS_ROOT}/data/authors/hume.mit`]:
-    `# hume\n\n[metadata]\nforename = "David"\nsurname = "Hume"\nbirth = 1711\ndeath = 1776\nsex = "Male"\nnationality = "Scottish"\n`,
-  // A work stub whose canonical names an edition that does not exist.
+    `# hume\n\n[metadata]\nforename = "David"\nsurname = "Hume"\nbirth = 1711\ndeath = 1776\nsex = "Male"\nnationality = "Scottish"\nviaf = "https://viaf.org/viaf/49226972"\n`,
+  // A work stub whose canonical names an edition that does not exist, and which
+  // carries an edition-level `estc` (right form, wrong side of the stub divide).
   [`${CORPUS_ROOT}/data/works/hume/test/index.mit`]:
-    `# hume.test\n\n[metadata]\ntitle = "A Test"\nbreadcrumb = "Test"\nauthors = ["hume"]\ncanonical = "9999"\n`,
+    `# hume.test\n\n[metadata]\ntitle = "A Test"\nbreadcrumb = "Test"\nauthors = ["hume"]\ncanonical = "9999"\nestc = "T77181"\n`,
   // A clean edition that trips the dict-dependent and cross-file rules.
   [`${CORPUS_ROOT}/data/works/hume/test/1700.mit`]:
     `# Hume.test.1700\n\n[metadata]\ntitle = "A Test"\nbreadcrumb = "Test"\nimported = true\npublished = [1700]\nauthors = ["nobody"]\n\n[metadata.dictionary]\nFoo = "human"\n\n{#1}\n[w:humane=human] humane text here.\n\n## <Foo.Bar.Baz>\n`,

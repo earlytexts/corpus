@@ -434,6 +434,8 @@ test("catalogue: optional author and edition fields are carried through", async 
       death: 1670,
       nationality: "English",
       sex: "Female",
+      viaf: "49226972",
+      wikidata: "Q37160",
     })
     .work("a", "w", { title: "W", breadcrumb: "W", canonical: "1700" })
     .edition(
@@ -448,6 +450,8 @@ test("catalogue: optional author and edition fields are carried through", async 
         authors: "a",
         sourceUrl: "http://example.test/w",
         sourceDesc: "A source note",
+        estc: "T77181",
+        tcp: "A52437",
       },
       '## 1\n\n[metadata]\ntitle = "S"\nbreadcrumb = "S"\n\n{#1}\nText.',
     )
@@ -459,10 +463,26 @@ test("catalogue: optional author and edition fields are carried through", async 
   expect(author.death).toBe(1670);
   expect(author.nationality).toBe("English");
   expect(author.sex).toBe("Female");
+  expect(author.viaf).toBe("49226972");
+  expect(author.wikidata).toBe("Q37160");
   const edition = author.works[0].editions[0];
   expect(edition.published).toEqual([1700]); // scalar coerced to a list
   expect(edition.sourceUrl).toBe("http://example.test/w");
   expect(edition.sourceDesc).toBe("A source note");
+  expect(edition.estc).toBe("T77181");
+  expect(edition.tcp).toBe("A52437");
+});
+
+test("catalogue: absent optional identifiers are omitted, not undefined", async () => {
+  // The optional keys are spread in only when present, so an author/edition
+  // without them serialises without the property at all (see makeAuthor).
+  const catalogue = await catalogueFor(base().build());
+  const author = catalogue.byAuthor.get("a")!;
+  expect("viaf" in author).toBe(false);
+  expect("wikidata" in author).toBe(false);
+  const edition = author.works[0].editions[0];
+  expect("estc" in edition).toBe(false);
+  expect("tcp" in edition).toBe(false);
 });
 
 test("catalogue: a malformed published value degrades to no years", async () => {
