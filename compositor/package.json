@@ -189,6 +189,30 @@
         "command": "compositor.copyDocId",
         "title": "Copy Document ID",
         "category": "Compositor"
+      },
+      {
+        "command": "compositor.open.viaf",
+        "title": "Open in VIAF",
+        "category": "Compositor",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "compositor.open.wikidata",
+        "title": "Open in Wikidata",
+        "category": "Compositor",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "compositor.open.estc",
+        "title": "Open in ESTC",
+        "category": "Compositor",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "compositor.open.tcp",
+        "title": "Open the TCP Text",
+        "category": "Compositor",
+        "icon": "$(link-external)"
       }
     ],
     "menus": {
@@ -217,38 +241,58 @@
       "view/item/context": [
         {
           "command": "compositor.newWork",
-          "when": "view == compositor.corpusBrowser && viewItem == author",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /^author\\b/",
           "group": "compositor@1"
         },
         {
           "command": "compositor.openAuthorStub",
-          "when": "view == compositor.corpusBrowser && viewItem == author",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /^author\\b/",
           "group": "compositor@2"
         },
         {
           "command": "compositor.newEdition",
-          "when": "view == compositor.corpusBrowser && viewItem == work",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /^work\\b/",
           "group": "compositor@1"
         },
         {
           "command": "compositor.compareWithNext",
-          "when": "view == compositor.corpusBrowser && viewItem =~ /HasNext$/",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /\\bnext\\b/",
           "group": "compositor@2"
         },
         {
           "command": "compositor.compareEditions",
-          "when": "view == compositor.corpusBrowser && viewItem =~ /work|edition|borrowed/",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /^(work|edition|borrowed)\\b/",
           "group": "compositor@3"
         },
         {
           "command": "compositor.openWorkStub",
-          "when": "view == compositor.corpusBrowser && viewItem =~ /^(work|borrowed)/",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /^(work|borrowed)\\b/",
           "group": "compositor@4"
         },
         {
           "command": "compositor.copyDocId",
-          "when": "view == compositor.corpusBrowser && viewItem =~ /work|edition|borrowed/",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /^(work|edition|borrowed)\\b/",
           "group": "compositor@5"
+        },
+        {
+          "command": "compositor.open.viaf",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /\\bviaf\\b/",
+          "group": "compositorLinks@1"
+        },
+        {
+          "command": "compositor.open.wikidata",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /\\bwikidata\\b/",
+          "group": "compositorLinks@2"
+        },
+        {
+          "command": "compositor.open.estc",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /\\bestc\\b/",
+          "group": "compositorLinks@1"
+        },
+        {
+          "command": "compositor.open.tcp",
+          "when": "view == compositor.corpusBrowser && viewItem =~ /\\btcp\\b/",
+          "group": "compositorLinks@2"
         }
       ],
       "editor/context": [
@@ -295,6 +339,22 @@
         },
         {
           "command": "compositor.compareWithNext",
+          "when": "false"
+        },
+        {
+          "command": "compositor.open.viaf",
+          "when": "false"
+        },
+        {
+          "command": "compositor.open.wikidata",
+          "when": "false"
+        },
+        {
+          "command": "compositor.open.estc",
+          "when": "false"
+        },
+        {
+          "command": "compositor.open.tcp",
           "when": "false"
         }
       ]
