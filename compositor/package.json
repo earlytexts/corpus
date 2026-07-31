@@ -2,7 +2,7 @@
   "name": "compositor",
   "publisher": "earlytexts",
   "displayName": "Early Text Compositor",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "A VSCode extension for contributing to the Early Text Corpus",
   "license": "MIT",
   "repository": {
@@ -22,7 +22,7 @@
     "package": "vsce package --no-dependencies --out build/compositor.vsix"
   },
   "dependencies": {
-    "@jsr/earlytexts__markit": "^4.1.0",
+    "@jsr/earlytexts__markit": "^4.3.0",
     "isomorphic-git": "^1.38.7"
   },
   "devDependencies": {
@@ -150,6 +150,12 @@
         "command": "compositor.insertBorrowedRef",
         "title": "Insert Borrowed Section Reference…",
         "category": "Compositor"
+      },
+      {
+        "command": "compositor.importTcpText",
+        "title": "Import TEI Text from TCP…",
+        "category": "Compositor",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "compositor.search",
@@ -298,6 +304,11 @@
       "editor/context": [
         {
           "command": "compositor.insertBorrowedRef",
+          "when": "resourceExtname == .mit",
+          "group": "compositor"
+        },
+        {
+          "command": "compositor.importTcpText",
           "when": "resourceExtname == .mit",
           "group": "compositor"
         },

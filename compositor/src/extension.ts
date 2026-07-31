@@ -29,6 +29,7 @@ import {
 } from "./adapters/vscode/commands/scaffolds.ts";
 import { fixFormatting } from "./adapters/vscode/commands/fixFormatting.ts";
 import { insertBorrowedRef } from "./adapters/vscode/commands/insertBorrowedRef.ts";
+import { importTcpText } from "./adapters/vscode/commands/importTcp.ts";
 import {
   compareEditions,
   compareWithNext,
@@ -215,6 +216,10 @@ export const activate = async (
       withModel((m) => newEdition(m, node)),
     ),
     command("compositor.insertBorrowedRef", () => withModel(insertBorrowedRef)),
+    // Works on the open document alone (no catalogue), so it runs without the
+    // model — a prototype harness for seeing what markit's TEI converter does
+    // to a real TCP text, in the editor where the diagnostics report on it.
+    command("compositor.importTcpText", () => importTcpText()),
     // Focus the search panel, seeded with the selection (or the word under the
     // cursor) as a whole-word, case-sensitive term — the exact semantics the
     // retired "Replace in Work / Author" command had, now with a preview and
