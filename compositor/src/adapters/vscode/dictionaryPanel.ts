@@ -22,14 +22,14 @@ import {
   readDictionaryShards,
   shardOf,
 } from "@earlytexts/corpus";
-import { upsertEntryText } from "../../core/dictionaryEdits.ts";
+import { upsertEntryText } from "../../core/dictionary/edits.ts";
 import {
   type EntryEdit,
   formEntry,
   lemmaEntry,
   removeSurfaceFromShard,
   variantEntry,
-} from "../../core/dictionaryPanelInput.ts";
+} from "../../core/dictionary/panel/input.ts";
 import {
   buildCache,
   dataMessage,
@@ -37,11 +37,11 @@ import {
   MAX_CURATION,
   type PanelCache,
   patchCache,
-} from "../../core/dictionaryPanelView.ts";
-import { readShardText, updateShard } from "../../core/dictionaryShardIO.ts";
+} from "../../core/dictionary/panel/viewModel.ts";
+import { readShardText, updateShard } from "../../core/dictionary/shardIO.ts";
 import { PANEL_CSS } from "./dictionaryPanelCss.ts";
 import { panelHtml } from "./panelShell.ts";
-import type { CorpusModel } from "../../core/corpusModel.ts";
+import type { CorpusModel } from "../../core/model/corpusModel.ts";
 
 const VIEW_ID = "compositor.dictionaryPanel";
 

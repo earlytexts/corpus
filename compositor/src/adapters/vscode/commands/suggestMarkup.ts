@@ -35,16 +35,16 @@ import {
   type Hints,
   type MarkupSuggestion,
   scanSource,
-} from "../../../core/hints.ts";
-import { distinctWorks } from "../../../core/catalogueWalk.ts";
-import type { CorpusModel } from "../../../core/corpusModel.ts";
-import { hintOverrides } from "../../../core/hintOverrides.ts";
+} from "../../../core/markup/hints.ts";
+import { distinctWorks } from "../../../core/catalogue/walk.ts";
+import type { CorpusModel } from "../../../core/model/corpusModel.ts";
+import { hintOverrides } from "../../../core/markup/hintOverrides.ts";
 import {
   fixTitle,
   suggestionKey,
   suggestionMessage,
   wrapText,
-} from "../../../core/suggestions.ts";
+} from "../../../core/markup/suggestions.ts";
 import { createOverlay } from "../overlay.ts";
 
 const SOURCE = "compositor-suggestions";

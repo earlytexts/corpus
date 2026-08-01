@@ -21,7 +21,7 @@ import {
   type ImportReport,
   planTcpImport,
   tcpIdError,
-} from "../../../core/importTcp.ts";
+} from "../../../core/authoring/importTcp.ts";
 import { tcpTextSource } from "../../http/tcpText.ts";
 
 /** Import a TCP text into the open edition. */

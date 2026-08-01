@@ -7,7 +7,7 @@
  * is reported as such rather than retried on another branch.
  */
 
-import { type TeiSource, tcpXmlUrl } from "../../core/importTcp.ts";
+import { type TeiSource, tcpXmlUrl } from "../../core/authoring/importTcp.ts";
 
 /** A `TeiSource` backed by raw.githubusercontent.com. */
 export const tcpTextSource: TeiSource = async (id) => {

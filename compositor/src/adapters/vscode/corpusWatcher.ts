@@ -6,7 +6,7 @@
  */
 
 import * as vscode from "vscode";
-import type { CorpusWatcher } from "../../core/corpusModel.ts";
+import type { CorpusWatcher } from "../../core/model/corpusModel.ts";
 
 export const createCorpusWatcher: CorpusWatcher = (root, onEvent) => {
   const watcher = vscode.workspace.createFileSystemWatcher(

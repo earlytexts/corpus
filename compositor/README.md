@@ -63,10 +63,10 @@ validate` runs) published to the Problems panel, with a status-bar summary
   brings in the latest corpus first, asking about any text that changed on
   both sides, then opens the submission on GitHub. See
   [Contributing back](#contributing-back).
-- **Dictionary Curation** — an activity-bar view listing the unaccounted and
-  unconfirmed surfaces corpus-wide, most frequent first, so the register can be
-  backfilled highest-impact first; selecting one opens it in context, the
-  right-click menu curates it.
+- **Dictionary** — a docked panel over the corpus's register: the unaccounted
+  surfaces corpus-wide, most frequent first, so it can be backfilled
+  highest-impact first, alongside browsable lemma-and-forms and variant-spelling
+  views and controls that add or remove an entry.
 
 All corpus logic (catalogue building, validation rules, path conventions) is
 this repository's own `src/`, bundled directly by esbuild, so the rules cannot
@@ -118,12 +118,12 @@ checkout in the Extension Development Host.
   so both halves of the suggestion pipeline resolve to the one installed
   copy — which matters because markit tags blocks with `Symbol()`s that only
   compare equal within one instance.
-- **One compile pass per change.** `src/corpusModel.ts` compiles the corpus
-  once, feeds the compiled files to the validation rules, and hands the same
-  documents to `buildCatalogue` (its `precompiled` parameter) so the catalogue
-  composes without recompiling. A watcher on `data/**` recompiles just the
-  saved `.mit` file (~1s round trip); non-file events trigger a full reload
-  (~20s, cold-start cost).
+- **One compile pass per change.** `src/core/model/corpusModel.ts` compiles the
+  corpus once, feeds the compiled files to the validation rules, and hands the
+  same documents to `buildCatalogue` (its `precompiled` parameter) so the
+  catalogue composes without recompiling. A watcher on `data/**` recompiles
+  just the saved `.mit` file (~1s round trip); non-file events trigger a full
+  reload (~20s, cold-start cost).
 - **The compiled `catalogue/` masks the cold start.** At startup the model seeds
   the tree from `catalogue/` via the corpus's `loadCatalogue` (~0.5s) while the
   full compile runs; diagnostics always wait for the compile (serialised
@@ -145,91 +145,118 @@ checkout in the Extension Development Host.
 
 ### Structure
 
-Three layers, from entry point down into detail. `surface/` is everything that
-touches the VSCode API; `lib/` is pure, editor-free logic, unit-tested and free
-of any `vscode` import. The rule of thumb — _does this file import `vscode`?_ —
-is a directory line: if it needs the editor it lives in `surface/`, otherwise in
-`lib/`.
+A hexagon, from entry point down into detail. `src/core/` is the domain: every
+decision, written over ports it owns, and testable without a running editor.
+`src/adapters/` is everything that names the outside world — the VSCode API,
+isomorphic-git, the network — each adapter thin enough to review at a glance.
+`src/webview/` is the panels' front-ends, plain DOM bundles that reach the
+extension only by message. The rule of thumb — _does this file import `vscode`,
+`node:*`, or `isomorphic-git`?_ — is a directory line, and
+`test/coreBoundary.test.ts` enforces it: if it needs the outside world it lives
+in `adapters/`, otherwise in `core/`. When that test fails the fix is never to
+relax it, but to move the offending code out and hand the core a port.
 
-**Entry & state** (`src/`)
+**Entry** (`src/`)
 
-- `extension.ts` — activation (corpus-root detection), wiring, commands
-- `corpusModel.ts` — in-memory corpus: load/validate/catalogue + watcher, plus
-  the catalogue/ cache (seed + write-back). The state every surface hangs off.
+- `extension.ts` — activation (corpus-root detection), command registration,
+  and the composition root: the one place adapters are built and injected
 
-**Surface** (`src/surface/`, VSCode-facing)
+**Core** (`src/core/`, no `vscode`/`node:*`/`isomorphic-git`, held at 100%
+coverage)
 
-- `corpusTree.ts` — Corpus Browser tree data provider (rendering only)
-- `curationView.ts` — Dictionary Curation tree data provider
-- `diagnostics.ts` — Problems-panel + status bar adapter over `planDiagnostics`
-- `searchPanel.ts` — the Corpus Search webview: scans the model's compiled
-  files on each query message, posts grouped results, verifies and applies
-  replaces (`panelShell.ts` carries the shared CSP shell, `searchPanelCss.ts`
-  the styles, `src/webview/search.ts` the front-end)
-- `contributionPanel.ts` — the Contribute webview: reads the working copy
-  through the git port, asks GitHub about the submission, posts the scene
-  `workflow.ts` decides, and owns what only VSCode can do — sign-in, progress,
-  the conflict dialogs, the diffs (`contributionPanelCss.ts` the styles,
-  `src/webview/contribute.ts` the front-end)
-- `commands/` — scaffolds, fix formatting, insert borrowed reference, compare
-  editions, suggest markup, dictionary diagnostics. Each gathers input and
-  applies effects; the decisions are pulled into `lib/`.
+One folder per feature the extension offers, plus the state they share. `test/`
+mirrors the shape: a module's tests sit at the same path under `test/`, with
+the whole-pipeline tests (`markup/suggestionsPipeline`,
+`dictionary/repro-possessive`) alongside them and the boundary guard at the
+root.
 
-**Git and GitHub** (`src/git/`, no `vscode` below `setup.ts`)
+- `model/` — the corpus state everything else hangs off. `corpusModel.ts`
+  (load/validate/catalogue + the `catalogue/` seed and write-back),
+  `compiledFileCache.ts` (the bounded, on-demand compile cache),
+  `reloadKind.ts` (what a change under `data/` actually has to re-run),
+  `workspace.ts` (which open folder is the corpus; what the tree says per phase)
+- `catalogue/` — pure vocabulary over the compiled catalogue. `nodes.ts` (the
+  tree's node types and the catalogue→file-path lookups shared by the tree and
+  the commands), `walk.ts` (each work and each edition document visited exactly
+  once, despite co-authorship and borrowing), `links.ts` (VIAF/Wikidata/ESTC/TCP
+  URLs, and the `viewItem` tokens deciding which link items a menu offers)
+- `dictionary/` — the register. `curation.ts` (the corpus-wide, frequency-ranked
+  backlog), `scan.ts` (locate unaccounted surfaces in a document's source),
+  `resolve.ts` and `cascade.ts` (the attestation rule, and the interactive walk
+  that resolves every target an entry names), `edits.ts` (place a decision into
+  a shard's canonical text), `entryText.ts` (validate entry input; squiggle and
+  quick-fix wording), `shardIO.ts` (the read-modify-write primitive both write
+  paths share), `views.ts` (the two cross-cut views the panel browses), and
+  `panel/` — its `viewModel.ts`, the optimistic `patches.ts`, `input.ts`
+  validation, and the `client.ts` filter/page transforms the webview applies
+- `hover/` — the token-accounting hover: `info.ts` (how the corpus accounts for
+  one hovered token), `view.ts` (that as Markdown), `pinMarkup.ts` (the
+  `[w:surface=value]` a pin inserts)
+- `markup/` — the suggestion engine: `hints.ts` (mine lexicons from existing
+  markup, scan raw source), `suggestions.ts` (category ⇄ markup rules, wrap
+  delimiters), `hintOverrides.ts` (manual patches to the mined lexicons)
+- `search/` — `panel.ts`: the query matcher, the block-content line filter,
+  author scoping over the catalogue, the per-file scan, and the replace plan
+  with its regex-aware replacement strings
+- `authoring/` — the cores of the one-shot editing commands: `scaffolds.ts` with
+  its `templates.ts` (formatted, schema-correct file builders),
+  `borrowedRef.ts`, `fixFormatting.ts`, `importTcp.ts`, and `compareEditions.ts`
+  with `compareScope.ts` (which works are comparable; an edition's successor)
+- `contribute/` — the round trip. `gitPort.ts` and `github.ts` declare the two
+  ports (what changed, branch, commit, merge, push; and the REST calls that are
+  not git — the signed-in user, the fork, the pull request); `workflow.ts` is
+  the translation layer, where `describeState` decides where a contributor
+  stands and the four verbs are written over both ports; `contribution.ts`
+  gathers the panel's scene; `setup.ts` holds the onboarding decisions
+- `diagnostics/` — `plan.ts` (validations → collection action + status text) and
+  `overlayEngine.ts` (the lifecycle both inline overlays share: the scanned-map
+  state, the per-document debounce, the scan/drop/refresh branching)
+- `shared/` — the primitives several folders need: `sourceTokens.ts` (Markit's
+  own tokens placed back in raw `.mit` source — the atom the markup scanner, the
+  dictionary scan, the hover, and search all agree on), `serialize.ts` (a FIFO
+  mutex, so shard read-modify-writes cannot interleave), `emitter.ts` (a
+  vscode-free `EventEmitter` an adapter can still subscribe to)
 
-- `gitPort.ts` — the one place isomorphic-git lives: cloning and remotes for
-  set-up, and the `GitPort` type (what changed, branch, commit, merge, push)
-  the contribution flow works through
-- `github.ts` — the REST calls that are not git: the signed-in user, finding
-  or creating the fork, opening and following pull requests. `ensureFork` is
-  pure over the `GitHubClient` port
-- `workflow.ts` — the translation layer: `describeState` (pure) decides where
-  a contributor stands, and the four verbs — send for review, add to a
-  submission, get the latest corpus, tidy up — are written over the two ports,
-  so the whole flow is tested without a repository or a network
-- `setup.ts` — the "Set up the corpus" onboarding command (VSCode-facing)
+**Adapters** (`src/adapters/`, the only code that names the outside world)
 
-**Pure logic** (`src/lib/`, no `vscode`, unit-tested)
+- `vscode/` — `corpusTree.ts` (Corpus Browser tree data provider, rendering
+  only), `diagnostics.ts` (Problems panel + status bar over the plan),
+  `hover.ts`, `corpusWatcher.ts`, `overlay.ts`, `doubleClickOpen.ts`,
+  `notifier.ts`, and the two webview panels — `searchPanel.ts` and
+  `dictionaryPanel.ts`, plus `contributionPanel.ts`, which owns what only VSCode
+  can do (sign-in, progress, the conflict dialogs, the diffs). `panelShell.ts`
+  carries the shared CSP shell and each `*Css.ts` its styles. `commands/` is one
+  file per registered command, each gathering input and applying effects while
+  the decisions stay in `core/`
+- `git/` — `gitPort.ts` (the one place isomorphic-git lives: cloning, remotes,
+  and the `GitPort` implementation), `github.ts` (the REST client behind
+  `GitHubClient`), `setup.ts` (the "Set up the corpus" command)
+- `http/` — `tcpText.ts`, the Text Creation Partnership fetch
 
-- `nodes.ts` — the tree's node vocabulary (`TreeNode`) and the catalogue→file
-  path lookups shared by the tree and the commands
-- `links.ts` — the external authority records an author or edition links to
-  (VIAF, Wikidata, ESTC, TCP): URL building, and the `viewItem` tokens that
-  decide which link items a node's context menu offers
-- `hints.ts` — the markup-suggestion engine (mine lexicons, scan raw source,
-  shared source tokenizer)
-- `suggestions.ts` — markup-suggestion helpers (categories, wrap text)
-- `hintOverrides.ts` — manual patches to the mined language lexicons
-- `dictionaryScan.ts` — locate unaccounted/unconfirmed surfaces in a document's
-  source (runs the corpus's accounting rule)
-- `dictionaryEdits.ts` — place a curation decision into a shard's canonical text
-- `dictionaryEntryText.ts` — validate entry input; squiggle + quick-fix wording
-- `curation.ts` — the corpus-wide, frequency-ranked curation worklist
-- `diagnosticsPlan.ts` — validations → collection action + status text
-- `searchPanel.ts` — the search core: the query matcher, the block-content
-  line filter, author scoping over the catalogue, the per-file scan, and
-  regex-aware replacement strings
-- `compareScope.ts` — which works are comparable; an edition's successor
-- `templates.ts` — scaffold file builders (formatted, schema-correct)
+**Webviews** (`src/webview/`, framework-free DOM)
+
+- `main.ts` (the dictionary panel), `search.ts`, `contribute.ts`
 
 ### Markup suggestions
 
 `compositor.suggestMarkup` flags likely people, citations, and foreign text
 (Latin/French/Greek/…) in the open edition so a contributor can cycle them
 (F8, like any diagnostic) and mark each up with a quick fix — or ignore it.
-The finding logic lives here, in `src/lib/hints.ts`: `buildHints`/`scanSource`
-mine lexicons from the markup the corpus already carries (so suggestions
-improve as markup accumulates) and scan a file's raw source. This is read-side
+The finding logic lives here, in `src/core/markup/hints.ts`:
+`buildHints`/`scanSource` mine lexicons from the markup the corpus already
+carries (so suggestions improve as markup accumulates) and scan a file's raw
+source. This is read-side
 text processing over the compiled catalogue, which the Compositor owns outright
 (the corpus is the write side) — it was moved out of the corpus package into
-this extension. The rest is the editor surface: `src/surface/commands/suggestMarkup.ts`
-owns the toggle
+this extension. The rest is the editor layer:
+`src/adapters/vscode/commands/suggestMarkup.ts` owns the toggle
 picker, a dedicated Information-severity diagnostic collection (kept apart from
 validation, whose diagnostics share the "compositor" source, so the two never
 tangle), and the quick-fix code-action provider. Hints are cached and rebuilt
 only when the corpus model reloads; scanning is per-file and on-demand. Pure
 rules (category ⇄ suggestion mapping, wrap delimiters) live in
-`src/lib/suggestions.ts` and are unit-tested; `test/suggestionsPipeline.test.ts`
+`src/core/markup/suggestions.ts` and are unit-tested;
+`test/markup/suggestionsPipeline.test.ts`
 runs the whole mine→scan→filter→wrap path — which only holds together because
 markit resolves to one instance across the corpus/markit boundary (its block
 `Symbol()`s compare equal only within one instance), guaranteed here by the
@@ -248,20 +275,21 @@ and this extension, so the two cannot disagree):
   toggle with `compositor.toggleUnaccountedWords`). While on, the active
   editions are scanned and every unaccounted surface squiggled. The corpus owns
   the _decision_ (which folded surfaces are unaccounted or unconfirmed);
-  `src/lib/dictionaryScan.ts` only _locates_ them, reusing the markup-suggestion
-  tokenizer (`documentSourceTokens`) so exempting markup (names, citations,
+  `src/core/dictionary/scan.ts` only _locates_ them, reusing the
+  markup-suggestion tokenizer (`documentSourceTokens`) so exempting markup (names, citations,
   foreign spans, `[w:]`) is skipped and page breaks/escapes are read through.
   A word built from `{…}` character escapes or a kept ligature (`œconomy`) may
   go unflagged rather than mis-flagged; the coverage counts stay exact.
 - **Quick-fixes and the Curation view** write dictionary entries. The pure
-  placement (`src/lib/dictionaryEdits.ts`) parses the surface's shard, adds or
+  placement (`src/core/dictionary/edits.ts`) parses the surface's shard, adds or
   confirms the entry, and re-serialises with the corpus's own `shardDictionary`
   — so an entry added from the editor is byte-identical to one `deno task fmt`
   would produce and round-trips through corpus validation. Whether the result
   is _coherent_ (references resolve, readings select) is the corpus validation's
   business, reported live in the Problems panel after the write. The Curation
-  view (`src/lib/curation.ts` + `src/surface/curationView.ts`) ranks the whole backlog by
-  corpus-wide frequency so it can be burned down highest-impact first.
+  backlog (`src/core/dictionary/curation.ts`, surfaced in the dictionary
+  panel) ranks the whole register gap by corpus-wide frequency so it can be
+  burned down highest-impact first.
 
 The two overlays compose: enable the markup suggestions too, and a squiggled
 name offers both "mark up as a person" (from the suggestion provider) and the

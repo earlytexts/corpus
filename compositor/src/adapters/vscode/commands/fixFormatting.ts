@@ -6,8 +6,8 @@
 
 import * as vscode from "vscode";
 import { nodeCorpusFs } from "@earlytexts/corpus";
-import type { CorpusModel } from "../../../core/corpusModel.ts";
-import { formatCorpus } from "../../../core/fixFormatting.ts";
+import type { CorpusModel } from "../../../core/model/corpusModel.ts";
+import { formatCorpus } from "../../../core/authoring/fixFormatting.ts";
 
 export const fixFormatting = (model: CorpusModel): Thenable<void> =>
   vscode.window.withProgress(

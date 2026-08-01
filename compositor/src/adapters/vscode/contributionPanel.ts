@@ -18,9 +18,15 @@
  */
 
 import * as vscode from "vscode";
-import { type GitPort, type Resolutions } from "../../core/gitPort.ts";
+import {
+  type GitPort,
+  type Resolutions,
+} from "../../core/contribute/gitPort.ts";
 import { findRepoRoot, nodeGitPort } from "../git/gitPort.ts";
-import { type GitHubClient, type Viewer } from "../../core/github.ts";
+import {
+  type GitHubClient,
+  type Viewer,
+} from "../../core/contribute/github.ts";
 import { githubClient } from "../git/github.ts";
 import {
   addToSubmission,
@@ -28,11 +34,11 @@ import {
   getLatest,
   sendForReview,
   tidyUp,
-} from "../../core/workflow.ts";
-import { readScene, type Scene } from "../../core/contribution.ts";
+} from "../../core/contribute/workflow.ts";
+import { readScene, type Scene } from "../../core/contribute/contribution.ts";
 import { panelHtml } from "./panelShell.ts";
 import { CONTRIBUTE_CSS } from "./contributionPanelCss.ts";
-import type { CorpusModel } from "../../core/corpusModel.ts";
+import type { CorpusModel } from "../../core/model/corpusModel.ts";
 
 const VIEW_ID = "compositor.contributionPanel";
 

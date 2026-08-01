@@ -11,14 +11,21 @@
  */
 
 import * as vscode from "vscode";
-import { type CorpusModel, createCorpusModel } from "./core/corpusModel.ts";
-import { findCorpusRoot, viewMessage } from "./core/workspace.ts";
+import {
+  type CorpusModel,
+  createCorpusModel,
+} from "./core/model/corpusModel.ts";
+import { findCorpusRoot, viewMessage } from "./core/model/workspace.ts";
 import { createCorpusWatcher } from "./adapters/vscode/corpusWatcher.ts";
 import { vscodeNotifier } from "./adapters/vscode/notifier.ts";
 import { createCorpusTree } from "./adapters/vscode/corpusTree.ts";
 import { registerDoubleClickOpen } from "./adapters/vscode/doubleClickOpen.ts";
-import { authorPath, type TreeNode, workDocId } from "./core/nodes.ts";
-import { type LinkKind, linkUrl, nodeLinks } from "./core/links.ts";
+import {
+  authorPath,
+  type TreeNode,
+  workDocId,
+} from "./core/catalogue/nodes.ts";
+import { type LinkKind, linkUrl, nodeLinks } from "./core/catalogue/links.ts";
 import { registerDiagnostics } from "./adapters/vscode/diagnostics.ts";
 import { registerHover } from "./adapters/vscode/hover.ts";
 import { nodeCorpusFs } from "@earlytexts/corpus";

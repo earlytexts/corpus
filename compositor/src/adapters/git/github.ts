@@ -12,7 +12,7 @@ import {
   type PullSummary,
   type Repo,
   UPSTREAM,
-} from "../../core/github.ts";
+} from "../../core/contribute/github.ts";
 
 /** A `GitHubClient` backed by api.github.com and an OAuth token. */
 export const githubClient = (token: string): GitHubClient => {

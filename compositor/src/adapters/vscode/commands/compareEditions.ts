@@ -9,14 +9,14 @@
 
 import * as vscode from "vscode";
 import type { Edition, Work } from "@earlytexts/corpus";
-import type { CorpusModel } from "../../../core/corpusModel.ts";
-import type { TreeNode } from "../../../core/nodes.ts";
+import type { CorpusModel } from "../../../core/model/corpusModel.ts";
+import type { TreeNode } from "../../../core/catalogue/nodes.ts";
 import {
   type CompareOutcome,
   type ComparePrompts,
   compareEditions as decideCompare,
   compareWithNext as decideWithNext,
-} from "../../../core/compareEditions.ts";
+} from "../../../core/authoring/compareEditions.ts";
 
 const pickEdition = async (
   editions: Edition[],

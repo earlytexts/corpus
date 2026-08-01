@@ -4,7 +4,7 @@
  */
 
 import * as vscode from "vscode";
-import type { Notifier } from "../../core/corpusModel.ts";
+import type { Notifier } from "../../core/model/corpusModel.ts";
 
 export const vscodeNotifier: Notifier = {
   error: (message) => void vscode.window.showErrorMessage(message),

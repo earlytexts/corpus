@@ -9,8 +9,8 @@
 import * as vscode from "vscode";
 import type { Author, Work } from "@earlytexts/corpus";
 import { nodeCorpusFs } from "@earlytexts/corpus";
-import type { CorpusModel } from "../../../core/corpusModel.ts";
-import type { TreeNode } from "../../../core/nodes.ts";
+import type { CorpusModel } from "../../../core/model/corpusModel.ts";
+import type { TreeNode } from "../../../core/catalogue/nodes.ts";
 import {
   type AuthorMeta,
   defaultPublished,
@@ -26,7 +26,7 @@ import {
   type WorkMeta,
   yearError,
   yearSlugError,
-} from "../../../core/scaffolds.ts";
+} from "../../../core/authoring/scaffolds.ts";
 
 const ask = (
   prompt: string,

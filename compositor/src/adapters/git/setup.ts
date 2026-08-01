@@ -8,7 +8,7 @@
 
 import * as vscode from "vscode";
 import * as fs from "node:fs";
-import { runSetup as runSetupCore } from "../../core/setup.ts";
+import { runSetup as runSetupCore } from "../../core/contribute/setup.ts";
 import { githubClient } from "./github.ts";
 import { addRemote, cloneRepo } from "./gitPort.ts";
 
