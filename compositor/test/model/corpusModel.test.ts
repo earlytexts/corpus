@@ -13,7 +13,9 @@ import type { CorpusFsWrite } from "@earlytexts/corpus";
 import { CORPUS_ROOT, corpus } from "@earlytexts/corpus/test";
 import { writableCorpus } from "../writableCorpus.ts";
 import {
+  type CorpusChange,
   createCorpusModel,
+  type CorpusModel,
   type CorpusModelDeps,
   type CorpusWatcher,
 } from "../../src/core/model/corpusModel.ts";
@@ -106,15 +108,22 @@ const controllableFs = (files: Record<string, string>) => {
   let failAuthorsDirOn: number | undefined;
   let authorsReads = 0;
   const nullReadPaths = new Set<string>();
+  const readCounts = new Map<string, number>();
+  /** Every port call, so a test can assert what a save costs the filesystem. */
+  const calls = { readFile: 0, readDir: 0 };
   const fs: CorpusFsWrite = {
     ...base,
-    readFile: (path) =>
-      readFail
+    readFile: (path) => {
+      calls.readFile++;
+      readCounts.set(path, (readCounts.get(path) ?? 0) + 1);
+      return readFail
         ? Promise.reject(readFailReason)
         : nullReadPaths.has(path)
           ? Promise.resolve(null)
-          : base.readFile(path),
+          : base.readFile(path);
+    },
     readDir: (path) => {
+      calls.readDir++;
       if (path === authorsDir && ++authorsReads === failAuthorsDirOn) {
         return Promise.reject(new Error("no such directory"));
       }
@@ -145,6 +154,11 @@ const controllableFs = (files: Record<string, string>) => {
       if (reason !== undefined) readFailReason = reason;
     },
     nullRead: (path: string) => nullReadPaths.add(path),
+    /** A snapshot of the port-call tallies, for before/after comparison. */
+    calls: () => ({ ...calls }),
+    /** How often an absolute path has been read — so a test can assert a warm
+     * cache served a request rather than recompiling from disk. */
+    reads: (path: string) => readCounts.get(path) ?? 0,
     // Fail the Nth `readDir(data/authors)` — the sweep's own walk is the third
     // (two cold-start reads precede it), so `3` makes the sweep's directory walk
     // hit its missing-directory catch without breaking the cold start.
@@ -621,15 +635,194 @@ test("workSourcePaths lists the works sources and excludes the authors", async (
   model.dispose();
 });
 
-test("onDidChange notifies subscribers as the load state moves", async () => {
+/* ------------------------------ the fan-out ------------------------------ */
+
+/** Record the change payload of every settled load, plus the starts, so a test
+ * can assert both the count and the scope. */
+const listen = (model: CorpusModel) => {
+  const changes: CorpusChange[] = [];
+  let starts = 0;
+  const subs = [
+    model.onDidChange((change) => changes.push(change)),
+    model.onDidStartLoading(() => starts++),
+  ];
+  return {
+    changes,
+    starts: () => starts,
+    last: () => changes[changes.length - 1],
+    dispose: () => subs.forEach((s) => s.dispose()),
+  };
+};
+
+test("a load starts once and settles once, and only the settle carries a change", async () => {
+  const files = oneEdition();
+  await withDerivations(files);
+  const { watcher, deps } = setup(files);
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+  const heard = listen(model);
+
+  files[ED_1748] = files[ED_1748].replace("wombat", "kangaroo");
+  fire(watcher, ED_1748);
+  await flush(DEBOUNCE);
+
+  // One save: one start, one settle — not the two undifferentiated fires every
+  // listener used to have to filter on `loading` itself to avoid doing its work
+  // twice (and, for the hint miner, twice concurrently).
+  expect(heard.starts()).toBe(1);
+  expect(heard.changes).toHaveLength(1);
+  expect(model.loading).toBe(false);
+  heard.dispose();
+  model.dispose();
+});
+
+test("a cold start reports a full change", async () => {
   const { deps } = setup();
   const model = createCorpusModel(ROOT, deps);
-  let fired = 0;
-  const sub = model.onDidChange(() => fired++);
+  const heard = listen(model);
   await flush();
 
-  expect(fired).toBeGreaterThan(0);
-  sub.dispose();
+  expect(heard.last()).toEqual({
+    kind: "full",
+    sources: new Set(),
+    structural: true,
+  });
+  heard.dispose();
+  model.dispose();
+});
+
+test("a body-only save reports just that source, and not as structural", async () => {
+  const files = oneEdition();
+  await withDerivations(files);
+  const { watcher, deps } = setup(files);
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+  const heard = listen(model);
+
+  files[ED_1748] = files[ED_1748].replace("wombat", "kangaroo");
+  fire(watcher, ED_1748);
+  await flush(DEBOUNCE);
+
+  expect(heard.changes).toHaveLength(1);
+  expect(heard.last()).toEqual({
+    kind: "sources",
+    sources: new Set(["works/hume/enquiry/1748.mit"]),
+    structural: false,
+  });
+  heard.dispose();
+  model.dispose();
+});
+
+test("a save that changes the structure reports it as structural", async () => {
+  const files = oneEdition();
+  await withDerivations(files);
+  const { watcher, deps } = setup(files);
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+  const heard = listen(model);
+
+  // Metadata is what a skeleton keeps (its blocks are emptied), so retitling
+  // the edition moves the catalogue and a body edit does not.
+  files[ED_1748] = files[ED_1748].replace(
+    'title = "An Enquiry"',
+    'title = "An Enquiry, Revised"',
+  );
+  fire(watcher, ED_1748);
+  await flush(DEBOUNCE);
+
+  expect(heard.last()?.structural).toBe(true);
+  heard.dispose();
+  model.dispose();
+});
+
+test("a save that breaks the compile is structural even though the skeleton is unchanged", async () => {
+  // `projection.clean` gates every cross-file rule but is not skeleton-derived:
+  // an unclosed inline tag leaves the id/metadata/children the skeleton keeps
+  // untouched while flipping the file out of the cleanly-compiled set. The
+  // scoped tiers key off `structural`, so it has to cover this too.
+  const files = oneEdition();
+  await withDerivations(files);
+  const { watcher, deps } = setup(files);
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+  const heard = listen(model);
+
+  files[ED_1748] = files[ED_1748].replace("The wombat", "The [p:wombat");
+  fire(watcher, ED_1748);
+  await flush(DEBOUNCE);
+
+  expect(heard.last()?.structural).toBe(true);
+  heard.dispose();
+  model.dispose();
+});
+
+test("a dictionary shard save reports the dictionary scope and no sources", async () => {
+  const files = oneEdition();
+  await withDerivations(files);
+  const { watcher, deps } = setup(files);
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+  const heard = listen(model);
+
+  files[DICT_T] = '{\n  "the": null,\n  "thus": null\n}\n';
+  fire(watcher, DICT_T);
+  await flush(DEBOUNCE);
+
+  expect(heard.last()).toEqual({
+    kind: "dictionary",
+    sources: new Set(),
+    structural: false,
+  });
+  heard.dispose();
+  model.dispose();
+});
+
+test("a failed load reports a full change, so no listener trusts a narrower scope", async () => {
+  const { controls, notify, deps } = setup();
+  controls.setReadFail(true);
+  const model = createCorpusModel(ROOT, deps);
+  const heard = listen(model);
+  await flush();
+
+  expect(notify.error).toHaveBeenCalled();
+  expect(model.status).toBe("failed");
+  expect(heard.changes).toHaveLength(1);
+  expect(heard.last()?.kind).toBe("full");
+  heard.dispose();
+  model.dispose();
+});
+
+/* -------------------------- the working set -------------------------- */
+
+test("compileTransient compiles a source without evicting the working set", async () => {
+  const { deps } = setup();
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+
+  const file = await model.compileTransient("works/hume/enquiry/1748.mit");
+  expect(file?.text).toContain("wombat");
+  expect(
+    await model.compileTransient("works/hume/enquiry/nope.mit"),
+  ).toBeUndefined();
+  model.dispose();
+});
+
+test("an incremental save leaves the file it recompiled warm", async () => {
+  const files = oneEdition();
+  await withDerivations(files);
+  const { controls, watcher, deps } = setup(files);
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+
+  files[ED_1748] = files[ED_1748].replace("wombat", "kangaroo");
+  fire(watcher, ED_1748);
+  await flush(DEBOUNCE);
+
+  // The save already compiled it; asking for it must not read it again.
+  const before = controls.reads(ED_1748);
+  const file = await model.getCompiledFile("works/hume/enquiry/1748.mit");
+  expect(file?.text).toContain("kangaroo");
+  expect(controls.reads(ED_1748)).toBe(before);
   model.dispose();
 });
 
@@ -657,4 +850,163 @@ test("dispose with no pending timer still tears the watcher down", async () => {
 
   model.dispose();
   expect(watcher.state.disposed).toBe(true);
+});
+
+/* ------------------------ what a save actually costs ------------------------ */
+
+test("a body-only save does not walk the corpus or re-read the register", async () => {
+  // The cross-file tier is the only one that touches the filesystem, and it does
+  // so heavily (a recursive `data/**` walk plus a probe per stub and borrowed
+  // ref). A save that moves neither a skeleton nor a file's compile-cleanliness
+  // cannot change what it reports, so it must not run — and the register, which
+  // only a shard edit can change, must not be re-read or re-expanded either.
+  const files = oneEdition();
+  await withDerivations(files);
+  const { controls, watcher, deps } = setup(files);
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+
+  const before = controls.calls();
+  files[ED_1748] = files[ED_1748].replace("wombat", "kangaroo");
+  fire(watcher, ED_1748);
+  await flush(DEBOUNCE);
+  const after = controls.calls();
+
+  // No directory walk at all, and exactly one file read: the saved source. That
+  // single read is the whole assertion — it leaves no room for the shard read,
+  // the reference word list, or a resolution probe.
+  expect(after.readDir - before.readDir).toBe(0);
+  expect(after.readFile - before.readFile).toBe(1);
+  model.dispose();
+});
+
+test("a structural save does run the cross-file tier", async () => {
+  const files = oneEdition();
+  await withDerivations(files);
+  const { controls, watcher, deps } = setup(files);
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+
+  const before = controls.calls();
+  files[ED_1748] = files[ED_1748].replace(
+    'title = "An Enquiry"',
+    'title = "An Enquiry, Revised"',
+  );
+  fire(watcher, ED_1748);
+  await flush(DEBOUNCE);
+
+  expect(controls.calls().readDir).toBeGreaterThan(before.readDir);
+  model.dispose();
+});
+
+test("the violations after a scoped save match a from-scratch validation", async () => {
+  // The tier cache must never drift from what a full recompose would produce.
+  const files = twoEditions();
+  await withDerivations(files);
+  const { watcher, deps } = setup(files);
+  const scoped = createCorpusModel(ROOT, deps);
+  await flush();
+
+  // A body edit (dict-dependent only), then a structural one (cross-file too).
+  files[ED_1748] = files[ED_1748].replace("wombat", "[w:kangaroo]");
+  fire(watcher, ED_1748);
+  await flush(DEBOUNCE);
+  files[ED_1750] = files[ED_1750].replace(
+    'title = "An Enquiry"',
+    'title = "An Enquiry, Revised"',
+  );
+  fire(watcher, ED_1750);
+  await flush(DEBOUNCE);
+
+  // A second model over the same files takes the whole-corpus path throughout.
+  const fresh = setup(files);
+  const reference = createCorpusModel(ROOT, fresh.deps);
+  await flush();
+
+  const key = (v: { rule: string; path: string; message: string }) =>
+    `${v.rule}|${v.path}|${v.message}`;
+  expect(scoped.state!.violations.map(key).sort()).toEqual(
+    reference.state!.violations.map(key).sort(),
+  );
+  scoped.dispose();
+  reference.dispose();
+});
+
+/* ------------------------- the register after an edit ------------------------- */
+
+test("a shard save refreshes the expanded register, in memory and on disk", async () => {
+  const files = oneEdition();
+  await withDerivations(files);
+  const { watcher, deps } = setup(files);
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+  expect(model.state!.catalogue.dictionary).not.toHaveProperty("thus");
+
+  files[DICT_T] = '{\n  "the": null,\n  "thus": null\n}\n';
+  fire(watcher, DICT_T);
+  await flush(DEBOUNCE);
+
+  // The catalogue's register is what hover and the unaccounted-word overlay
+  // read; leaving it stale kept a just-registered word squiggled.
+  expect(model.state!.catalogue.dictionary).toHaveProperty("thus");
+  // And the computer's input must not drift from the shards either.
+  expect(files[`${ROOT}/catalogue/dictionary.json`]).toContain("thus");
+  model.dispose();
+});
+
+test("a shard save behind a queued write is covered by that wider write", async () => {
+  const files = oneEdition();
+  await withDerivations(files);
+  const { controls, watcher, deps } = setup(files);
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+
+  // One write parked at the gate, a second queued behind it — then a shard
+  // edit. The queued docs write already rewrites dictionary.json, so the
+  // register edit must not stack a third write behind it.
+  controls.closeGate();
+  files[ED_1748] = files[ED_1748].replace("wombat", "kangaroo");
+  fire(watcher, ED_1748);
+  await flush(DEBOUNCE);
+  files[ED_1748] = files[ED_1748].replace("kangaroo", "platypus");
+  fire(watcher, ED_1748);
+  await flush(DEBOUNCE);
+  files[DICT_T] = '{\n  "the": null,\n  "thus": null\n}\n';
+  fire(watcher, DICT_T);
+  await flush(DEBOUNCE);
+
+  controls.openGate();
+  await flush();
+
+  expect(model.status).toBe("ready");
+  expect(files[`${ROOT}/catalogue/dictionary.json`]).toContain("thus");
+  model.dispose();
+});
+
+test("a queued write-back draining after a failed load writes nothing", async () => {
+  const files = oneEdition();
+  await withDerivations(files);
+  const { controls, watcher, notify, deps } = setup(files);
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+
+  // Park one write at the gate and queue a second, then fail a load so nothing
+  // is resident by the time the queue gets to that second write.
+  controls.closeGate();
+  files[ED_1748] = files[ED_1748].replace("wombat", "kangaroo");
+  fire(watcher, ED_1748);
+  await flush(DEBOUNCE);
+  files[ED_1748] = files[ED_1748].replace("kangaroo", "platypus");
+  fire(watcher, ED_1748);
+  await flush(DEBOUNCE);
+
+  controls.setReadFail(true);
+  await model.reload();
+  await flush();
+  controls.openGate();
+  await flush();
+
+  expect(notify.error).toHaveBeenCalled();
+  expect(model.status).toBe("failed");
+  model.dispose();
 });

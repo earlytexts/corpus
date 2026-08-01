@@ -134,3 +134,48 @@ test("clear empties the cache", async () => {
   expect(cache.peek("works/a.mit")).toBeUndefined();
   expect(cache.bytes).toBe(0);
 });
+
+test("put admits an already-compiled file so the next get needs no read", async () => {
+  const { read, reads } = reader({ "works/a.mit": body("A", "reason") });
+  const cache = createCompiledFileCache(read);
+  const file = await cache.get("works/a.mit");
+  cache.invalidate("works/a.mit");
+  cache.put("works/a.mit", file!);
+
+  expect(cache.peek("works/a.mit")).toBe(file);
+  expect(await cache.get("works/a.mit")).toBe(file);
+  expect(reads()).toBe(1); // the put served the second get
+});
+
+test("put over a resident entry replaces it without double-counting its bytes", async () => {
+  const { read } = reader({ "works/a.mit": body("A", "reason") });
+  const cache = createCompiledFileCache(read);
+  const file = await cache.get("works/a.mit");
+  const bytes = cache.bytes;
+
+  cache.put("works/a.mit", file!);
+  expect(cache.bytes).toBe(bytes);
+});
+
+test("put supersedes a compile still in flight for the same path", async () => {
+  // The save's own recompile is newer than anything already reading from disk,
+  // so the in-flight result must not land on top of it.
+  const source = body("A", "reason");
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  const cache = createCompiledFileCache(async (path) => {
+    await gate;
+    return path === "works/a.mit" ? source : null;
+  });
+
+  const inflight = cache.get("works/a.mit");
+  const fresh = await createCompiledFileCache(() =>
+    Promise.resolve(body("A", "fresher")),
+  ).get("works/a.mit");
+  cache.put("works/a.mit", fresh!);
+  release!();
+  await inflight;
+
+  expect(cache.peek("works/a.mit")).toBe(fresh);
+  expect(cache.bytes).toBe(fresh!.text.length);
+});

@@ -160,18 +160,22 @@ export const activate = async (
     });
     context.subscriptions.push(
       { dispose: () => model?.dispose() },
-      // One fan-out on each corpus change: refresh the view and let every
-      // overlay re-rank against the new state.
-      model.onDidChange(() => {
+      // A load starting only makes the resident state stale — the spinner and
+      // the panel's stale flag, nothing that has to re-derive anything.
+      model.onDidStartLoading(() => {
         updateView();
-        suggestions.onCorpusChanged();
-        dictionary.onCorpusChanged();
+        dictionaryPanel.onLoadingStarted();
+      }),
+      // One fan-out when the load settles, carrying what it changed: each
+      // listener re-derives only what that change can affect, so a one-file save
+      // no longer costs every listener a whole-corpus pass.
+      model.onDidChange((change) => {
+        updateView();
+        suggestions.onCorpusChanged(change);
+        dictionary.onCorpusChanged(change);
         dictionaryPanel.onCorpusChanged();
         searchPanel.onCorpusChanged();
-        // The model fires twice per load (start and finish); the git working
-        // tree can't have changed mid-reload, and statusMatrix over the whole
-        // tree is not cheap, so only re-read once the reload has settled.
-        if (model?.loading === false) contribution.onCorpusChanged();
+        contribution.onCorpusChanged();
       }),
     );
     registerDiagnostics(model, context);

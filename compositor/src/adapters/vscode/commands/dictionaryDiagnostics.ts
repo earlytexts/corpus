@@ -57,6 +57,7 @@ import {
 } from "../../../core/dictionary/shardIO.ts";
 import { createOverlay } from "../overlay.ts";
 import type {
+  CorpusChange,
   CorpusModel,
   CorpusState,
 } from "../../../core/model/corpusModel.ts";
@@ -263,8 +264,11 @@ const unaccountedProvider = (
 export type DictionaryController = {
   /** The scanned words of a document, for the code-action provider. */
   wordsOf: (document: vscode.TextDocument) => UnaccountedWord[];
-  /** The corpus reloaded (or a shard was saved): re-scan what's shown. */
-  onCorpusChanged: () => void;
+  /** The corpus reloaded: re-scan what's shown, when the change can have moved
+   * it. These squiggles are a document's words against the register, so only a
+   * register change (or a full reload) can affect a document other than the one
+   * being edited — and the overlay re-scans that one off its own edit events. */
+  onCorpusChanged: (change: CorpusChange) => void;
   dispose: () => void;
 };
 
@@ -360,7 +364,10 @@ export const createDictionaryController = (
 
   return {
     wordsOf: overlay.itemsOf,
-    onCorpusChanged: () => void overlay.refresh(),
+    onCorpusChanged: (change) => {
+      if (change.kind === "sources") return;
+      void overlay.refresh();
+    },
     dispose: overlay.dispose,
   };
 };

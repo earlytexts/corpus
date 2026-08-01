@@ -62,9 +62,10 @@ type Incoming =
   | { type: "openExample"; path: string; line: number };
 
 export type DictionaryPanel = {
-  /** The corpus reloaded (or a shard was written elsewhere): re-derive. While a
-   * reload is mid-flight the panel only flags itself stale (the corpus-wide
-   * re-rank is not ready yet); a completed reload re-derives in full. */
+  /** A reload has begun: flag the panel stale, since the corpus-wide re-rank it
+   * shows is not ready until the reload settles. */
+  onLoadingStarted: () => void;
+  /** The corpus reloaded (or a shard was written elsewhere): re-derive in full. */
   onCorpusChanged: () => void;
   /** A quick-fix cascade just wrote these surfaces' entries (the shards are on
    * disk): patch them in immediately, the same as a panel edit, rather than
@@ -204,16 +205,18 @@ export const createDictionaryPanel = (
     }
   };
 
-  /** A corpus reload: while it is mid-flight the token index (and so the backlog
-   * re-rank) is stale, so only flag the panel; a completed reload re-derives in
-   * full. This collapses the reload's two fires (start and finish) — and the
-   * optimistic patch that preceded them — to a single authoritative refresh. */
+  /** A reload has begun: the token index (and so the backlog re-rank) is stale
+   * until it settles, so flag the panel rather than re-deriving against state
+   * that is about to move. */
+  const onLoadingStarted = (): void => {
+    if (view === undefined || !view.visible) return;
+    void view.webview.postMessage({ type: "stale", stale: true });
+  };
+
+  /** The reload settled: re-derive in full, superseding both the stale flag and
+   * whatever optimistic patch preceded it with one authoritative refresh. */
   const onCorpusChanged = (): void => {
     if (view === undefined || !view.visible) return;
-    if (getModel()?.loading) {
-      void view.webview.postMessage({ type: "stale", stale: true });
-      return;
-    }
     void refreshFull();
   };
 
@@ -244,6 +247,7 @@ export const createDictionaryPanel = (
   );
 
   return {
+    onLoadingStarted,
     onCorpusChanged,
     onEntriesWritten: (surfaces) => void patch([...surfaces]),
   };

@@ -33,6 +33,12 @@ export type CompiledFileCache = {
   get: (path: string) => Promise<CorpusFile | undefined>;
   /** The cached entry without compiling or touching recency, or undefined. */
   peek: (path: string) => CorpusFile | undefined;
+  /** Admit a file the caller has already compiled — a save's own recompile —
+   * so the file being worked on stays warm instead of being recompiled the next
+   * time search or hover asks for it. Replaces any resident entry, and
+   * supersedes any compile still in flight for the path (that read is older
+   * than this result by construction). */
+  put: (path: string, file: CorpusFile) => void;
   /** Drop a path (a save/delete makes its compile stale); the next `get`
    * recompiles. Also cancels any in-flight compile's caching. */
   invalidate: (path: string) => void;
@@ -74,6 +80,15 @@ export const createCompiledFileCache = (
     return file;
   };
 
+  const drop = (path: string): void => {
+    const file = entries.get(path);
+    if (file !== undefined) {
+      entries.delete(path);
+      bytes -= file.text.length;
+    }
+    pending.delete(path); // an in-flight compile won't be admitted
+  };
+
   const evict = (): void => {
     for (const [path, file] of entries) {
       if (bytes <= budgetBytes || entries.size <= floor) break;
@@ -110,14 +125,11 @@ export const createCompiledFileCache = (
       return promise;
     },
     peek: (path) => entries.get(path),
-    invalidate: (path) => {
-      const file = entries.get(path);
-      if (file !== undefined) {
-        entries.delete(path);
-        bytes -= file.text.length;
-      }
-      pending.delete(path); // an in-flight compile won't be admitted
+    put: (path, file) => {
+      drop(path);
+      admit(path, file);
     },
+    invalidate: drop,
     clear: () => {
       entries.clear();
       pending.clear();

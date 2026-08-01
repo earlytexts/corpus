@@ -154,6 +154,165 @@ export type MarkupSuggestion = {
 export type HintAuthor = { forename: string; surname: string; title?: string };
 
 /**
+ * One source's contribution to the corpus-wide lexicons: the phrases its markup
+ * attests (as folded word sequences, deduped — a refcount is per *file*, so a
+ * name a file repeats must not survive that file's removal) and the words it
+ * marks per language code. Additive and subtractive, so the corpus-wide mine
+ * can be a fold the Compositor updates one file at a time instead of a walk it
+ * re-runs over every source on every save (see hintIndex.ts).
+ */
+export type HintContribution = {
+  people: string[][];
+  places: string[][];
+  orgs: string[][];
+  citations: string[][];
+  /** Language code → folded word → occurrences in this file. */
+  langCounts: Map<string, Map<string, number>>;
+};
+
+/**
+ * How often each folded word occurs in *unmarked* text — the corpus-wide English
+ * frequency estimate the strong/weak split and the singleton pruning weigh
+ * against (see the header). A statistic over the whole corpus rather than a
+ * per-file fact: one file's edit moves it by parts per million, and tracking it
+ * per file would cost more resident memory than the body-free model saves.
+ */
+export type WordFrequencies = {
+  unmarked: Map<string, number>;
+  unmarkedLower: Map<string, number>;
+};
+
+/** The mined markup a classification runs over — the fold's accumulated state,
+ * in the shape `classifyHints` reads it. */
+export type MarkedHints = {
+  people: PhraseLexicon;
+  places: PhraseLexicon;
+  orgs: PhraseLexicon;
+  citations: PhraseLexicon;
+  /** Language code → folded word → occurrences across every contributing file. */
+  langCounts: Map<string, Map<string, number>>;
+};
+
+/** Mine one document (and its inline sections) on its own: what it contributes
+ * to the shared lexicons, and the unmarked-word frequencies it accounts for. */
+export const hintContribution = (
+  doc: MarkitDocument,
+): { marked: HintContribution; frequencies: WordFrequencies } => {
+  const collector = createCollector();
+  collector.addDocument(doc);
+  return {
+    marked: {
+      people: [...collector.people.values()],
+      places: [...collector.places.values()],
+      orgs: [...collector.orgs.values()],
+      citations: [...collector.citations.values()],
+      langCounts: collector.langCounts,
+    },
+    frequencies: {
+      unmarked: collector.unmarked,
+      unmarkedLower: collector.unmarkedLower,
+    },
+  };
+};
+
+/**
+ * Turn mined markup into the scanner's lexicons: seed people from the author
+ * metadata and citations from the work titles, prune the single-word phrases
+ * that are everyday words, and split each language's vocabulary strong/weak
+ * against the unmarked frequencies (then let the overrides win). Pure — the
+ * mined lexicons are copied, not mutated, so a caller may hold one aggregate
+ * across many classifications.
+ */
+export const classifyHints = (
+  marked: MarkedHints,
+  frequencies: WordFrequencies,
+  authors: readonly HintAuthor[],
+  works: readonly { title: string }[],
+  overrides: HintOverrides = {},
+): Hints => {
+  const people = copyLexicon(marked.people);
+  const places = copyLexicon(marked.places);
+  const orgs = copyLexicon(marked.orgs);
+  const citations = copyLexicon(marked.citations);
+
+  for (const author of authors) {
+    addPhrase(people, `${author.forename} ${author.surname}`.trim());
+    addPhrase(people, author.surname);
+    if (author.title !== undefined) addPhrase(people, author.title);
+  }
+  for (const work of works) {
+    addPhrase(citations, work.title);
+  }
+
+  // A single-word phrase that is also an everyday lowercase word ("of",
+  // "his" — citation wrappers sometimes mark bare anchor words, and names
+  // can coincide with common nouns) would fire at every capitalised
+  // occurrence, sentence starts included; drop it. A multi-word phrase keeps
+  // its everyday words — the phrase as a whole is still distinctive.
+  const pruneSingletons = (lexicon: PhraseLexicon): void => {
+    for (const [head, seqs] of lexicon) {
+      const kept = seqs.filter(
+        (seq) =>
+          seq.length > 1 ||
+          (frequencies.unmarkedLower.get(seq[0]!) ?? 0) <=
+            STRONG_UNMARKED_FLOOR,
+      );
+      if (kept.length === 0) lexicon.delete(head);
+      else lexicon.set(head, kept);
+    }
+  };
+  pruneSingletons(people);
+  pruneSingletons(places);
+  pruneSingletons(orgs);
+  pruneSingletons(citations);
+
+  const languages = new Map<string, LanguageLexicon>();
+  const lexiconFor = (code: string): LanguageLexicon => {
+    const existing = languages.get(code);
+    if (existing !== undefined) return existing;
+    const fresh = { strong: new Set<string>(), weak: new Set<string>() };
+    languages.set(code, fresh);
+    return fresh;
+  };
+  for (const [code, counts] of marked.langCounts) {
+    const lexicon = lexiconFor(code);
+    for (const [word, count] of counts) {
+      const u = frequencies.unmarked.get(word) ?? 0;
+      const strong =
+        u <= STRONG_UNMARKED_FLOOR || u <= count * STRONG_MARKED_RATIO;
+      (strong ? lexicon.strong : lexicon.weak).add(word);
+    }
+  }
+  // The patches run last so they win over the frequency rule; they may also
+  // introduce words (or whole languages) never yet marked.
+  for (const [code, patch] of Object.entries(overrides)) {
+    const lexicon = lexiconFor(code.toLowerCase());
+    for (const word of patch.strong ?? []) {
+      lexicon.weak.delete(word);
+      lexicon.strong.add(word);
+    }
+    for (const word of patch.weak ?? []) {
+      lexicon.strong.delete(word);
+      lexicon.weak.add(word);
+    }
+    for (const word of patch.ignore ?? []) {
+      lexicon.strong.delete(word);
+      lexicon.weak.delete(word);
+    }
+  }
+
+  return { people, places, orgs, citations, languages };
+};
+
+/** Assemble a phrase lexicon from folded word sequences (longest match first,
+ * duplicates collapsed) — the shape the matcher reads. */
+export const phraseLexiconOf = (seqs: Iterable<string[]>): PhraseLexicon => {
+  const lexicon: PhraseLexicon = new Map();
+  for (const seq of seqs) insertSeq(lexicon, seq);
+  return lexicon;
+};
+
+/**
  * Mine markup hints from a stream of documents plus the author/work metadata to
  * seed from. One walk collects the marked phrases and per-language word counts
  * alongside the unmarked (English) word frequencies; the language lexicons are
@@ -195,13 +354,51 @@ export type HintBuilder = {
 export const createHintBuilder = (
   overrides: HintOverrides = {},
 ): HintBuilder => {
-  const people: PhraseLexicon = new Map();
-  const places: PhraseLexicon = new Map();
-  const orgs: PhraseLexicon = new Map();
-  const citations: PhraseLexicon = new Map();
+  const collector = createCollector();
+  return {
+    addDocument: collector.addDocument,
+    finish: (authors, works) =>
+      classifyHints(
+        {
+          people: phraseLexiconOf(collector.people.values()),
+          places: phraseLexiconOf(collector.places.values()),
+          orgs: phraseLexiconOf(collector.orgs.values()),
+          citations: phraseLexiconOf(collector.citations.values()),
+          langCounts: collector.langCounts,
+        },
+        {
+          unmarked: collector.unmarked,
+          unmarkedLower: collector.unmarkedLower,
+        },
+        authors,
+        works,
+        overrides,
+      ),
+  };
+};
+
+/**
+ * The mining half, shared by the whole-corpus builder and the per-file
+ * contribution: walk documents and tally what their markup attests. Phrases are
+ * keyed by their folded sequence, so a phrase repeated within the collector's
+ * documents is held once — which is what makes a per-file contribution a set of
+ * distinct phrases rather than a bag of occurrences.
+ */
+const createCollector = () => {
+  const people = new Map<string, string[]>();
+  const places = new Map<string, string[]>();
+  const orgs = new Map<string, string[]>();
+  const citations = new Map<string, string[]>();
   const langCounts = new Map<string, Map<string, number>>();
   const unmarked = new Map<string, number>();
   const unmarkedLower = new Map<string, number>();
+
+  const collect = (into: Map<string, string[]>, text: string): void => {
+    const seq = words(text);
+    if (seq.length === 0) return;
+    const key = phraseKey(seq);
+    if (!into.has(key)) into.set(key, seq);
+  };
 
   const sink: HintSink = {
     language: (lang, text) => {
@@ -212,10 +409,10 @@ export const createHintBuilder = (
         counts.set(word, (counts.get(word) ?? 0) + 1);
       }
     },
-    person: (text) => addPhrase(people, text),
-    place: (text) => addPhrase(places, text),
-    org: (text) => addPhrase(orgs, text),
-    citation: (text) => addPhrase(citations, text),
+    person: (text) => collect(people, text),
+    place: (text) => collect(places, text),
+    org: (text) => collect(orgs, text),
+    citation: (text) => collect(citations, text),
     unmarked: (text) => {
       for (const match of text.matchAll(wordPattern)) {
         const folded = foldWord(match[0]);
@@ -242,80 +439,25 @@ export const createHintBuilder = (
     for (const child of doc.children) addDocument(child);
   };
 
-  const finish = (
-    authors: readonly HintAuthor[],
-    works: readonly { title: string }[],
-  ): Hints => {
-    for (const author of authors) {
-      addPhrase(people, `${author.forename} ${author.surname}`.trim());
-      addPhrase(people, author.surname);
-      if (author.title !== undefined) addPhrase(people, author.title);
-    }
-    for (const work of works) {
-      addPhrase(citations, work.title);
-    }
-
-    // A single-word phrase that is also an everyday lowercase word ("of",
-    // "his" — citation wrappers sometimes mark bare anchor words, and names
-    // can coincide with common nouns) would fire at every capitalised
-    // occurrence, sentence starts included; drop it. A multi-word phrase keeps
-    // its everyday words — the phrase as a whole is still distinctive.
-    const pruneSingletons = (lexicon: PhraseLexicon): void => {
-      for (const [head, seqs] of lexicon) {
-        const kept = seqs.filter(
-          (seq) =>
-            seq.length > 1 ||
-            (unmarkedLower.get(seq[0]!) ?? 0) <= STRONG_UNMARKED_FLOOR,
-        );
-        if (kept.length === 0) lexicon.delete(head);
-        else lexicon.set(head, kept);
-      }
-    };
-    pruneSingletons(people);
-    pruneSingletons(places);
-    pruneSingletons(orgs);
-    pruneSingletons(citations);
-
-    const languages = new Map<string, LanguageLexicon>();
-    const lexiconFor = (code: string): LanguageLexicon => {
-      const existing = languages.get(code);
-      if (existing !== undefined) return existing;
-      const fresh = { strong: new Set<string>(), weak: new Set<string>() };
-      languages.set(code, fresh);
-      return fresh;
-    };
-    for (const [code, counts] of langCounts) {
-      const lexicon = lexiconFor(code);
-      for (const [word, marked] of counts) {
-        const u = unmarked.get(word) ?? 0;
-        const strong =
-          u <= STRONG_UNMARKED_FLOOR || u <= marked * STRONG_MARKED_RATIO;
-        (strong ? lexicon.strong : lexicon.weak).add(word);
-      }
-    }
-    // The patches run last so they win over the frequency rule; they may also
-    // introduce words (or whole languages) never yet marked.
-    for (const [code, patch] of Object.entries(overrides)) {
-      const lexicon = lexiconFor(code.toLowerCase());
-      for (const word of patch.strong ?? []) {
-        lexicon.weak.delete(word);
-        lexicon.strong.add(word);
-      }
-      for (const word of patch.weak ?? []) {
-        lexicon.strong.delete(word);
-        lexicon.weak.add(word);
-      }
-      for (const word of patch.ignore ?? []) {
-        lexicon.strong.delete(word);
-        lexicon.weak.delete(word);
-      }
-    }
-
-    return { people, places, orgs, citations, languages };
+  return {
+    addDocument,
+    people,
+    places,
+    orgs,
+    citations,
+    langCounts,
+    unmarked,
+    unmarkedLower,
   };
-
-  return { addDocument, finish };
 };
+
+/** A phrase's identity: its folded words, joined on a separator no word holds. */
+export const phraseKey = (seq: readonly string[]): string => seq.join(" ");
+
+/** A phrase lexicon with its own arrays, so the copy can be pruned and seeded
+ * without touching the aggregate it came from. */
+const copyLexicon = (lexicon: PhraseLexicon): PhraseLexicon =>
+  new Map([...lexicon].map(([head, seqs]) => [head, seqs.slice()]));
 
 /**
  * Mine hints from a fully loaded catalogue — the convenience over
@@ -703,8 +845,11 @@ export const phraseLexicon = (texts: string[]): PhraseLexicon => {
   return lexicon;
 };
 
-const addPhrase = (lexicon: PhraseLexicon, text: string): void => {
-  const seq = words(text);
+const addPhrase = (lexicon: PhraseLexicon, text: string): void =>
+  insertSeq(lexicon, words(text));
+
+/** Add one folded word sequence to a lexicon, deduped, longest match first. */
+const insertSeq = (lexicon: PhraseLexicon, seq: string[]): void => {
   const head = seq[0];
   if (head === undefined) return;
   const list = lexicon.get(head) ?? [];

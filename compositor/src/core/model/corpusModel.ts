@@ -31,22 +31,25 @@ import {
   type CorpusFile,
   type CorpusFs,
   type CorpusFsWrite,
+  createValidationCache,
   type DerivationRecord,
   derivationRecord,
   deriveFile,
+  type DictionarySnapshot,
   hashText,
   loadCorpus,
   normalizePath,
-  parseDictionary,
   precompiledSkeletons,
   readDerivations,
-  readDictionaryShards,
+  readDictionarySnapshot,
   sourceDocKeys,
-  validateCrossFile,
+  createCrossFileIndex,
+  type FileProjection,
   validateDictionary,
   validateWordAndOverride,
   type Violation,
   writeCatalogue,
+  writeCatalogueDictionary,
   writeCatalogueSources,
   writeDerivations,
 } from "@earlytexts/corpus";
@@ -103,6 +106,26 @@ export type CorpusState = {
   vocabulary: Set<string>;
 };
 
+/**
+ * What a settled load actually changed — the scope each listener narrows its own
+ * refresh by, so a one-file save costs work proportional to the file rather than
+ * to the corpus. Without it every listener has to assume the worst and re-derive
+ * everything, which is what made a single save re-mine the whole corpus.
+ */
+export type CorpusChange = {
+  /** `full` is a whole-corpus rebuild — a cold start, the Rebuild command, a
+   * structural change under `data/`, or a failed load: assume everything moved. */
+  kind: "full" | "sources" | "dictionary";
+  /** The `data/`-relative sources this load recompiled or dropped (empty unless
+   * `kind` is `sources`). */
+  sources: ReadonlySet<string>;
+  /** Whether the catalogue was rebuilt — equivalently, whether any file's
+   * skeleton or compile-cleanliness moved, which is exactly the condition under
+   * which the cross-file validation tier's inputs can have changed. A body edit
+   * that leaves both alone cannot affect any other file. */
+  structural: boolean;
+};
+
 export type CorpusModel = {
   /** The corpus root (the directory containing data/). */
   readonly root: string;
@@ -113,8 +136,13 @@ export type CorpusModel = {
    * source is gone. The one path to a positioned body, so no consumer depends on
    * the whole corpus being resident. */
   getCompiledFile: (path: string) => Promise<CorpusFile | undefined>;
+  /** Compile one source *without* admitting it to the working-set cache — for
+   * the one-shot whole-corpus streams (the markup-hint miner) that would
+   * otherwise pull far more than the budget through it and evict the editions
+   * actually being worked on. */
+  compileTransient: (path: string) => Promise<CorpusFile | undefined>;
   /** The resident `works/**` source paths — the set the markup-hint miner
-   * streams through `getCompiledFile` (see suggestMarkup). */
+   * streams through `compileTransient` (see suggestMarkup). */
   workSourcePaths: () => string[];
   readonly loading: boolean;
   /** What to tell the user about the model right now (see the tree/status bar). */
@@ -122,7 +150,13 @@ export type CorpusModel = {
   /** True once a first load has completed — the indexes and violations then
    * reflect real data rather than nothing. */
   readonly loaded: boolean;
-  readonly onDidChange: Event<void>;
+  /** A load has begun and the state is now stale — for the spinner and the
+   * "reloading" view message, and nothing else. */
+  readonly onDidStartLoading: Event<void>;
+  /** A load has *settled*, with the scope of what it changed. Fired once per
+   * load: a listener never has to filter on `loading` to avoid doing its work
+   * twice, and it is handed enough to skip the work the change cannot affect. */
+  readonly onDidChange: Event<CorpusChange>;
   /** Recompile everything from disk and rewrite the build output — the
    * "Rebuild catalogue" escape hatch. */
   reload: () => Promise<void>;
@@ -131,11 +165,38 @@ export type CorpusModel = {
 
 const RELOAD_DEBOUNCE_MS = 300;
 
+/** The change a load reports when it cannot say anything narrower. */
+const fullChange = (): CorpusChange => ({
+  kind: "full",
+  sources: new Set(),
+  structural: true,
+});
+
+/** One file's dict-dependent violations: `[w:]` markup and metadata overrides
+ * against the register. The tier is per-file independent, which is what lets a
+ * save re-derive only the files it touched. */
+const wordAndOverrideOf = (
+  record: DerivationRecord,
+  dictionary: DictionarySnapshot,
+): Violation[] =>
+  validateWordAndOverride(
+    [
+      {
+        path: record.projection.path,
+        clean: record.projection.clean,
+        marked: record.derived.marked,
+        overrides: record.projection.overrides,
+      },
+    ],
+    dictionary,
+  );
+
 export const createCorpusModel = (
   root: string,
   { fs, watch, notify }: CorpusModelDeps,
 ): CorpusModel => {
-  const emitter = createEmitter<void>();
+  const startEmitter = createEmitter<void>();
+  const changeEmitter = createEmitter<CorpusChange>();
   /** One record per source `.mit`, keyed by data/-relative path: the whole
    * resident corpus, bounded by file count in structure but never holding a
    * positioned body. */
@@ -145,6 +206,9 @@ export const createCorpusModel = (
   const compiledCache = createCompiledFileCache((path) =>
     fs.readFile(`${root}/data/${path}`),
   );
+  /** Memos for the fixed reference files the dictionary tier reads — one
+   * session, one parse of the 106k-line word list. */
+  const cache = createValidationCache();
   let state: CorpusState | undefined;
   let loading = false;
   let loaded = false;
@@ -166,29 +230,113 @@ export const createCorpusModel = (
     vocabulary: vocabularyFromFiles(derivedFiles()),
   });
 
-  /** Recompose every violation from the doc-free tiers over the records: the
-   * per-file violations are persisted; the dict-dependent, cross-file, and
-   * dictionary tiers recompute (from `derived`/projections/shards + fs). */
-  const recomputeViolations = async (): Promise<Violation[]> => {
+  /**
+   * The doc-free tiers' output, held per tier so a load re-runs only the tiers
+   * its change can touch and serves the rest from the last run. The per-file
+   * tier is not here — it is persisted on the records themselves.
+   */
+  const tiers = {
+    /** By `data/`-relative path: the tier is per-file independent, so a save
+     * re-derives only the files it touched. */
+    wordAndOverride: new Map<string, Violation[]>(),
+    crossFile: [] as Violation[],
+    dictionary: [] as Violation[],
+  };
+
+  /** Which tiers a load has to re-run (see `recomputeViolations`). */
+  type ViolationScope =
+    | { kind: "all" }
+    | { kind: "sources"; paths: ReadonlySet<string>; structural: boolean }
+    | { kind: "dictionary" };
+
+  /**
+   * Recompose every violation from the doc-free tiers over the records, running
+   * only the tiers the change can have moved:
+   *
+   *  - **per-file** — persisted on the records, re-derived by the recompile.
+   *  - **dict-dependent** — per file, so a save re-derives just the saved files;
+   *    a register edit re-derives all of them.
+   *  - **cross-file** — the only tier that touches the filesystem, and it does so
+   *    heavily (a recursive walk of `data/**` plus a resolution probe per stub
+   *    and per borrowed ref: thousands of syscalls). It reads nothing but the
+   *    projections' structure and their compile-cleanliness, both of which a
+   *    non-structural save leaves alone — so that save skips it entirely, and a
+   *    structural one goes through the index, which re-probes only the files the
+   *    change could have reached (see the corpus's validation/crossFile.ts).
+   *  - **dictionary** — shards and reference files only; a `.mit` save cannot
+   *    move it.
+   */
+  const recomputeViolations = async (
+    scope: ViolationScope,
+  ): Promise<Violation[]> => {
     const recs = [...records.values()];
-    const raw = parseDictionary(
-      await readDictionaryShards(fs, root),
-    ).dictionary;
-    const wordEntries = recs.map((r) => ({
-      path: r.projection.path,
-      clean: r.projection.clean,
-      marked: r.derived.marked,
-      overrides: r.projection.overrides,
-    }));
+    const dictionary = await dictionarySnapshot(scope.kind !== "sources");
+
+    if (scope.kind === "sources") {
+      for (const path of scope.paths) {
+        const record = records.get(path);
+        if (record === undefined) tiers.wordAndOverride.delete(path);
+        else {
+          tiers.wordAndOverride.set(
+            path,
+            wordAndOverrideOf(record, dictionary),
+          );
+        }
+      }
+    } else {
+      tiers.wordAndOverride.clear();
+      for (const record of recs) {
+        tiers.wordAndOverride.set(
+          record.projection.path,
+          wordAndOverrideOf(record, dictionary),
+        );
+      }
+    }
+
+    if (scope.kind === "all") {
+      tiers.crossFile = await crossFile.reset(recs.map((r) => r.projection));
+    } else if (scope.kind === "sources" && scope.structural) {
+      const changes = new Map<string, FileProjection | undefined>();
+      for (const path of scope.paths) {
+        changes.set(path, records.get(path)?.projection);
+      }
+      tiers.crossFile = await crossFile.update(changes);
+    }
+
+    if (scope.kind !== "sources") {
+      tiers.dictionary = await validateDictionary({
+        fs,
+        root,
+        dictionary,
+        cache,
+      });
+    }
+
     return [
       ...recs.flatMap((r) => r.violations),
-      ...validateWordAndOverride(wordEntries, raw),
-      ...(await validateCrossFile(
-        recs.map((r) => r.projection),
-        { fs, root },
-      )),
-      ...(await validateDictionary({ fs, root })),
+      // In first-seen file order (a re-set keeps a key's position), so the
+      // Problems list is stable across loads whichever tier last ran.
+      ...[...tiers.wordAndOverride.values()].flat(),
+      ...tiers.crossFile,
+      ...tiers.dictionary,
     ];
+  };
+
+  /** The cross-file tier as a resident index rather than a sweep, so a
+   * structural save re-probes only the files its change could have reached. */
+  const crossFile = createCrossFileIndex({ fs, root });
+
+  /** The register as this load sees it. Held between loads: only a dictionary
+   * edit can change it, and both reading and expanding it are passes over every
+   * entry — so a `.mit` save reuses the snapshot rather than redoing either. */
+  let register: DictionarySnapshot | undefined;
+  const dictionarySnapshot = async (
+    refresh: boolean,
+  ): Promise<DictionarySnapshot> => {
+    if (refresh || register === undefined) {
+      register = await readDictionarySnapshot(fs, root);
+    }
+    return register;
   };
 
   /** Rebuild the stub-bodied catalogue from the records' skeletons — a fast
@@ -203,7 +351,7 @@ export const createCorpusModel = (
   const stateFromRecords = async (): Promise<CorpusState> => {
     const [{ catalogue, warnings }, violations] = await Promise.all([
       buildStructure(),
-      recomputeViolations(),
+      recomputeViolations({ kind: "all" }),
     ]);
     return { catalogue, warnings, violations, ...seedIndexes() };
   };
@@ -226,7 +374,10 @@ export const createCorpusModel = (
         docs: Map<string, CorpusFile["doc"]>;
         /** root-relative source path → the docKey to remove (a deleted edition). */
         removals: Map<string, string>;
-      };
+      }
+    /** A register edit: `dictionary.json` (and `catalogue.json`, whose warnings
+     * may mention dropped entries) only — the documents are untouched. */
+    | { kind: "dictionary" };
   let pending: PendingWrite | undefined;
   let writing = false;
   const drainWrites = (): void => {
@@ -239,7 +390,16 @@ export const createCorpusModel = (
           pending = undefined;
           try {
             if (next.kind === "full") await next.run();
-            else if (state !== undefined) {
+            else if (state === undefined) {
+              // nothing resident to serialise; the next load refreshes it
+            } else if (next.kind === "dictionary") {
+              await writeCatalogueDictionary(
+                fs,
+                root,
+                state.catalogue,
+                state.warnings,
+              );
+            } else {
               await writeCatalogueSources(
                 fs,
                 root,
@@ -262,12 +422,21 @@ export const createCorpusModel = (
     pending = { kind: "full", run }; // supersedes any pending docs write
     drainWrites();
   };
+  /** Refresh `catalogue/dictionary.json` after a register edit — without it the
+   * computer's input silently drifts from the shards until the next `.mit` save
+   * or full rebuild. Superseded by any wider pending write, which covers it. */
+  const enqueueDictionary = (): void => {
+    if (pending !== undefined) return; // a pending full/docs write covers it
+    pending = { kind: "dictionary" };
+    drainWrites();
+  };
   const enqueueDocs = (
     docs: Map<string, CorpusFile["doc"]>,
     removals: Map<string, string>,
   ): void => {
     if (pending?.kind === "full") return; // the pending full covers everything
-    if (pending === undefined) {
+    if (pending === undefined || pending.kind === "dictionary") {
+      // A docs write rewrites dictionary.json too, so it absorbs a pending one.
       pending = { kind: "docs", docs: new Map(), removals: new Map() };
     }
     for (const [source, doc] of docs) {
@@ -300,7 +469,7 @@ export const createCorpusModel = (
    * The fallback when the derivations cache is missing/stale, and the path a
    * structural change and the Rebuild command take.
    */
-  const loadFull = async (): Promise<void> => {
+  const loadFull = async (): Promise<CorpusChange> => {
     const files = await loadCorpus(fs, root);
     records.clear();
     compiledCache.clear();
@@ -328,12 +497,13 @@ export const createCorpusModel = (
       await writeDerivations(fs, root, snapshot);
     });
     // `files`/`full` fall out of scope here — only the records and stubs remain.
+    return fullChange();
   };
 
   /** Recompile just the touched sources and rebuild the resident state from the
    * records. Structure is rebuilt only when a skeleton actually changed (a body
    * edit leaves it untouched), so a plain content save skips the catalogue pass. */
-  const loadIncremental = async (paths: Set<string>): Promise<void> => {
+  const loadIncremental = async (paths: Set<string>): Promise<CorpusChange> => {
     // A deleted edition's document is located by the docKey it *had* before this
     // save mutated the catalogue, so capture the mapping lazily (only when a
     // delete is actually seen) off the pre-edit catalogue.
@@ -353,13 +523,19 @@ export const createCorpusModel = (
     // them, `data/`-relative) and deleted editions' documents, for the write-back.
     const changedDocs = new Map<string, CorpusFile["doc"]>();
     const removals = new Map<string, string>();
-    let skeletonChanged = false;
+    // "Structural" is skeleton *or* compile-cleanliness: the catalogue is built
+    // from skeletons alone, but `projection.clean` gates every cross-file rule
+    // and is not skeleton-derived (an unclosed inline tag leaves the id,
+    // metadata, and children a skeleton keeps entirely untouched). Folding both
+    // into one flag keeps "not structural ⇒ no other file's validity moved" true,
+    // at the cost of a rare needless catalogue pass when a file stops compiling.
+    let structural = false;
     for (const path of paths) {
       const source = `data/${path}`;
       compiledCache.invalidate(path);
       const file = await compileOne(path);
       if (file === undefined) {
-        if (records.delete(path)) skeletonChanged = true;
+        if (records.delete(path)) structural = true;
         const docKey = await removalDocKey(source);
         if (docKey !== undefined) removals.set(source, docKey);
         continue;
@@ -367,18 +543,29 @@ export const createCorpusModel = (
       const before = records.get(path);
       const record = await derivationRecord(file, { fs, root });
       records.set(path, record);
-      skeletonChanged ||=
+      structural ||=
         before === undefined ||
+        before.projection.clean !== record.projection.clean ||
         JSON.stringify(before.skeleton) !== JSON.stringify(record.skeleton);
       changedDocs.set(source, file.doc);
+      // Keep the file the user just saved warm: it has been compiled already,
+      // and search and hover will want it next.
+      compiledCache.put(path, file);
     }
+    // With nothing resident (a previous load failed) there is no structure to
+    // reuse, so the load rebuilds regardless of what the files did.
+    const resident = state;
     const catalogue =
-      skeletonChanged || state === undefined
+      resident === undefined || structural
         ? await buildStructure()
-        : { catalogue: state.catalogue, warnings: state.warnings };
+        : { catalogue: resident.catalogue, warnings: resident.warnings };
     state = {
       ...catalogue,
-      violations: await recomputeViolations(),
+      violations: await recomputeViolations({
+        kind: "sources",
+        paths,
+        structural: structural || resident === undefined,
+      }),
       ...seedIndexes(),
     };
     // Write just the touched editions' documents (from their recompiled
@@ -391,14 +578,33 @@ export const createCorpusModel = (
     if (changedDocs.size > 0 || removals.size > 0) {
       enqueueDocs(changedDocs, removals);
     }
+    return {
+      kind: "sources",
+      sources: paths,
+      structural: structural || resident === undefined,
+    };
   };
 
   /** A dictionary-shard edit: the documents are untouched (records stay valid),
    * so only the dictionary-dependent and dictionary tiers re-run — no recompiles,
    * and the token index/vocabulary (register-independent) are reused. */
-  const loadDictionary = async (): Promise<void> => {
+  const loadDictionary = async (): Promise<CorpusChange> => {
     if (state === undefined) return loadFull();
-    state = { ...state, violations: await recomputeViolations() };
+    const violations = await recomputeViolations({ kind: "dictionary" });
+    // A shard edit changes exactly one thing in the catalogue — the expanded
+    // register — so splice it in rather than re-walking `data/**` to rebuild the
+    // structure around it. Leaving it stale is what made a just-registered word
+    // keep its squiggle and its old hover reading until the next `.mit` save.
+    state = {
+      ...state,
+      catalogue: {
+        ...state.catalogue,
+        dictionary: (await dictionarySnapshot(false)).expanded(),
+      },
+      violations,
+    };
+    enqueueDictionary();
+    return { kind: "dictionary", sources: new Set(), structural: false };
   };
 
   /* ---------------------------- cold start ---------------------------- */
@@ -408,18 +614,16 @@ export const createCorpusModel = (
    * the background. A missing/stale/foreign cache (a fresh clone has none — it is
    * gitignored) falls through to a full compile.
    */
-  const coldStart = async (): Promise<void> => {
+  const coldStart = async (): Promise<CorpusChange> => {
     const derivations = await readDerivations(fs, root).catch(() => null);
     const real = await fs.realPath(root).catch(() => root);
-    if (derivations === null || derivations.root !== real) {
-      await loadFull();
-      return;
-    }
+    if (derivations === null || derivations.root !== real) return loadFull();
     records.clear();
     for (const [path, record] of derivations.records) records.set(path, record);
     state = await stateFromRecords();
     // Reconcile out-of-session changes in the background (below), after the
     // instant seed has been shown.
+    return fullChange();
   };
 
   /** After the instant seed, hash every source and reconcile: unchanged → done;
@@ -452,17 +656,20 @@ export const createCorpusModel = (
   /* --------------------------- orchestration --------------------------- */
 
   // One load at a time; a request arriving mid-load is coalesced and replayed.
-  let queued: (() => Promise<void>) | undefined;
-  const run = (task: () => Promise<void>): void => {
+  let queued: (() => Promise<CorpusChange>) | undefined;
+  const run = (task: () => Promise<CorpusChange>): void => {
     if (loading) {
       queued = task; // latest-wins: a newer request supersedes a queued one
       return;
     }
     loading = true;
-    emitter.fire();
+    startEmitter.fire();
     void (async () => {
+      // A load that threw leaves nothing trustworthy resident, so the fan-out is
+      // told to assume everything moved.
+      let change = fullChange();
       try {
-        await task();
+        change = await task();
       } catch (error) {
         state = undefined;
         const message = error instanceof Error ? error.message : String(error);
@@ -470,7 +677,7 @@ export const createCorpusModel = (
       } finally {
         loading = false;
         loaded = true;
-        emitter.fire();
+        changeEmitter.fire(change);
       }
       if (queued !== undefined) {
         const next = queued;
@@ -512,8 +719,9 @@ export const createCorpusModel = (
 
   // Kick off: instant seed (or full compile), then the background reconcile.
   run(async () => {
-    await coldStart();
+    const change = await coldStart();
     void sweep();
+    return change;
   });
 
   return {
@@ -522,6 +730,7 @@ export const createCorpusModel = (
       return state;
     },
     getCompiledFile: (path) => compiledCache.get(path),
+    compileTransient: compileOne,
     workSourcePaths: () =>
       [...records.keys()].filter((p) => p.startsWith("works/")),
     get loading() {
@@ -534,7 +743,8 @@ export const createCorpusModel = (
     get loaded() {
       return loaded;
     },
-    onDidChange: emitter.event,
+    onDidStartLoading: startEmitter.event,
+    onDidChange: changeEmitter.event,
     reload: () => {
       // Fire-and-forget: the tree and Problems refresh via onDidChange when the
       // rebuild settles, so the command need not block on it.
@@ -544,7 +754,8 @@ export const createCorpusModel = (
     dispose: () => {
       if (timer !== undefined) clearTimeout(timer);
       watcher.dispose();
-      emitter.dispose();
+      startEmitter.dispose();
+      changeEmitter.dispose();
     },
   };
 };
