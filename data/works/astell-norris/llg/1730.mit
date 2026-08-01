@@ -1,7 +1,9 @@
-# Astell-Norris.LLG
+# Astell-Norris.LLG.1730
 
 [metadata]
+imported = false
 title = "Letters Concerning the Love of God, Between the Author of the Proposal to the Ladies and Mr. John Norris"
-breadcrumb = "Letters Concerning the Love of God"
+breadcrumb = "1730"
 authors = ["astell", "norris"]
-canonical = "1730"
+published = [1730]
+estc = "T76775"
