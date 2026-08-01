@@ -1,7 +1,9 @@
-# Astell.CR
+# Astell.CR.1730
 
 [metadata]
+imported = false
 title = "The Christian Religion, as Profess'd by a Daughter of the Church of England"
-breadcrumb = "Christian Religion"
+breadcrumb = "1730"
 authors = ["astell"]
-canonical = "1730"
+published = [1730]
+estc = "T204398"
