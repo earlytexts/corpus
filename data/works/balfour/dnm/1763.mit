@@ -1,7 +1,9 @@
-# Balfour.DNM
+# Balfour.DNM.1763
 
 [metadata]
+imported = false
 title = "A Delineation of the Nature and Obligation of Morality"
-breadcrumb = "Delineation of the Nature of Morality"
+breadcrumb = "1763"
 authors = ["balfour"]
-canonical = "1763"
+published = [1763]
+estc = "T109026"
