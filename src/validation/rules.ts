@@ -24,23 +24,30 @@ import {
   type FileDerivations,
   type MarkedToken,
 } from "./derive.ts";
-import type { Dictionary, RawDictionary } from "../dictionary/types.ts";
+import type { Dictionary } from "../dictionary/types.ts";
 import {
   canonicalSpellingViolations,
   dictionaryViolations,
-  expandDictionary,
 } from "../dictionary/expand.ts";
 import {
   overridesOf,
   overrideViolation,
   wordMarkupViolation,
 } from "../dictionary/resolve.ts";
+import { shardOf } from "../dictionary/shards.ts";
 import {
-  parseDictionary,
-  readDictionaryShards,
-  shardDictionary,
-  shardOf,
-} from "../dictionary/shards.ts";
+  type DictionarySnapshot,
+  readDictionarySnapshot,
+} from "../dictionary/snapshot.ts";
+import type { ValidationCache } from "./cache.ts";
+import {
+  authorViolations,
+  borrowedViolations,
+  createCrossFileIndex,
+  layoutViolations,
+  slugOwners,
+  stubViolations,
+} from "./crossFile.ts";
 import {
   authorIdentifiers,
   authorRequired,
@@ -52,13 +59,7 @@ import {
   textIdentifiers,
   textSchema,
 } from "./schema.ts";
-import {
-  borrowedRef,
-  expectedId,
-  resolveEdition,
-  resolveVariant,
-  YEAR,
-} from "../fs/paths.ts";
+import { borrowedRef, expectedId } from "../fs/paths.ts";
 
 /** A corpus file, compiled standalone (borrowed children left unresolved). */
 export type CorpusFile = {
@@ -102,6 +103,14 @@ export type RuleContext = {
   files: CorpusFile[];
   fs: CorpusFs;
   root: string;
+  /** A dictionary already read for this pass. Supplied by the Compositor so one
+   * save reads, parses, and expands the shards once across every tier and the
+   * catalogue build; omitted, the rules read it themselves and memoize it on the
+   * context (see `dictionaryOf`). */
+  dictionary?: DictionarySnapshot;
+  /** Memos for the fixed reference files (see cache.ts). Supplied by a long-lived
+   * caller; omitted, they are read and parsed afresh each pass. */
+  cache?: ValidationCache;
 };
 
 export type Rule = {
@@ -242,7 +251,10 @@ const textsMatchSchema: Rule = {
 
 const workStubsNameCanonical: Rule = {
   name: "work stubs name a canonical edition that exists",
-  check: (ctx) => stubCanonicalViolations(projectionsOf(ctx), ctx.fs, ctx.root),
+  check: async (ctx) =>
+    (await Promise.all(
+      projectionsOf(ctx).map((p) => stubViolations(p, ctx.fs, ctx.root)),
+    )).flat(),
 };
 
 const blockMetadataMatchesSchema: Rule = {
@@ -275,7 +287,10 @@ const blockMetadataMatchesSchema: Rule = {
 
 const everyAuthorsSlugKnown: Rule = {
   name: "every authors slug names a known author",
-  check: (ctx) => unknownAuthorViolations(projectionsOf(ctx)),
+  check: (ctx) => {
+    const owners = slugOwners(projectionsOf(ctx));
+    return projectionsOf(ctx).flatMap((p) => authorViolations(p, owners));
+  },
 };
 
 const rootIdsMatchPaths: Rule = {
@@ -321,81 +336,16 @@ const sectionHeadingsBare: Rule = {
 
 const borrowedChildrenResolve: Rule = {
   name: "borrowed-child references resolve to an edition",
-  check: (ctx) => borrowedChildViolations(projectionsOf(ctx), ctx.fs, ctx.root),
+  check: async (ctx) =>
+    (await Promise.all(
+      projectionsOf(ctx).map((p) => borrowedViolations(p, ctx.fs, ctx.root)),
+    )).flat(),
 };
 
 const layoutConventions: Rule = {
   name: "layout: lowercase names, index.mit in every directory",
   check: ({ files, fs, root }) =>
     layoutViolations(fs, root, authorSlugs(files)),
-};
-
-/** The layout walk, over an explicit set of known author slugs (so it runs off
- * the corpus's projections as readily as off the loaded files). */
-const layoutViolations = async (
-  fs: CorpusFs,
-  root: string,
-  known: Set<string>,
-): Promise<RuleViolation[]> => {
-  const violations: RuleViolation[] = [];
-  // `depth` counts directory levels below works/: the works root itself is
-  // WORKS_ROOT, a host (author, possibly joint) sits one deeper, a WORK one
-  // deeper still, and a dated edition one deeper again.
-  const WORKS_ROOT = 0, WORK = 2;
-  const walkDirs = async (dir: string, depth: number): Promise<void> => {
-    const names = new Set<string>();
-    for (const entry of await fs.readDir(`${root}/data/${dir}`)) {
-      names.add(entry.name);
-      const stem = entry.name.replace(/\.mit$/, "");
-      // A host directory (directly under works/) may be a joint slug —
-      // author slugs joined with `-`, each of which must name a known
-      // author. Everything deeper is a single lowercase slug.
-      if (depth === WORKS_ROOT && entry.isDirectory && stem.includes("-")) {
-        for (const part of stem.split("-")) {
-          if (!/^[a-z0-9]+$/.test(part)) {
-            violations.push({
-              path: `${dir}/${entry.name}`,
-              message: "name should be a lowercase slug",
-            });
-          } else if (!known.has(part)) {
-            violations.push({
-              path: `${dir}/${entry.name}`,
-              message: `joint host names unknown author "${part}"`,
-            });
-          }
-        }
-      } else if (!YEAR.test(stem) && !/^[a-z0-9]+$/.test(stem)) {
-        violations.push({
-          path: `${dir}/${entry.name}`,
-          message: "name should be a lowercase slug",
-        });
-      }
-      if (entry.isDirectory) {
-        await walkDirs(`${dir}/${entry.name}`, depth + 1);
-      }
-    }
-    // works/<author>/ holds works; every deeper directory is a work or a
-    // dated edition and must have a reading text / index.
-    if (depth >= WORK && !names.has("index.mit")) {
-      violations.push({ path: dir, message: "missing index.mit" });
-    }
-    if (depth === WORK && YEAR.test(dir.split("/").pop() ?? "")) {
-      violations.push({
-        path: dir,
-        message: "year-named directory directly under an author",
-      });
-    }
-  };
-  await walkDirs("works", WORKS_ROOT);
-  for (const entry of await fs.readDir(`${root}/data/authors`)) {
-    if (!/^[a-z0-9]+\.mit$/.test(entry.name)) {
-      violations.push({
-        path: `authors/${entry.name}`,
-        message: "name should be a lowercase slug",
-      });
-    }
-  }
-  return violations;
 };
 
 // The structural tier of the dictionary validation (see ../README.md):
@@ -405,7 +355,8 @@ const layoutViolations = async (
 const dictionaryShardsWellFormed: Rule = {
   name: "dictionary shards are well-formed",
   check: async (ctx) => {
-    const { shards, dictionary, problems } = await dictionaryOf(ctx);
+    const snapshot = await dictionaryOf(ctx);
+    const { shards, problems } = snapshot;
     const violations: RuleViolation[] = problems.map((problem) => ({
       path: `dictionary/${problem.shard}`,
       ...(problem.key !== undefined ? { locus: `"${problem.key}"` } : {}),
@@ -414,7 +365,7 @@ const dictionaryShardsWellFormed: Rule = {
     // The formatting comparison only means anything once the shards parse
     // cleanly; skip it to avoid cascading noise.
     if (violations.length > 0) return violations;
-    const canonical = shardDictionary(dictionary);
+    const canonical = snapshot.canonical();
     for (const [shard, text] of shards) {
       const want = canonical.get(shard);
       if (want === undefined) {
@@ -464,9 +415,9 @@ const canonicalSpellingMatches: Rule = {
   check: async (ctx) => {
     const { dictionary, problems } = await dictionaryOf(ctx);
     if (problems.length > 0) return [];
-    const wordlist = await loadReferenceWords(ctx.fs, ctx.root);
+    const wordlist = await referenceWordsOf(ctx);
     if (wordlist === null) return [];
-    const exceptions = await loadCanonicalExceptions(ctx.fs, ctx.root);
+    const exceptions = await canonicalExceptionsOf(ctx);
     return canonicalSpellingViolations(dictionary, wordlist, exceptions).map(
       ({ key, message }) => ({
         path: `dictionary/${shardOf(key)}`,
@@ -489,7 +440,7 @@ const wordMarkupSelectsReading: Rule = {
         clean: f.errors.length === 0,
         marked: f.derived.marked,
       })),
-      expandDictionary((await dictionaryOf(ctx)).dictionary),
+      (await dictionaryOf(ctx)).expanded(),
     ),
 };
 
@@ -501,7 +452,7 @@ const dictionaryOverridesSelect: Rule = {
   check: async (ctx) =>
     overrideViolationsFrom(
       projectionsOf(ctx),
-      expandDictionary((await dictionaryOf(ctx)).dictionary),
+      (await dictionaryOf(ctx)).expanded(),
     ),
 };
 
@@ -753,91 +704,8 @@ const projectionsOf = (ctx: RuleContext): FileProjection[] => {
 
 /** The known author slugs of a projection set (every author file's slug, clean
  * or not — the layout/unknown-author rules check against all of them). */
-const knownAuthorSlugs = (projections: FileProjection[]): Set<string> =>
-  new Set(
-    projections
-      .map((p) => p.authorSlug)
-      .filter((slug): slug is string => slug !== undefined),
-  );
 
 /* -- the cross-file / dict-dependent rule cores, over projections -- */
-
-const unknownAuthorViolations = (
-  projections: FileProjection[],
-): RuleViolation[] => {
-  const known = knownAuthorSlugs(projections);
-  const violations: RuleViolation[] = [];
-  for (const p of projections) {
-    if (!p.clean || !p.path.startsWith("works/")) continue;
-    for (const { slug, locus, line } of p.declaredAuthors) {
-      if (!known.has(slug)) {
-        violations.push({
-          path: p.path,
-          locus,
-          message: `unknown author "${slug}"`,
-          line,
-        });
-      }
-    }
-  }
-  return violations;
-};
-
-const stubCanonicalViolations = async (
-  projections: FileProjection[],
-  fs: CorpusFs,
-  root: string,
-): Promise<RuleViolation[]> => {
-  const violations: RuleViolation[] = [];
-  for (const p of projections) {
-    if (!p.clean || p.stub === undefined) continue;
-    const { canonical, dir, line, hasBody, bodyLine } = p.stub;
-    if (hasBody) {
-      violations.push({
-        path: p.path,
-        message: "a stub holds metadata only (no text/sections)",
-        line: bodyLine,
-      });
-    }
-    if (canonical === undefined) continue; // schema rule reports the type
-    const resolves = await resolveVariant(
-      fs,
-      `${root}/data/${dir}/${canonical}`,
-    );
-    if (resolves === undefined) {
-      violations.push({
-        path: p.path,
-        message: `canonical "${canonical}" has no edition in ${dir}`,
-        line,
-      });
-    }
-  }
-  return violations;
-};
-
-const borrowedChildViolations = async (
-  projections: FileProjection[],
-  fs: CorpusFs,
-  root: string,
-): Promise<RuleViolation[]> => {
-  const violations: RuleViolation[] = [];
-  for (const p of projections) {
-    if (!p.clean || !p.path.startsWith("works/")) continue;
-    for (const { ref, textId, line } of p.borrowedRefs) {
-      // <Author.Work.Edition> →
-      // data/works/<author>/<work>/<edition>{.mit,/index.mit}.
-      if ((await resolveEdition(fs, `${root}/data/works`, ref)) === undefined) {
-        violations.push({
-          path: p.path,
-          locus: `(${textId})`,
-          message: `unresolvable borrowed child "${ref}"`,
-          line,
-        });
-      }
-    }
-  }
-  return violations;
-};
 
 /** One `[w:]`-marked-token entry the word-markup rule consumes: a file's marked
  * tokens (from `derived`) with whether it compiled cleanly. */
@@ -934,48 +802,38 @@ export const validateFile = (
 ): Promise<Violation[]> =>
   runRules(FILE_RULES, { files: [file], fs: ctx.fs, root: ctx.root });
 
+/** What the doc-free tiers need beyond the corpus root: the filesystem, plus
+ * (optionally) a dictionary already read for this pass and the memos for the
+ * fixed reference files. A long-lived caller supplies both so one pass over the
+ * corpus costs one read of each; a one-shot build supplies neither. */
+export type TierContext = {
+  fs: CorpusFs;
+  root: string;
+  dictionary?: DictionarySnapshot;
+  cache?: ValidationCache;
+};
+
 /** The dictionary tier: the shard/reference rules, over the shards on disk. */
-export const validateDictionary = (
-  ctx: { fs: CorpusFs; root: string },
-): Promise<Violation[]> =>
-  runRules(DICTIONARY_RULES, { files: [], fs: ctx.fs, root: ctx.root });
+export const validateDictionary = (ctx: TierContext): Promise<Violation[]> =>
+  runRules(DICTIONARY_RULES, { ...ctx, files: [] });
 
 /** The cross-file tier: the rules over the whole corpus's projections plus the
  * filesystem (unknown authors, work-stub canonicals, borrowed children,
  * layout) — no documents. */
-export const validateCrossFile = async (
+export const validateCrossFile = (
   projections: FileProjection[],
   ctx: { fs: CorpusFs; root: string },
-): Promise<Violation[]> => {
-  const { fs, root } = ctx;
-  const stamp = (name: string, found: RuleViolation[]): Violation[] =>
-    found.map((v) => ({ ...v, rule: name }));
-  return [
-    ...stamp(
-      workStubsNameCanonical.name,
-      await stubCanonicalViolations(projections, fs, root),
-    ),
-    ...stamp(everyAuthorsSlugKnown.name, unknownAuthorViolations(projections)),
-    ...stamp(
-      borrowedChildrenResolve.name,
-      await borrowedChildViolations(projections, fs, root),
-    ),
-    ...stamp(
-      layoutConventions.name,
-      await layoutViolations(fs, root, knownAuthorSlugs(projections)),
-    ),
-  ];
-};
+): Promise<Violation[]> => createCrossFileIndex(ctx).reset(projections);
 
 /** The dict-dependent tier: `[w:]` markup and `[metadata.dictionary]` overrides
- * against the current (raw) dictionary, read off each file's marked tokens and
+ * against the current dictionary snapshot, read off each file's marked tokens and
  * projected overrides — the two rules a dictionary edit re-runs with no
  * document recompile. */
 export const validateWordAndOverride = (
   entries: Iterable<MarkedEntry & Pick<FileProjection, "overrides">>,
-  dictionary: RawDictionary,
+  dictionary: DictionarySnapshot,
 ): Violation[] => {
-  const expanded = expandDictionary(dictionary);
+  const expanded = dictionary.expanded();
   const list = [...entries];
   const stamp = (name: string, found: RuleViolation[]): Violation[] =>
     found.map((v) => ({ ...v, rule: name }));
@@ -1024,23 +882,34 @@ const walk = async function* (
 };
 
 /** The dictionary read from disk and parsed once per context: the raw shard
- * text (for the formatting check), the parsed dictionary, and any structural
- * problems. Memoized on the context so the six rules (and the coverage report)
+ * text (for the formatting check), the parsed dictionary, its derived products,
+ * and any structural problems. A caller that has already read it (the
+ * Compositor, once per save) supplies it on the context; otherwise it is read
+ * here and memoized on the context, so the six rules (and the coverage report)
  * that need it share a single read + parse rather than repeating both. */
 const dictionaryCache = new WeakMap<
   RuleContext,
-  ReturnType<typeof loadDictionary>
+  Promise<DictionarySnapshot>
 >();
 
-const loadDictionary = async (ctx: RuleContext) => {
-  const shards = await readDictionaryShards(ctx.fs, ctx.root);
-  return { shards, ...parseDictionary(shards) };
-};
+/** The reference word list for this pass, through the context's memo when it has
+ * one — the parse rebuilds a ~106k-entry Set, and the Compositor runs a pass per
+ * save. */
+const referenceWordsOf = (ctx: RuleContext): Promise<Set<string> | null> =>
+  ctx.cache !== undefined
+    ? ctx.cache.referenceWords(ctx.fs, ctx.root)
+    : loadReferenceWords(ctx.fs, ctx.root);
 
-const dictionaryOf = (ctx: RuleContext) => {
+const canonicalExceptionsOf = (ctx: RuleContext): Promise<Set<string>> =>
+  ctx.cache !== undefined
+    ? ctx.cache.canonicalExceptions(ctx.fs, ctx.root)
+    : loadCanonicalExceptions(ctx.fs, ctx.root);
+
+const dictionaryOf = (ctx: RuleContext): Promise<DictionarySnapshot> => {
+  if (ctx.dictionary !== undefined) return Promise.resolve(ctx.dictionary);
   let cached = dictionaryCache.get(ctx);
   if (cached === undefined) {
-    dictionaryCache.set(ctx, cached = loadDictionary(ctx));
+    dictionaryCache.set(ctx, cached = readDictionarySnapshot(ctx.fs, ctx.root));
   }
   return cached;
 };

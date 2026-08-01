@@ -28,6 +28,8 @@ export * from "./build/node.ts";
 // `deno task test`) and the Compositor's editor diagnostics, plus the
 // accounting rule (coverage) they and the Compositor's squiggle engine share.
 export * from "./validation/rules.ts";
+export * from "./validation/cache.ts";
+export * from "./validation/crossFile.ts";
 export * from "./validation/account.ts";
 export * from "./validation/derive.ts";
 
@@ -38,6 +40,7 @@ export * from "./validation/derive.ts";
 export * from "./dictionary/types.ts";
 export * from "./dictionary/resolve.ts";
 export * from "./dictionary/shards.ts";
+export * from "./dictionary/snapshot.ts";
 export * from "./dictionary/expand.ts";
 
 // The wire contract: catalogue types, serialize/deserialize, loadCatalogue.

@@ -21,8 +21,8 @@ import {
   type Identity,
   MAIN,
   type Resolutions,
-} from "../../core/gitPort.ts";
-import { UPSTREAM_URL } from "../../core/github.ts";
+} from "../../core/contribute/gitPort.ts";
+import { UPSTREAM_URL } from "../../core/contribute/github.ts";
 
 /** The remote pointing at the canonical corpus (the fork is `origin`). */
 const UPSTREAM_REMOTE = "upstream";

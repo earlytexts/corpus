@@ -4,9 +4,9 @@
  * spellings), filtered by shard letter and paged client-side, with add/remove
  * controls that post single-surface edits back for the extension to validate
  * and write. It holds no dictionary logic of its own — the views arrive
- * derived, filtering/paging are lib/dictionaryPanel.ts, and every edit is just
- * a message. Plain TypeScript + DOM keeps the compositor's runtime
- * dependencies at zero (its first webview).
+ * derived, filtering/paging are core/dictionary/panel/client.ts, and every
+ * edit is just a message. Plain TypeScript + DOM keeps the compositor's
+ * runtime dependencies at zero (its first webview).
  *
  * The row shapes are declared locally: the data crosses the postMessage
  * boundary as plain JSON, so the webview needs the structure, not the corpus
@@ -15,7 +15,7 @@
  * file so every const arrow it calls is already defined.
  */
 
-import { filterByLetter, page } from "../core/dictionaryPanel.ts";
+import { filterByLetter, page } from "../core/dictionary/panel/client.ts";
 
 type VariantRow = {
   surface: string;

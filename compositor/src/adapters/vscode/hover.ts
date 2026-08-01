@@ -19,15 +19,15 @@
  */
 
 import * as vscode from "vscode";
-import type { CorpusModel } from "../../core/corpusModel.ts";
+import type { CorpusModel } from "../../core/model/corpusModel.ts";
 import {
   buildHover,
   createCompileMemo,
   createFormsCache,
   PIN_COMMAND,
   type PinArgs,
-} from "../../core/hoverView.ts";
-import { wordMarkup } from "../../core/pinMarkup.ts";
+} from "../../core/hover/view.ts";
+import { wordMarkup } from "../../core/hover/pinMarkup.ts";
 
 /** The setting that gates the hover (default on), flipped from the shared
  * "Toggle Dictionary Accounting Hints" command. */

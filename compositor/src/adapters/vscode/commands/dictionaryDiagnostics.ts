@@ -28,18 +28,18 @@ import { compileWithPositions } from "@jsr/earlytexts__markit";
 import {
   scanUnaccounted,
   type UnaccountedWord,
-} from "../../../core/dictionaryScan.ts";
+} from "../../../core/dictionary/scan.ts";
 import {
   actionsFor,
   type EntryAction,
   upsertEntriesText,
-} from "../../../core/dictionaryEdits.ts";
+} from "../../../core/dictionary/edits.ts";
 import {
   addEntry,
   type CascadePrompts,
   type Decisions,
   groupDecisionsByShard,
-} from "../../../core/dictionaryCascade.ts";
+} from "../../../core/dictionary/cascade.ts";
 import {
   addTargetTitle,
   entryActionTitle,
@@ -47,16 +47,20 @@ import {
   fuseActionTitle,
   unaccountedMessage,
   unattestedLemmaMessage,
-} from "../../../core/dictionaryEntryText.ts";
-import { corpusVocabulary } from "../../../core/dictionaryResolve.ts";
+} from "../../../core/dictionary/entryText.ts";
+import { corpusVocabulary } from "../../../core/dictionary/resolve.ts";
 import { nodeCorpusFs } from "@earlytexts/corpus";
 import {
   readShardText,
   updateShards,
   writeShardText,
-} from "../../../core/dictionaryShardIO.ts";
+} from "../../../core/dictionary/shardIO.ts";
 import { createOverlay } from "../overlay.ts";
-import type { CorpusModel, CorpusState } from "../../../core/corpusModel.ts";
+import type {
+  CorpusChange,
+  CorpusModel,
+  CorpusState,
+} from "../../../core/model/corpusModel.ts";
 
 const SOURCE = "compositor-dictionary";
 const SETTING = "flagUnaccountedWords";
@@ -260,8 +264,11 @@ const unaccountedProvider = (
 export type DictionaryController = {
   /** The scanned words of a document, for the code-action provider. */
   wordsOf: (document: vscode.TextDocument) => UnaccountedWord[];
-  /** The corpus reloaded (or a shard was saved): re-scan what's shown. */
-  onCorpusChanged: () => void;
+  /** The corpus reloaded: re-scan what's shown, when the change can have moved
+   * it. These squiggles are a document's words against the register, so only a
+   * register change (or a full reload) can affect a document other than the one
+   * being edited — and the overlay re-scans that one off its own edit events. */
+  onCorpusChanged: (change: CorpusChange) => void;
   dispose: () => void;
 };
 
@@ -357,7 +364,10 @@ export const createDictionaryController = (
 
   return {
     wordsOf: overlay.itemsOf,
-    onCorpusChanged: () => void overlay.refresh(),
+    onCorpusChanged: (change) => {
+      if (change.kind === "sources") return;
+      void overlay.refresh();
+    },
     dispose: overlay.dispose,
   };
 };

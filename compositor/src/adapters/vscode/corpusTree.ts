@@ -17,8 +17,12 @@
 import * as vscode from "vscode";
 import type { Author, Catalogue, Edition, Work } from "@earlytexts/corpus";
 import type { MarkitDocument } from "@jsr/earlytexts__markit";
-import type { CorpusModel } from "../../core/corpusModel.ts";
-import { authorLinks, editionLinks, linkTokens } from "../../core/links.ts";
+import type { CorpusModel } from "../../core/model/corpusModel.ts";
+import {
+  authorLinks,
+  editionLinks,
+  linkTokens,
+} from "../../core/catalogue/links.ts";
 import {
   borrowedChildren,
   editionPath,
@@ -27,7 +31,7 @@ import {
   letterGroups,
   lifespan,
   type TreeNode,
-} from "../../core/nodes.ts";
+} from "../../core/catalogue/nodes.ts";
 
 type Lookup = Map<MarkitDocument, EditionRef>;
 

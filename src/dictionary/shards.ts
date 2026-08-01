@@ -60,7 +60,7 @@ export type DictionaryProblem = {
  * `dictionaryViolations`' business, not parsing's.
  */
 export const parseDictionary = (
-  shards: Map<string, string>,
+  shards: ReadonlyMap<string, string>,
 ): { dictionary: RawDictionary; problems: DictionaryProblem[] } => {
   const dictionary: RawDictionary = {};
   const problems: DictionaryProblem[] = [];
@@ -253,8 +253,13 @@ export const shardDictionary = (
     const line = `  ${JSON.stringify(surface)}: ${
       renderValue(serializeEntry(surface, dictionary[surface]))
     }`;
+    // Push, don't rebuild: copying the shard's whole line array per entry made
+    // this quadratic in the register's size (~13M element copies at 26k
+    // entries), and the Compositor re-renders it to byte-compare the shards.
     const shard = shardOf(surface);
-    byShard.set(shard, [...(byShard.get(shard) ?? []), line]);
+    const lines = byShard.get(shard);
+    if (lines === undefined) byShard.set(shard, [line]);
+    else lines.push(line);
   }
   return new Map(
     [...byShard.entries()]

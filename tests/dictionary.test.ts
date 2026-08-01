@@ -27,6 +27,8 @@ import type {
   RawEntry,
 } from "../src/dictionary/types.ts";
 import { accountTokens, coverageOf } from "../src/validation/account.ts";
+import { readDictionarySnapshot } from "../src/dictionary/snapshot.ts";
+import { createValidationCache } from "../src/validation/cache.ts";
 import {
   multiWordSurfaces,
   overridesOf,
@@ -51,6 +53,7 @@ import {
   loadCorpus,
   type RuleContext,
   rules,
+  validateDictionary,
   violationText,
 } from "../src/validation/rules.ts";
 import { corpus, CORPUS_ROOT, memoryCorpus } from "./harness.ts";
@@ -1542,4 +1545,121 @@ test("dictionary: readDictionaryShards reads only the shard files", async () => 
   expect(
     await readDictionaryShards(memoryCorpus(fixture("Text.")), CORPUS_ROOT),
   ).toEqual(new Map());
+});
+
+/* ----------------------- the one-read snapshot ----------------------- */
+
+/** A `CorpusFs` that tallies reads per path, so a test can assert the shards
+ * (and the reference list) were read once rather than once per rule. */
+const countingCorpus = (files: Record<string, string>) => {
+  const base = memoryCorpus(files);
+  const reads = new Map<string, number>();
+  return {
+    reads: (path: string) => reads.get(path) ?? 0,
+    fs: {
+      ...base,
+      readFile: (path: string) => {
+        reads.set(path, (reads.get(path) ?? 0) + 1);
+        return base.readFile(path);
+      },
+    },
+  };
+};
+
+test("dictionary: a snapshot derives each product at most once", async () => {
+  const files = fixture("Text.", {
+    "data/dictionary/t.json":
+      '{\n  "the": null,\n  "then": [null, "than"]\n}\n',
+  });
+  const snapshot = await readDictionarySnapshot(
+    memoryCorpus(files),
+    CORPUS_ROOT,
+  );
+
+  expect(Object.keys(snapshot.dictionary)).toEqual(["the", "then"]);
+  expect(snapshot.expanded()["then"]).toBeDefined();
+  expect(snapshot.problems).toEqual([]);
+  // Identity, not just equality: the expansion and the canonical rendering are
+  // each a pass over the whole register, so a second caller must reuse them.
+  expect(snapshot.expanded()).toBe(snapshot.expanded());
+  expect(snapshot.canonical()).toBe(snapshot.canonical());
+  expect(snapshot.canonical().get("t.json")).toBe(
+    files[
+      `${CORPUS_ROOT}/data/dictionary/t.json`
+    ],
+  );
+});
+
+test("dictionary: a supplied snapshot spares the rules their own read", async () => {
+  const files = fixture("Text.", {
+    "data/dictionary/t.json": '{\n  "the": null\n}\n',
+  });
+  const shard = `${CORPUS_ROOT}/data/dictionary/t.json`;
+
+  const counted = countingCorpus(files);
+  const dictionary = await readDictionarySnapshot(counted.fs, CORPUS_ROOT);
+  const before = counted.reads(shard);
+  await validateDictionary({ fs: counted.fs, root: CORPUS_ROOT, dictionary });
+
+  // Three rules need the register; with the snapshot in hand none re-reads it.
+  expect(counted.reads(shard)).toBe(before);
+
+  // Without one, the tier reads it itself (memoized on the context, so once).
+  const own = countingCorpus(files);
+  await validateDictionary({ fs: own.fs, root: CORPUS_ROOT });
+  expect(own.reads(shard)).toBe(1);
+});
+
+test("dictionary: the validation cache re-parses only when the bytes change", async () => {
+  const files = fixture("Text.", {
+    "data/reference/words.txt": "the\nthan\n",
+    "data/reference/canonical-exceptions.json": '["thou"]',
+  });
+  const wordsPath = `${CORPUS_ROOT}/data/reference/words.txt`;
+  const counted = countingCorpus(files);
+  const cache = createValidationCache();
+
+  const first = await cache.referenceWords(counted.fs, CORPUS_ROOT);
+  expect(await cache.referenceWords(counted.fs, CORPUS_ROOT)).toBe(first);
+  // Re-read every time (it is how the memo stays honest), re-parsed only once.
+  expect(counted.reads(wordsPath)).toBe(2);
+
+  files[wordsPath] = "the\nthan\nthou\n";
+  const second = await cache.referenceWords(counted.fs, CORPUS_ROOT);
+  expect(second).not.toBe(first);
+  expect(second?.has("thou")).toBe(true);
+
+  expect(await cache.canonicalExceptions(counted.fs, CORPUS_ROOT))
+    .toEqual(new Set(["thou"]));
+});
+
+test("dictionary: the validation cache stands in for absent reference files", async () => {
+  const fs = memoryCorpus(fixture("Text."));
+  const cache = createValidationCache();
+
+  expect(await cache.referenceWords(fs, CORPUS_ROOT)).toBe(null);
+  expect(await cache.canonicalExceptions(fs, CORPUS_ROOT)).toEqual(new Set());
+});
+
+test("dictionary: a cached reference list gives the same verdict as reading it", async () => {
+  // The canonical-spelling rule must not care where its word list came from.
+  const files = fixture("Text.", {
+    "data/dictionary/t.json": '{\n  "then": [null, "than"]\n}\n',
+    "data/reference/words.txt": "than\n",
+  });
+  const name = "canonical spelling matches the reference word list";
+  const fs = memoryCorpus(files);
+  const base = {
+    files: await loadCorpus(fs, CORPUS_ROOT),
+    fs,
+    root: CORPUS_ROOT,
+  };
+
+  const uncached = (await rule(name).check(base)).map(violationText);
+  const cached = (await rule(name).check({
+    ...base,
+    cache: createValidationCache(),
+  })).map(violationText);
+
+  expect(cached).toEqual(uncached);
 });

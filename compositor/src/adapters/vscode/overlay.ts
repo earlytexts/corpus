@@ -14,7 +14,7 @@ import * as vscode from "vscode";
 import {
   createOverlayEngine,
   type OverlayEngineSpec,
-} from "../../core/overlayEngine.ts";
+} from "../../core/diagnostics/overlayEngine.ts";
 
 /** Only real `.mit` files on disk carry an overlay's findings. */
 const isMit = (document: vscode.TextDocument): boolean =>

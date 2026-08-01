@@ -13,6 +13,7 @@ import { test } from "@std/testing/bdd";
 import { CORPUS_ROOT, memoryCorpus } from "./harness.ts";
 import {
   type CorpusFile,
+  type FileProjection,
   loadCorpus,
   projectCorpus,
   projectFile,
@@ -23,10 +24,8 @@ import {
   validateWordAndOverride,
   type Violation,
 } from "../src/validation/rules.ts";
-import {
-  parseDictionary,
-  readDictionaryShards,
-} from "../src/dictionary/shards.ts";
+import { readDictionarySnapshot } from "../src/dictionary/snapshot.ts";
+import { createCrossFileIndex } from "../src/validation/crossFile.ts";
 
 /** Recompose the whole corpus's violations from the doc-free tiers alone. */
 const validateByTiers = async (
@@ -35,7 +34,7 @@ const validateByTiers = async (
 ): Promise<Violation[]> => {
   const fs = memoryCorpus(fixtureMap);
   const projections = projectCorpus(files);
-  const raw = parseDictionary(await readDictionaryShards(fs, root)).dictionary;
+  const dictionary = await readDictionarySnapshot(fs, root);
   const wordEntries = files.map((f, i) => ({
     path: f.path,
     clean: f.errors.length === 0,
@@ -45,9 +44,9 @@ const validateByTiers = async (
   return [
     ...(await Promise.all(files.map((f) => validateFile(f, { fs, root }))))
       .flat(),
-    ...validateWordAndOverride(wordEntries, raw),
+    ...validateWordAndOverride(wordEntries, dictionary),
     ...(await validateCrossFile(projections, { fs, root })),
-    ...(await validateDictionary({ fs, root })),
+    ...(await validateDictionary({ fs, root, dictionary })),
   ];
 };
 
@@ -149,4 +148,126 @@ test("projectFile: captures declared authors, overrides, borrowed refs, and the 
 
   const stub = files.find((f) => f.path === "works/hume/test/index.mit")!;
   expect(projectFile(stub).stub?.canonical).toBe("9999");
+});
+
+/* ------------------------ the cross-file index ------------------------ */
+
+/**
+ * The property the index lives or dies by: driving it through an arbitrary
+ * sequence of creates, edits and deletes must, at every step, produce exactly
+ * what a from-scratch sweep over the same corpus produces. An index that can
+ * drift from the sweep is worse than no index — the Problems panel would show
+ * violations that no longer exist, or hide ones that do.
+ */
+test("crossFile: an incremental index never drifts from a from-scratch sweep", async () => {
+  const files = { ...fixtureMap };
+  const fs = memoryCorpus(files);
+  const index = createCrossFileIndex({ fs, root: CORPUS_ROOT });
+
+  const projectionsNow = async () =>
+    projectCorpus(await loadCorpus(fs, CORPUS_ROOT));
+  const byPath = (list: FileProjection[]) =>
+    new Map(list.map((p) => [p.path, p]));
+
+  let held = byPath(await projectionsNow());
+  expect(sorted(await index.reset([...held.values()]))).toEqual(
+    sorted(
+      await validateCrossFile([...held.values()], { fs, root: CORPUS_ROOT }),
+    ),
+  );
+
+  // Each step mutates the corpus, then hands the index only what changed.
+  const steps: (() => void)[] = [
+    // The missing canonical arrives: the stub's violation must clear.
+    () => {
+      files[`${CORPUS_ROOT}/data/works/hume/test/9999.mit`] =
+        `# Hume.test.9999\n\n[metadata]\ntitle = "A Test"\nbreadcrumb = "Test"\nimported = true\npublished = [1999]\nauthors = ["hume"]\n\n{#1}\nText.\n`;
+    },
+    // The borrowed child arrives: the host's violation must clear too.
+    () => {
+      files[`${CORPUS_ROOT}/data/authors/foo.mit`] =
+        `# foo\n\n[metadata]\nforename = "Fred"\nsurname = "Oo"\nbirth = 1700\ndeath = 1780\nsex = "Male"\nnationality = "English"\n`;
+      files[`${CORPUS_ROOT}/data/works/foo/bar/index.mit`] =
+        `# foo.bar\n\n[metadata]\ntitle = "Bar"\nbreadcrumb = "Bar"\nauthors = ["foo"]\ncanonical = "baz"\n`;
+      files[`${CORPUS_ROOT}/data/works/foo/bar/baz.mit`] =
+        `# Foo.bar.baz\n\n[metadata]\ntitle = "Baz"\nbreadcrumb = "Baz"\nimported = true\npublished = [1700]\nauthors = ["foo"]\n\n{#1}\nText.\n`;
+    },
+    // The unknown author is declared known: every file declaring it must clear.
+    () => {
+      files[`${CORPUS_ROOT}/data/authors/nobody.mit`] =
+        `# nobody\n\n[metadata]\nforename = "No"\nsurname = "Body"\nbirth = 1700\ndeath = 1780\nsex = "Male"\nnationality = "English"\n`;
+    },
+    // …and taken away again: the violations must come back.
+    () => {
+      delete files[`${CORPUS_ROOT}/data/authors/nobody.mit`];
+    },
+    // A metadata-only edit: the canonical now points somewhere that is gone.
+    () => {
+      files[`${CORPUS_ROOT}/data/works/hume/test/index.mit`] = files[
+        `${CORPUS_ROOT}/data/works/hume/test/index.mit`
+      ].replace('canonical = "9999"', 'canonical = "1234"');
+    },
+    // The borrowed edition is deleted: the host must squiggle again.
+    () => {
+      delete files[`${CORPUS_ROOT}/data/works/foo/bar/baz.mit`];
+    },
+    // A body edit that touches nothing cross-file at all.
+    () => {
+      files[`${CORPUS_ROOT}/data/works/hume/test/1700.mit`] = files[
+        `${CORPUS_ROOT}/data/works/hume/test/1700.mit`
+      ].replace("humane text here.", "humane text over here.");
+    },
+  ];
+
+  for (const [i, step] of steps.entries()) {
+    step();
+    const next = byPath(await projectionsNow());
+    const changes = new Map<string, FileProjection | undefined>();
+    for (const [path, projection] of next) {
+      if (held.get(path) !== projection) changes.set(path, projection);
+    }
+    for (const path of held.keys()) {
+      if (!next.has(path)) changes.set(path, undefined);
+    }
+    held = next;
+
+    const incremental = await index.update(changes);
+    const sweep = await validateCrossFile([...next.values()], {
+      fs,
+      root: CORPUS_ROOT,
+    });
+    expect(sorted(incremental), `after step ${i}`).toEqual(sorted(sweep));
+  }
+});
+
+test("crossFile: an edit probes only its own file, never the whole tree", async () => {
+  // The whole point of the index: the filesystem work is the expensive part. An
+  // edit re-resolves that file's own references (its text may have changed
+  // them) and nothing else — above all, not the recursive layout walk.
+  const files = { ...fixtureMap };
+  const base = memoryCorpus(files);
+  let reads = 0;
+  const fs = {
+    ...base,
+    readDir: (path: string) => {
+      reads++;
+      return base.readDir(path);
+    },
+  };
+  const index = createCrossFileIndex({ fs, root: CORPUS_ROOT });
+  const projections = projectCorpus(await loadCorpus(fs, CORPUS_ROOT));
+  const sweepCost = (reads = 0, await index.reset(projections), reads);
+
+  // An author file resolves nothing of its own: its edit must cost nothing.
+  const author = projections.find((p) => p.authorSlug === "hume")!;
+  reads = 0;
+  await index.update(new Map([[author.path, { ...author }]]));
+  expect(reads).toBe(0);
+
+  // An edition carrying a borrowed ref re-probes that ref — and only that.
+  const edition = projections.find((p) => p.path.endsWith("test/1700.mit"))!;
+  reads = 0;
+  await index.update(new Map([[edition.path, { ...edition }]]));
+  expect(reads).toBeGreaterThan(0);
+  expect(reads).toBeLessThan(sweepCost);
 });

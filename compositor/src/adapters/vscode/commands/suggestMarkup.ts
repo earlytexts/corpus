@@ -14,10 +14,13 @@
  * filter, so turning the overlay on flags every kind at once.
  *
  * How it hangs together (mirrors the dictionary overlay):
- *  - Hints (the lexicons) are built once from the loaded catalogue and cached,
- *    rebuilt only when the corpus model reloads (a save) — so a newly marked-up
- *    name improves every later suggestion. Building is ~1–2s, so the first
- *    build shows progress.
+ *  - Hints (the lexicons) are mined from the corpus's sources once per session,
+ *    on first demand, and then maintained as a fold: a save replaces just the
+ *    saved file's contribution (see core/markup/hintIndex.ts), so a newly
+ *    marked-up name improves every later suggestion without the whole corpus
+ *    being re-read. Only the first mine is slow (~1–2s), so only it shows
+ *    progress; a dictionary edit is ignored outright, the lexicons owing the
+ *    register nothing.
  *  - Scanning is per-file and cheap (~tens of ms): a shown edition's current
  *    text is compiled and scanned on demand — when the setting flips, when the
  *    active editor changes, on edits (debounced), and after a rebuild.
@@ -31,20 +34,24 @@ import * as vscode from "vscode";
 import { compileWithPositions } from "@jsr/earlytexts__markit";
 import type { Catalogue } from "@earlytexts/corpus";
 import {
-  createHintBuilder,
+  hintContribution,
   type Hints,
   type MarkupSuggestion,
   scanSource,
-} from "../../../core/hints.ts";
-import { distinctWorks } from "../../../core/catalogueWalk.ts";
-import type { CorpusModel } from "../../../core/corpusModel.ts";
-import { hintOverrides } from "../../../core/hintOverrides.ts";
+} from "../../../core/markup/hints.ts";
+import { createHintIndex } from "../../../core/markup/hintIndex.ts";
+import { distinctWorks } from "../../../core/catalogue/walk.ts";
+import type {
+  CorpusChange,
+  CorpusModel,
+} from "../../../core/model/corpusModel.ts";
+import { hintOverrides } from "../../../core/markup/hintOverrides.ts";
 import {
   fixTitle,
   suggestionKey,
   suggestionMessage,
   wrapText,
-} from "../../../core/suggestions.ts";
+} from "../../../core/markup/suggestions.ts";
 import { createOverlay } from "../overlay.ts";
 
 const SOURCE = "compositor-suggestions";
@@ -149,8 +156,10 @@ const suggestionProvider = (
   );
 
 export type SuggestionController = {
-  /** The corpus reloaded: drop the cached hints and refresh what's shown. */
-  onCorpusChanged: () => void;
+  /** The corpus reloaded: fold the changed sources' markup into the lexicons and
+   * refresh what's shown. A dictionary edit is ignored outright — the lexicons
+   * are mined from markup and owe nothing to the register. */
+  onCorpusChanged: (change: CorpusChange) => void;
   dispose: () => void;
 };
 
@@ -158,39 +167,75 @@ export const createSuggestionController = (
   getModel: () => CorpusModel | undefined,
   context: vscode.ExtensionContext,
 ): SuggestionController => {
-  /** Cached lexicons, and the catalogue identity they were built from. */
-  let hints: Hints | undefined;
-  let hintsFrom: Catalogue | undefined;
+  const index = createHintIndex(hintOverrides);
+  /** The one full mine, and whether it has completed — `mining` is also the
+   * in-flight guard, so the overlay's per-keystroke `prepare()` joins the mine
+   * already running instead of starting a second one beside it. */
+  let mining: Promise<void> | undefined;
+  let mined = false;
+  /** The work titles seeding the citation lexicon, and the catalogue they came
+   * from — `distinctWorks` walks the whole catalogue, so it is not something to
+   * redo on every scan. */
+  let works: { title: string }[] = [];
+  let worksFrom: Catalogue | undefined;
 
-  /** Build (or reuse) the hints for the loaded corpus, showing progress on the
-   * first, slow build. Undefined until a corpus has loaded. The resident
-   * catalogue is body-free, so the miner streams each `works/**` source through
-   * the model's compile cache (discarded after) rather than reading resident
-   * bodies — only the vocabulary-bounded lexicons accumulate. */
-  const ensureHints = async (): Promise<Hints | undefined> => {
-    const model = getModel();
-    const catalogue = model?.state?.catalogue;
-    if (model === undefined || catalogue === undefined) return undefined;
-    if (hints !== undefined && hintsFrom === catalogue) return hints;
-    hints = await vscode.window.withProgress(
+  /** Mine every `works/**` source once, folding each file's contribution in and
+   * setting the unmarked-word baseline from the whole sweep. The resident
+   * catalogue is body-free, so this streams the sources — transiently, so a
+   * 43 MB pass does not evict the editions actually being worked on from the
+   * model's bounded working set. */
+  const sweep = async (model: CorpusModel): Promise<void> => {
+    await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Window,
         title: "Indexing corpus markup…",
       },
       async () => {
-        const builder = createHintBuilder(hintOverrides);
+        const unmarked = new Map<string, number>();
+        const unmarkedLower = new Map<string, number>();
         for (const path of model.workSourcePaths()) {
-          const file = await model.getCompiledFile(path);
-          if (file !== undefined) builder.addDocument(file.doc);
+          const file = await model.compileTransient(path);
+          if (file === undefined) continue;
+          const { marked, frequencies } = hintContribution(file.doc);
+          index.set(path, marked);
+          tally(unmarked, frequencies.unmarked);
+          tally(unmarkedLower, frequencies.unmarkedLower);
         }
-        return builder.finish(
-          catalogue.authors,
-          distinctWorks(catalogue.authors),
-        );
+        index.rebase({ unmarked, unmarkedLower });
       },
     );
-    hintsFrom = catalogue;
-    return hints;
+    mined = true;
+  };
+
+  /** The hints for the loaded corpus, mining once on first demand. Undefined
+   * until a corpus has loaded. */
+  const ensureHints = async (): Promise<Hints | undefined> => {
+    const model = getModel();
+    const catalogue = model?.state?.catalogue;
+    if (model === undefined || catalogue === undefined) return undefined;
+    if (!mined) {
+      mining ??= sweep(model);
+      await mining;
+    }
+    if (worksFrom !== catalogue) {
+      works = distinctWorks(catalogue.authors);
+      worksFrom = catalogue;
+    }
+    return index.hints(catalogue.authors, works);
+  };
+
+  /** Replace just the saved sources' contributions. Each is warm in the model's
+   * working set — the save compiled it — so this reads no disk. Before the first
+   * mine there is nothing to fold into; that mine will pick them up. */
+  const refold = async (sources: ReadonlySet<string>): Promise<void> => {
+    const model = getModel();
+    if (model === undefined || !mined) return;
+    for (const path of sources) {
+      if (!path.startsWith("works/")) continue;
+      const file = await model.getCompiledFile(path);
+      if (file === undefined) index.remove(path);
+      else index.set(path, hintContribution(file.doc).marked);
+    }
   };
 
   const overlay = createOverlay(context, {
@@ -203,11 +248,25 @@ export const createSuggestionController = (
   });
 
   return {
-    onCorpusChanged: () => {
-      hints = undefined;
-      hintsFrom = undefined;
-      void overlay.refresh();
+    onCorpusChanged: (change) => {
+      // The lexicons are mined from markup and owe the register nothing.
+      if (change.kind === "dictionary") return;
+      if (change.kind === "full") {
+        // The file set moved wholesale; re-mine lazily, on the next demand.
+        mined = false;
+        mining = undefined;
+        void overlay.refresh();
+        return;
+      }
+      // Fold first, so the refresh scans against the markup that was just saved.
+      void refold(change.sources).then(() => overlay.refresh());
     },
     dispose: overlay.dispose,
   };
+};
+
+/** Sum one file's word frequencies into the running baseline. */
+const tally = (into: Map<string, number>, from: Map<string, number>): void => {
+  for (const [word, count] of from)
+    into.set(word, (into.get(word) ?? 0) + count);
 };
