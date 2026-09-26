@@ -1,18 +1,19 @@
 /**
- * The build's per-source derivations, persisted beside the catalogue as
- * `catalogue/derivations.json` (see COMPOSITOR_MEMORY_PLAN.md). Where
- * `catalogue/documents/` holds each edition's positioned-stripped body for the
- * computer, this file holds each *source* `.mit`'s register-independent
- * reductions — its `derived` (derive.ts), its `FileProjection` and its per-file
- * violations (rules.ts) — so the Compositor can paint the tree, rebuild its
- * indexes, and validate the corpus at cold start with no compiles, holding no
- * positioned documents resident.
+ * The Compositor's per-source derivations cache, `derivations.json` in a cache
+ * directory the Compositor owns (VS Code's per-workspace storage — outside the
+ * corpus checkout, so it is never committed, packaged, or wiped by a catalogue
+ * build). Where `catalogue/documents/` holds each edition's positioned-stripped
+ * body for the computer, this file holds each *source* `.mit`'s
+ * register-independent reductions — its `derived` (derive.ts), its
+ * `FileProjection` and its per-file violations (rules.ts) — so the Compositor
+ * can paint the tree, rebuild its indexes, and validate the corpus at cold start
+ * with no compiles, holding no positioned documents resident.
  *
- * The computer ignores this file; it is a Compositor convenience the build
- * emits and the Compositor's write-back keeps fresh. Each record carries the
- * source's byte size and a content hash so a background sweep can tell, without
- * reading, which sources changed out-of-session (a `git checkout`, an external
- * edit) and recompile only those. A schema-version + corpus-root stamp lets the
+ * The CLI build does not write this file; the Compositor writes it after its
+ * first full compile and keeps it fresh. Each record carries the source's byte
+ * size and a content hash so a background sweep can tell, without reading,
+ * which sources changed out-of-session (a `git checkout`, an external edit) and
+ * recompile only those. A schema-version + corpus-root stamp lets the
  * Compositor discard a mismatched or foreign file and fall back to a compile.
  *
  * Keyed by `data/`-relative source path (1305 sources), not edition doc key
@@ -186,29 +187,31 @@ export const deserializeDerivations = (json: string): Derivations | null => {
   return { version: parsed.version, root: parsed.root, records };
 };
 
-/** Write `catalogue/derivations.json`. The catalogue directory must already
- * exist (writeCatalogue creates it), so this only writes the one file — the
- * incremental write-back rewrites it whole from the resident records, which are
- * a few MB (far less than the documents), so a full rewrite per save is cheap. */
+/** Write `derivations.json` into `cacheDir` (created if absent), stamped with
+ * the real-path'd corpus `root`. The Compositor rewrites it whole after each
+ * full compile; a save does not rewrite it (the next cold start's hash sweep
+ * recompiles just the files that changed). */
 export const writeDerivations = async (
   fs: CorpusFsWrite,
   root: string,
+  cacheDir: string,
   records: Iterable<readonly [string, DerivationRecord]>,
 ): Promise<void> => {
   const real = await fs.realPath(root);
+  await fs.mkdir(cacheDir);
   await fs.writeFile(
-    `${real}/catalogue/derivations.json`,
+    `${cacheDir}/derivations.json`,
     serializeDerivations(records, real),
   );
 };
 
-/** Read `catalogue/derivations.json`, or null when it is absent, invalid, or
- * built by a different schema version. */
+/** Read `derivations.json` from `cacheDir`, or null when it is absent, invalid,
+ * or built by a different schema version. */
 export const readDerivations = async (
   fs: CorpusFs,
-  corpusDir: string,
+  cacheDir: string,
 ): Promise<Derivations | null> => {
-  const text = await fs.readFile(`${corpusDir}/catalogue/derivations.json`);
+  const text = await fs.readFile(`${cacheDir}/derivations.json`);
   return text === null ? null : deserializeDerivations(text);
 };
 
