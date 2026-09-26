@@ -21,6 +21,9 @@ import {
 } from "../../src/core/model/corpusModel.ts";
 
 const ROOT = CORPUS_ROOT;
+/** The Compositor's own cache directory (VS Code workspace storage in
+ * production) — deliberately outside the corpus root. */
+const CACHE = "/storage/compositor";
 const DEBOUNCE = 300;
 
 const ED_1748 = `${ROOT}/data/works/hume/enquiry/1748.mit`;
@@ -180,7 +183,10 @@ const fakeWatcher = () => {
   return { watch, state };
 };
 
-const setup = (files: Record<string, string> = oneEdition()) => {
+const setup = (
+  files: Record<string, string> = oneEdition(),
+  { cached = true }: { cached?: boolean } = {},
+) => {
   const controls = controllableFs(files);
   const watcher = fakeWatcher();
   const notify = { error: vi.fn() };
@@ -188,6 +194,7 @@ const setup = (files: Record<string, string> = oneEdition()) => {
     fs: controls.fs,
     watch: watcher.watch,
     notify,
+    cacheDir: cached ? CACHE : undefined,
   };
   return { files, controls, watcher, notify, deps };
 };
@@ -204,7 +211,7 @@ const flush = async (ms = 0): Promise<void> => {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-/** Seed a `files` map with a valid `catalogue/derivations.json` by running one
+/** Seed a `files` map with a valid cached `derivations.json` by running one
  * model to a full compile (its write-back populates the map), then disposing
  * it — so a second model over the same map takes the instant-seed cold path. */
 const withDerivations = async (
@@ -214,7 +221,7 @@ const withDerivations = async (
   const model = createCorpusModel(ROOT, first.deps);
   await flush();
   model.dispose();
-  expect(files[`${ROOT}/catalogue/derivations.json`]).toBeDefined();
+  expect(files[`${CACHE}/derivations.json`]).toBeDefined();
 };
 
 const fire = (watcher: ReturnType<typeof fakeWatcher>, path: string): void =>
@@ -237,9 +244,35 @@ test("with no derivations cache, cold start does a full compile and writes the b
   expect(model.loaded).toBe(true);
   expect(model.state).toBeDefined();
   expect(notify.error).not.toHaveBeenCalled();
-  // The full compile wrote the catalogue and the derivations cache.
-  expect(files[`${ROOT}/catalogue/derivations.json`]).toBeDefined();
+  // The full compile wrote the catalogue and the derivations cache — the cache
+  // into the Compositor's own directory, not the computer's catalogue/.
+  expect(files[`${CACHE}/derivations.json`]).toBeDefined();
   expect(files[`${ROOT}/catalogue/catalogue.json`]).toBeDefined();
+  expect(files[`${ROOT}/catalogue/derivations.json`]).toBeUndefined();
+  model.dispose();
+});
+
+test("with no cache directory, cold start compiles, writes the catalogue, and neither reads nor writes a cache", async () => {
+  // A sentinel where a cache would be: a cacheless model must neither read nor
+  // overwrite it, nor write one anywhere else.
+  const files: Record<string, string> = {
+    ...oneEdition(),
+    [`${CACHE}/derivations.json`]: "sentinel",
+  };
+
+  const { controls, notify, deps } = setup(files, { cached: false });
+  const model = createCorpusModel(ROOT, deps);
+  await flush();
+
+  expect(model.status).toBe("ready");
+  expect(model.state?.vocabulary.has("wombat")).toBe(true);
+  expect(notify.error).not.toHaveBeenCalled();
+  expect(files[`${ROOT}/catalogue/catalogue.json`]).toBeDefined();
+  expect(controls.reads(`${CACHE}/derivations.json`)).toBe(0);
+  expect(files[`${CACHE}/derivations.json`]).toBe("sentinel");
+  expect(
+    Object.keys(files).filter((path) => path.endsWith("derivations.json")),
+  ).toEqual([`${CACHE}/derivations.json`]);
   model.dispose();
 });
 

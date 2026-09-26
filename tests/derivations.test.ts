@@ -1,9 +1,10 @@
 /**
- * The build's per-source derivations file (src/build/derivations.ts): the
- * Compositor's cold-start seed. These cases check the round-trip (records
- * survive serialise → parse, Map/Set intact), the freshness stamp (size, hash,
- * version), and that a compiled corpus reduces to records whose `derived` and
- * per-file violations match the ones the loaded files carry.
+ * The per-source derivations file (src/build/derivations.ts): the Compositor's
+ * cold-start cache. These cases check the round-trip (records survive
+ * serialise → parse, Map/Set intact), the freshness stamp (size, hash,
+ * version), that a compiled corpus reduces to records whose `derived` and
+ * per-file violations match the ones the loaded files carry, and that the file
+ * lives in whatever cache directory the caller names.
  */
 
 import { expect } from "@std/expect";
@@ -16,8 +17,11 @@ import {
   deserializeDerivations,
   hashText,
   precompiledSkeletons,
+  readDerivations,
   serializeDerivations,
+  writeDerivations,
 } from "../src/build/derivations.ts";
+import type { CorpusFsWrite } from "../src/fs/ports.ts";
 import { loadCorpus, validateFile } from "../src/validation/rules.ts";
 import { buildCatalogue } from "../src/catalogue/compile.ts";
 
@@ -120,6 +124,56 @@ test("derivations: a version or format mismatch parses as null", () => {
     ),
   ).toBe(null);
 });
+
+test("derivations: written to and read from the given cache directory, outside catalogue/", async () => {
+  const files = await loadCorpus(fixture, CORPUS_ROOT);
+  const records = await Promise.all(
+    files.map(
+      async (f): Promise<[string, DerivationRecord]> => [
+        f.path,
+        await derivationRecord(f, { fs: fixture, root: CORPUS_ROOT }),
+      ],
+    ),
+  );
+  const cacheDir = "/storage/workspace/compositor";
+  const { fs, written, dirs } = writableCorpus();
+
+  await writeDerivations(fs, CORPUS_ROOT, cacheDir, records);
+
+  expect(dirs).toEqual([cacheDir]);
+  expect(Object.keys(written)).toEqual([`${cacheDir}/derivations.json`]);
+  const read = (await readDerivations(fs, cacheDir))!;
+  expect(read.root).toBe(CORPUS_ROOT);
+  expect([...read.records.keys()].sort()).toEqual(
+    files.map((f) => f.path).sort(),
+  );
+});
+
+test("derivations: an absent cache reads as null", async () => {
+  const { fs } = writableCorpus();
+  expect(await readDerivations(fs, "/storage/empty")).toBe(null);
+});
+
+/** The fixture made writable: writes land in `written` (and read back), and
+ * every `mkdir` is recorded. */
+const writableCorpus = () => {
+  const written: Record<string, string> = {};
+  const dirs: string[] = [];
+  const fs: CorpusFsWrite = {
+    ...fixture,
+    readFile: async (path) => written[path] ?? await fixture.readFile(path),
+    writeFile: (path, text) => {
+      written[path] = text;
+      return Promise.resolve();
+    },
+    mkdir: (path) => {
+      dirs.push(path);
+      return Promise.resolve();
+    },
+    remove: () => Promise.resolve(),
+  };
+  return { fs, written, dirs };
+};
 
 test("hashText: stable and content-sensitive", () => {
   expect(hashText("the cat sat")).toBe(hashText("the cat sat"));

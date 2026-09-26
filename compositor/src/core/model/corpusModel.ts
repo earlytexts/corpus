@@ -8,15 +8,16 @@
  * from the skeletons. Positioned documents — needed only by search and the
  * edited buffer — are compiled on demand through a bounded cache and released.
  *
- * Cold start seeds everything from the build's `catalogue/derivations.json`
- * (structure via `buildCatalogue` over the skeletons, indexes and doc-free
- * violations via the persisted records) with **no compiles**, so the tree and
- * Problems appear in well under a second rather than after the ~20s cold
+ * Cold start seeds everything from the Compositor's own `derivations.json` cache
+ * — kept in `cacheDir` (VS Code workspace storage, outside the checkout; the CLI
+ * build never writes it) — building structure via `buildCatalogue` over the
+ * skeletons, and indexes and doc-free violations via the persisted records,
+ * with **no compiles**, so the tree and Problems appear in well under a second rather than after the ~20s cold
  * compile. A background sweep then hashes the sources and, if any changed
  * out-of-session, reconciles (recompiling only the changed files, or a full
  * streamed compile when the set of files changed). A missing or stale
- * derivations file falls back to that full compile, which also rewrites the
- * build output. In-session edits recompile just the touched file and rebuild the
+ * derivations file falls back to that full compile, which also rewrites
+ * `catalogue/` (for the computer) and the cache. In-session edits recompile just the touched file and rebuild the
  * indexes/violations/structure from the resident records — no whole-corpus
  * recompile, and no whole-corpus documents resident — then write back just those
  * editions' `catalogue/documents/` (from their recompiled standalone bodies), so
@@ -79,12 +80,16 @@ export type Notifier = {
 };
 
 /** The outbound ports the model reaches the world through: the corpus
- * filesystem, the source watcher, and user notifications. Production adapters
- * are `nodeCorpusFs` + the vscode watcher/notifier; the tests bring fakes. */
+ * filesystem, the source watcher, user notifications, and where to keep the
+ * derivations cache. Production adapters are `nodeCorpusFs` + the vscode
+ * watcher/notifier + the extension's workspace storage; the tests bring fakes. */
 export type CorpusModelDeps = {
   fs: CorpusFsWrite;
   watch: CorpusWatcher;
   notify: Notifier;
+  /** The directory holding the derivations cache (created on first write), or
+   * undefined for none — every cold start is then a full compile. */
+  cacheDir: string | undefined;
 };
 
 export type CorpusState = {
@@ -193,7 +198,7 @@ const wordAndOverrideOf = (
 
 export const createCorpusModel = (
   root: string,
-  { fs, watch, notify }: CorpusModelDeps,
+  { fs, watch, notify, cacheDir }: CorpusModelDeps,
 ): CorpusModel => {
   const startEmitter = createEmitter<void>();
   const changeEmitter = createEmitter<CorpusChange>();
@@ -361,7 +366,7 @@ export const createCorpusModel = (
   // A background writer that keeps the build output fresh (the Compositor's own
   // next cold start, and the computer's dev input) without stacking writes or
   // blocking a load. Two scopes: a *full* rewrite (loadFull — the whole
-  // `catalogue/` + derivations) and a *docs* write-back (loadIncremental — just
+  // `catalogue/` + the derivations cache) and a *docs* write-back (loadIncremental — just
   // the changed editions' documents, plus catalogue.json/dictionary.json). A
   // full rewrite supersedes any pending docs write; a burst of saves coalesces
   // into one docs write, keyed by source so the last operation on each file
@@ -464,8 +469,9 @@ export const createCorpusModel = (
 
   /**
    * A full streamed compile: compile every source (transient peak), reduce each
-   * to its record, then release the documents. Rewrites the whole build output
-   * (`catalogue/` for the computer, with real bodies, plus `derivations.json`).
+   * to its record, then release the documents. Rewrites the computer's whole
+   * `catalogue/` (with real bodies) and, when there is a `cacheDir`, the
+   * derivations cache.
    * The fallback when the derivations cache is missing/stale, and the path a
    * structural change and the Rebuild command take.
    */
@@ -484,7 +490,7 @@ export const createCorpusModel = (
     }
     state = await stateFromRecords();
     // Write the computer's catalogue/ from the full-bodied documents (this needs
-    // the bodies, so it happens before they are dropped), plus derivations.
+    // the bodies, so it happens before they are dropped), plus the cache.
     const precompiled = new Map(
       files.map(
         (f) => [normalizePath(`${root}/data/${f.path}`), f.doc] as const,
@@ -494,7 +500,9 @@ export const createCorpusModel = (
     const snapshot = new Map(records);
     enqueueFull(async () => {
       await writeCatalogue(fs, root, full.catalogue, full.warnings);
-      await writeDerivations(fs, root, snapshot);
+      if (cacheDir !== undefined) {
+        await writeDerivations(fs, root, cacheDir, snapshot);
+      }
     });
     // `files`/`full` fall out of scope here — only the records and stubs remain.
     return fullChange();
@@ -610,12 +618,15 @@ export const createCorpusModel = (
   /* ---------------------------- cold start ---------------------------- */
 
   /**
-   * Seed from `catalogue/derivations.json` with no compiles, then reconcile in
-   * the background. A missing/stale/foreign cache (a fresh clone has none — it is
-   * gitignored) falls through to a full compile.
+   * Seed from the cached `derivations.json` with no compiles, then reconcile in
+   * the background. A missing/stale/foreign cache (a fresh workspace has none),
+   * or no `cacheDir` at all, falls through to a full compile.
    */
   const coldStart = async (): Promise<CorpusChange> => {
-    const derivations = await readDerivations(fs, root).catch(() => null);
+    const derivations =
+      cacheDir === undefined
+        ? null
+        : await readDerivations(fs, cacheDir).catch(() => null);
     const real = await fs.realPath(root).catch(() => root);
     if (derivations === null || derivations.root !== real) return loadFull();
     records.clear();

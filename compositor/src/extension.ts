@@ -157,6 +157,9 @@ export const activate = async (
       fs: nodeCorpusFs,
       watch: createCorpusWatcher,
       notify: vscodeNotifier,
+      // The derivations cache lives in this workspace's extension storage, out
+      // of the checkout (undefined only with no folder open: then no cache).
+      cacheDir: context.storageUri?.fsPath,
     });
     context.subscriptions.push(
       { dispose: () => model?.dispose() },
