@@ -62,7 +62,7 @@ export type AuthorMeta = {
   firstPublished?: number;
   nationality?: string;
   sex?: string;
-  /** VIAF cluster ID (digits) — see ../../README.md#external-identifiers. */
+  /** VIAF cluster ID (digits) — see ../../DATA_MODEL.md#7-external-identifiers. */
   viaf?: string;
   /** Wikidata item ID ("Q" + digits). */
   wikidata?: string;
@@ -141,7 +141,7 @@ export type EditionMeta = {
   sourceUrl?: string;
   sourceDesc?: string;
   /** ESTC citation number of the printed item this edition transcribes — see
-   * ../../README.md#external-identifiers. Absent on an edition that was never
+   * ../../DATA_MODEL.md#7-external-identifiers. Absent on an edition that was never
    * printed as an item of its own (an essay within a collection). */
   estc?: string;
   /** Text Creation Partnership text ID, where TCP transcribes this edition. */

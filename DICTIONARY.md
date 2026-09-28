@@ -2,6 +2,9 @@
 
 The dictionary (`data/dictionary/`) is the corpus's curated register of **surface forms**: every word as it is printed (lower-cased). It exists both to _eliminate noise_ from search and statistics downstream, and to _identify typographical errors_ in the transcribed texts.
 
+This is the register's reference and policy of record. Its three companions:
+[the editorial policy](./EDITORIAL.md) says what a corpus text is and why its spellings are never touched; [the markup policy](./MARKUP.md) covers the markup that accounts for the words the register deliberately does not hold — names, citations, foreign text; [the data model](./DATA_MODEL.md) has the metadata schema, including `[metadata.dictionary]`.
+
 There are two kinds of noise, and the dictionary addresses both:
 
 1. **Spelling noise**: the same word printed in different ways, e.g. "virtue" / "vertue", "seemed" / "seem'd". The dictionary _normalises_ these to a single canonical spelling.
@@ -21,11 +24,13 @@ Another way of stating the above:
 
 > Every token in every text is accounted for by **at least one** of: a dictionary entry for its folded surface; enclosure in person (`[p:]`) / place (`[l:]`) / org (`[o:]`) / citation (`[…]`) / language (`$…$`) markup; or a mechanical class (contains digits, or reads as a strict roman numeral).
 
-The rule is one pure function (`accountTokens` in `src/dictionary/account.ts`, over the word identity defined above). It is simultaneously the corpus's coverage check and the compositor's live squiggle engine.
+The rule is one pure function (`accountTokens` in `src/validation/account.ts`, over the word identity defined below). It is simultaneously the corpus's coverage check and the compositor's live squiggle engine.
+
+Which surfaces get markup rather than an entry — and where a span starts and stops — is [the markup policy](./MARKUP.md)'s business. The two documents meet here: a surface that ought to be marked up but is not shows in the coverage report as an unaccounted word, and registering it instead would silently destroy that signal.
 
 ## What Counts as a Word
 
-The unit the register is built from is the **token**, defined once in `src/words.ts` and shared by every consumer (the compositor, the computer). A token is a run of letters, digits, and apostrophes containing at least one letter or digit; leading, internal, and trailing apostrophes are all part of it (`'tis`, `o'clock`, `lookin'`). Two further characters _join_ what would otherwise be separate tokens — an **internal period** (`i.e`) and a **non-breaking space** (`a~priori`, `to~morrow`). **Hyphens, by contrast, split**: `self-love` is two tokens, `self` and `love`, so the register never holds a hyphenated key and each part must have its own entry. Every other character separates.
+The unit the register is built from is the **token**, defined once in `src/dictionary/words.ts` and shared by every consumer (the compositor, the computer). A token is a run of letters, digits, and apostrophes containing at least one letter or digit; leading, internal, and trailing apostrophes are all part of it (`'tis`, `o'clock`, `lookin'`). Two further characters _join_ what would otherwise be separate tokens — an **internal period** (`i.e`) and a **non-breaking space** (`a~priori`, `to~morrow`). **Hyphens, by contrast, split**: `self-love` is two tokens, `self` and `love`, so the register never holds a hyphenated key and each part must have its own entry. Every other character separates.
 
 A token becomes a dictionary **surface** by _folding_ — lower-casing, with the sole exception of the bare pronoun "I" (see [Normalisation](#normalisation)). Two classes of token are then held out of the register mechanically, never expected to have an entry: any token containing a digit, and any token that reads as a strict roman numeral.
 
@@ -167,6 +172,8 @@ Downstream, an ambiguous surface is counted as an instance of the _first_ lemma 
 
 There is one structural exception to "most common first". When an own-lemma reading is paired with a lemma statement over the same spelling (_better_ as a word in its own right vs as a form of **good**), the own-lemma reading must come first: a non-default reading is selected by its spelling or lemma string, and only the lemma statement has a distinct one. Where the other reading dominates an edition, the edition says so with a `[metadata.dictionary]` override.
 
+### Edition Overrides (`[metadata.dictionary]`)
+
 The default for an edition (or section within an edition) can be overridden by `[metadata.dictionary]` markup in the edition's metadata:
 
 ```
@@ -179,6 +186,8 @@ And the reading for an individual occurrence can be overridden by `[w:surface=va
 ```
 She [w:lay=lie] down on the bed.
 ```
+
+Prefer the edition-wide statement where one reading dominates a whole text: it is one line of metadata instead of one markup element per occurrence. `[metadata.dictionary]` cascades like the other inheriting metadata keys, and merges per surface — a section's map layers over its ancestors' rather than replacing it (see [data model §6](./DATA_MODEL.md#6-metadata-schema)).
 
 An override may also select the entry's _own_ default reading. That is not a no-op but a **pin**: it fixes the edition's meaning against a future reordering of the register's readings, so an edition that has been checked stays correct even if the corpus-wide default later flips.
 

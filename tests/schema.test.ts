@@ -33,7 +33,7 @@ test("schema: author identifiers accept VIAF digits and Wikidata Q-numbers", () 
     ),
   ).toEqual([]);
   // A URL rather than a bare ID, a padded VIAF, and a lowercase q are the
-  // mistakes worth catching (see ../README.md#external-identifiers).
+  // mistakes worth catching (see ../DATA_MODEL.md#7-external-identifiers).
   expect(
     identifierViolations(
       { viaf: "https://viaf.org/viaf/49226972" },

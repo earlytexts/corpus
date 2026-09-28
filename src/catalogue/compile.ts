@@ -4,7 +4,7 @@
  * responsibility: the computer consumes the compiled output (serialize.ts), it
  * does not scan or compile the corpus itself.
  *
- * Corpus layout (see ../README.md):
+ * Corpus layout (see ../../DATA_MODEL.md):
  *  - `data/authors/<author>.mit` holds an author's metadata (no text).
  *  - `data/works/<author>/<work>/` is a work. Its `index.mit` is a metadata-only
  *    stub: the work's edition-independent identity (title, breadcrumb) plus a

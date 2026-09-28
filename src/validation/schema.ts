@@ -1,7 +1,7 @@
 /**
  * The corpus metadata schema: the allowed keys, their types, and which are
  * required, for each kind of metadata block. This is the single source of truth
- * the validator enforces; the prose tables in ../README.md describe the same
+ * the validator enforces; the prose tables in ../../DATA_MODEL.md describe the same
  * schema for humans.
  */
 
@@ -89,7 +89,7 @@ export const authorRequired = [
 
 export const authorSexValues = ["Male", "Female"];
 
-/** The external identifiers an author may carry (see ../../README.md#external-identifiers). */
+/** The external identifiers an author may carry (see ../../DATA_MODEL.md#7-external-identifiers). */
 export const authorIdentifiers: Record<string, IdentifierFormat> = {
   viaf: { pattern: /^[1-9]\d*$/, shape: "a VIAF cluster ID (digits)" },
   wikidata: {
@@ -114,7 +114,7 @@ export const textSchema: Record<string, ValueType> = {
   dictionary: "map",
 };
 
-/** The external identifiers an edition may carry (see ../../README.md#external-identifiers). */
+/** The external identifiers an edition may carry (see ../../DATA_MODEL.md#7-external-identifiers). */
 export const textIdentifiers: Record<string, IdentifierFormat> = {
   estc: {
     pattern: /^[NPRSTW][1-9]\d*$/,

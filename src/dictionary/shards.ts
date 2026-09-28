@@ -131,7 +131,7 @@ export const parseDictionary = (
 };
 
 /** An entry's raw on-disk value: null, a reading string, or an ordered array
- * of them (= ambiguous). See ../README.md for the grammar. */
+ * of them (= ambiguous). See ../../DICTIONARY.md for the grammar. */
 export type EntryValue = null | string | (null | string)[];
 
 /**

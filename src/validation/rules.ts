@@ -1,9 +1,9 @@
 /**
  * Corpus validation as pure rules: every file must be valid Markit, formatted
  * canonically, and conform to the metadata schema and layout conventions in
- * ../README.md. Each rule returns structured violations rather than throwing,
- * so the same rule set drives both the Deno test wrapper
- * (../scripts/validate.ts) and editor diagnostics (the Compositor extension).
+ * ../../DATA_MODEL.md. Each rule returns structured violations rather than
+ * throwing, so the same rule set drives both the Deno test wrapper
+ * (../../tests/validate.test.ts) and editor diagnostics (the Compositor).
  *
  * Reads top-down: the contract types, then `validateCorpus`, then each rule as
  * a named const (assembled into `rules`), then `loadCorpus` (which builds the
@@ -348,7 +348,7 @@ const layoutConventions: Rule = {
     layoutViolations(fs, root, authorSlugs(files)),
 };
 
-// The structural tier of the dictionary validation (see ../README.md):
+// The structural tier of the dictionary validation (see ../../DICTIONARY.md):
 // shards parse, keys are folded words in the right shard in order, values are
 // well-formed — and, when all of that holds, each shard is byte-for-byte
 // canonical.

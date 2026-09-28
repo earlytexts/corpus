@@ -287,7 +287,7 @@ export const borrowedViolations = async (
   return violations;
 };
 
-/** The directory-tree conventions (see ../README.md). Reads the tree and the
+/** The directory-tree conventions (see ../../DATA_MODEL.md). Reads the tree and the
  * known author slugs, and nothing else — so a metadata edit never re-walks. */
 export const layoutViolations = async (
   fs: CorpusFs,

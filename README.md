@@ -1,178 +1,123 @@
-# The Corpus
+# The Early Text Corpus
 
-A corpus of early modern texts from the hand press era, stored in [Markit](https://github.com/earlytexts/markit/SPECIFICATION.md) format (`.mit` files). This document defines the corpus's data model, directory layout, and metadata schema. Files in this repository are expected to conform; the test pipeline enforces it.
+One central, publicly owned library of the texts that shaped the modern world —
+free to read, free to reuse, for ever.
 
-## Data model
-
-The corpus is organised around three entities:
-
-- **Author** — a person who wrote one or more works in the corpus.
-- **Work** — a distinct piece of writing by an author, abstracted from any particular printing (e.g. Hume's _Enquiry concerning Human Understanding_). A work is a directory; its `index.mit` is a metadata-only **stub** that holds the work's edition-independent identity (title, breadcrumb) and names its **canonical edition**.
-- **Edition** — a concrete dated text of a work: a transcription of the work as it appeared in a particular year (`1748`, `1742a`, …), enabling edition-to-edition comparison. Every work has at least one edition; the **canonical** one is the default a work resolves to (clicking the work, or searching without naming an edition). Works with only one edition still draw the distinction.
-
-Note that editions can contain other editions. For example, the 1753 edition of Hume's _Essays and Treatises_ contains the 1750 edition of the _Enquiry concerning Human Understanding_ (which was reprinted with no changes) and the 1753 edition of the _Enquiry concerning the Principles of Morals_ (which was revised) - alongside some other works. This also means that some editions belong to more than one work: the 1750 edition of the _Enquiry concerning Human Understanding_ belongs to both the _Enquiry concerning Human Understanding_ work and the _Essays and Treatises_ work.
-
-In these cases, every edition still has exactly one **host work** (the work that prefixes its ID), which is the work it is stored under on disk. This is its most "direct" ancestor (i.e. not usually a collection).
-
-## Directory layout
+The digital texts of the hand-press era are spread across many archives, image
+repositories and library catalogues, and some sit behind paywalls. This corpus
+gathers public-domain texts into a single open place, as **diplomatic
+transcriptions in [Markit](https://github.com/earlytexts/markit)** — a plain,
+human-readable format that a person can read and a machine can compile.
 
 ```
-data/authors/<author>.mit                      author metadata (no text)
-data/works/<author>/<work>/index.mit           the work (metadata + canonical pointer)
-data/works/<author>/<work>/<year>.mit          a dated edition (year = 1748, 1742a, …)
-data/dictionary/<a–z|other>.json               the dictionary shards (see The dictionary)
+{#12, pages="34"}
+BUT the omission of a trifling circumstance will often, by law, invalidate a
+contract, $la:in foro humano$, but not $la:in foro conscienti{ae}$, as
+[p:*Malebranche*] and other divines express themselves<n7>. //35// The
+magistrate is supposed only to withdraw his power of [-inforcing-][+enforcing+]
+the right.
 ```
 
-- `<author>` and `<work>` directory/file names are lowercase slugs. The `<author>` segment is normally one author's slug; a co-authored work instead uses a **joint host slug** — its authors' slugs joined with a hyphen, e.g. `astell-norris` — which is the work's identity but not itself an author (see below).
-- **Every work is a directory.** Its `index.mit` is a metadata-only stub carrying `title`, `breadcrumb`, and `canonical` (the slug of the default edition). It holds no text. A work's first-publication year is **not** stored here — it is derived from its editions (see below).
-- Sibling entries are the work's dated editions. An edition contains its text inline, and/or borrows the text of other editions through angle-bracket section references (see _Borrowed children_).
+That is one paragraph of one edition: block number, printed page, a Latin tag
+marked as Latin, a person marked as a person, a footnote reference, the page
+turn where it fell, and an editorial correction that keeps both readings. It
+still reads as prose, and it still diffs as prose.
 
-## Identifiers
+## What is in it now
 
-Markit document IDs follow the dotted form `Author.Work` (the stub) or `Author.Work.Edition` (a dated edition), e.g. `Hume.EHU` and `Hume.EHU.1748`. The ID must match the file path case-insensitively: `data/works/hume/ehu/1748.mit` holds `# Hume.EHU.1748`, and the stub `data/works/hume/ehu/index.mit` holds `# Hume.EHU`. Section IDs extend the document ID with one segment per level of nesting (`Hume.THN.1.2.3`); a borrowed edition carries its own full ID in its root heading (`# Hume.EHU.1750`), and is named from the borrowing collection by that ID in angle brackets (`## <Hume.EHU.1750>`).
+| | |
+| ----------------------- | ------------------------------------------------ |
+| Authors                 | 71                                               |
+| Works recorded          | 355 — **91** with at least one edition transcribed |
+| Editions recorded       | 918 — of which **588 are transcribed**           |
+| Period                  | 1650 – 1829                                      |
+| Words                   | 6.5 million                                      |
+| Register of spellings   | 26,653 surface forms, accounting for 99.2% of tokens |
 
-A work may have **more than one author**. For works with a clear primary author (collections, edited volumes) the work lives under that author's directory and lists just them. For **genuinely co-authored works** — epistolary exchanges where each author contributes equally — the work lives under a **joint host directory** whose slug joins the authors' slugs with a hyphen (in alphabetical order), e.g. `astell-norris`, and its root `authors` lists every author. That joint slug is the work's single identity and URL — its ID is `Astell-Norris.LLG` and it is served at `/astell-norris/llg`. Each section (e.g. a letter) overrides `authors` with the slug of whoever wrote it. The work appears once on disk but is listed in the catalogue under every author it names (and reached only through its joint URL, not under either author individually).
+The corpus's depth is currently in **David Hume**, whose works are covered
+exhaustively — every lifetime edition of the _Essays and Treatises_, the
+_Treatise_, the _History of England_, the _Dialogues_. Its breadth is the
+bibliographic record: 355 works by 71 authors are identified, dated and linked
+to their catalogue records, and most of them are waiting for someone to
+transcribe them.
 
-## Borrowed children
+Two public sites read the corpus: [davidhume.org](https://davidhume.org) and
+[englishphilosophy.org](https://englishphilosophy.org).
 
-By default a document's sections are its inline `##` texts, in file order. A section whose ID is wrapped in **angle brackets** is instead a _borrowed child_: a placeholder naming another edition, whose text is spliced in at that point. For example, in `data/works/hume/etss/1753.mit`:
+## Where to go
+
+| If you are…                                     | Read                                                                                     |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Thinking about contributing                     | **[Contributing](./CONTRIBUTING.md)** — scope, choosing a text, how review goes           |
+| Transcribing a text                             | **[Editorial policy](./EDITORIAL.md)** — what to preserve, what to regularise             |
+| Deciding what to mark up                        | [Markup policy](./MARKUP.md) — people, places, citations, foreign text                    |
+| Curating spellings                              | [The dictionary](./DICTIONARY.md) — the register, and the rules that govern it            |
+| Looking up the file layout or a metadata key    | [Data model](./DATA_MODEL.md) — entities, layout, the full schema                         |
+| Reviewing submissions or cutting a release      | [For editors](./EDITORS.md)                                                               |
+| Citing the corpus                               | [Citation](./CITATION.md)                                                                 |
+| Changing the code                               | [Architecture](./ARCHITECTURE.md)                                                         |
+| Learning the markup language                    | [Writing Markit](https://github.com/earlytexts/markit/blob/main/GUIDE.md)                 |
+
+## Contributing
+
+You do not need to know git, and you do not need to install anything but a text
+editor.
+
+1. Install [VS Code](https://code.visualstudio.com/).
+2. Install the **[Early Text Compositor](./compositor/README.md)** extension. It
+   sets the corpus up on your machine, gives you a browser of authors, works and
+   editions, validates as you type, and carries your finished work back to the
+   Centre for review — without ever naming a branch, a commit or a pull request.
+   [The walkthrough](./compositor/GUIDE.md) takes you from an empty computer to
+   a submitted correction.
+3. Read [the contributing guide](./CONTRIBUTING.md), pick something, and send it.
+
+The smallest useful contribution is a single corrected misreading. The most
+valuable is a text nobody has transcribed. Both are welcome, and neither has to
+be perfect — review exists to catch what you missed.
+
+## How it works
+
+Texts live in `data/` as `.mit` files, one per edition, organised by author and
+work:
 
 ```
-## <Hume.EHU.1750>
+data/authors/<author>.mit                 author metadata (no text)
+data/works/<author>/<work>/index.mit      the work: identity + canonical edition
+data/works/<author>/<work>/<year>.mit     a dated edition (1748, 1742a, 1739-40…)
+data/dictionary/<a–z|other>.json          the register of surface forms
 ```
 
-declares that the collection contains the text of `Hume.EHU.1750` (the edition at `data/works/hume/ehu/1750.mit`) here. The bracketed value is a full `Author.Work.Edition` document ID, resolved to its file case-insensitively (its `.mit` form, or its `<edition>/index.mit` directory form). A borrowed-child placeholder carries no text or metadata of its own — the loaded edition supplies both.
+`deno task build` compiles all of it into `catalogue/` — the boundary artefact
+every read-side consumer works from, and the input to
+[the computer](https://github.com/earlytexts/computer), which serves search,
+comparison and analysis over it.
 
-Inline and borrowed sections mix freely, in file order, so a collection can interleave its own front matter (an advertisement, say) with editions borrowed from sibling works.
+The corpus keeps itself honest with a rule set that runs in CI and, live, in the
+Compositor: every file compiles, every file is canonically formatted, the
+metadata schema holds, the layout holds, and every word in every text is either
+in the register, inside markup that exempts it, or mechanically excluded. That
+last rule — the **accounting rule** — is what lets an editor be shown a word the
+corpus has never seen, as a probable transcription error.
 
-## Metadata schema
-
-Keys are camelCase. Values use Markit's TOML-style `key = value` syntax. Keys not listed here are not allowed; propose additions in this document first.
-
-### Author (root of `data/authors/<author>.mit`)
-
-| Key           | Type   | Required | Notes                                                     |
-| ------------- | ------ | -------- | --------------------------------------------------------- |
-| `forename`    | string | yes      |                                                           |
-| `surname`     | string | yes      |                                                           |
-| `title`       | string | no       | honorific, e.g. `"Lord Kames"`                            |
-| `birth`       | number | yes      | year                                                      |
-| `death`       | number | yes      | year                                                      |
-| `nationality` | string | yes      | e.g. `"Scottish"`, `"English"`                             |
-| `sex`         | string | yes      | `"Male"` or `"Female"`                                    |
-| `viaf`        | string | no       | VIAF cluster ID, digits only, e.g. `"49226972"` (see below) |
-| `wikidata`    | string | no       | Wikidata item ID, e.g. `"Q37160"` (see below)             |
-
-### Texts (document roots and sections in `data/works/`)
-
-One schema applies to every text, all the way down: document roots and sections take the same keys. The keys split into two groups:
-
-- **Identity keys** (`title`, `breadcrumb`, `canonical`, `standalone`) describe the text itself and are never inherited.
-- **Cascading keys** (`authors`, `imported`, `published`, `sourceUrl`, `sourceDesc`, `estc`, `tcp`, `dictionary`) flow downward: a section without the key takes the nearest ancestor's value; setting it overrides the value for that text and its descendants. Don't set a cascading key on a section when the inherited value is already right. (`dictionary` cascades per surface: a section's map merges over its ancestors' rather than replacing them.)
-
-Inheritance operates within a file. Each file is valid on its own terms: required keys must be present on the document root, and present _or inherited_ on every section.
-
-| Key          | Type     | Required | Inherited | Notes                                                                                                                                         |
-| ------------ | -------- | -------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `title`      | string   | yes      | no        | full title; may contain Markit inline markup                                                                                                  |
-| `breadcrumb` | string   | yes      | no        | short title for navigation                                                                                                                    |
-| `authors`    | string[] | yes      | yes       | author slugs; a section overrides with whoever wrote it                                                                                       |
-| `canonical`  | string   | stub     | no        | **stub only**: slug of the work's default edition                                                                                             |
-| `standalone` | boolean  | no       | no        | **stub only**: whether the work lists in indexes on its own (default `true`)                                                                  |
-| `imported`   | boolean  | yes\*    | yes       | whether the text itself is present, beyond its metadata                                                                                       |
-| `published`  | number[] | yes\*    | yes       | year(s) this edition was published — usually one, an array only for an edition printed over several years (e.g. a multi-volume first edition) |
-| `sourceUrl`  | string   | no       | yes       | online transcription/facsimile the text was derived from                                                                                      |
-| `sourceDesc` | string   | no       | yes       | prose note on the text's provenance and editorial choices                                                                                     |
-| `estc`       | string   | no       | yes       | ESTC citation number of the printed item this edition transcribes, e.g. `"T77181"` (see below)                                                |
-| `tcp`        | string   | no       | yes       | Text Creation Partnership text ID, e.g. `"A52437"` (see below)                                                                                 |
-| `dictionary` | map      | no       | yes       | `[metadata.dictionary]` section: per-surface default-reading overrides (see [Edition overrides](DICTIONARY.md#edition-overrides-metadatadictionary))       |
-
-Notes:
-
-- The **work stub** (`index.mit`) is the exception to the schema: it carries `title`, `breadcrumb`, `authors`, and `canonical`, and nothing else (no text). `authors` is required (the work's authorship is identity), and `canonical` must name an edition that exists. The `yes\*` rows above (`imported`, `published`) are required on editions, not on stubs — and `published` must **not** appear on the stub, since a work's first-publication year is derived, not stored.
-- A work's first-publication year is **derived** as the earliest publication year across all its editions (the catalogue exposes it as `firstPublished`). When a work's earliest printing predates the oldest edition the corpus holds, record that year with an `imported = false` stub edition so the derived value stays right.
-- A text is "imported" when its content is present in the corpus (directly or via its descendants) — i.e. when a site can usefully link to it rather than merely list it. A partially-transcribed work sets `imported = true` at the root and `imported = false` on the missing sections (or vice versa).
-- `published` on a section records that the section entered the work in a particular year — e.g. an essay added to a later edition of the _Essays_.
-- `standalone` governs index listing only. A work borrowed into a collection (its editions spliced in as borrowed children, e.g. the parts of _Essays and Treatises_) is also a directory of its own, so it lists independently by default. Set `standalone = false` on its stub to keep it out of the indexes while leaving it reachable through the collection(s) that borrow it. It does not affect search, retrieval, or the collection itself.
-- `estc` and `tcp` are edition-level, like `sourceUrl`: they belong on a dated edition, never on the work stub (a work is abstracted from any particular printing, so it has no ESTC record).
-
-### External identifiers
-
-Four optional keys tie the corpus's own entities to the authority records for them elsewhere. Each holds the bare identifier, not a URL — the URL is built from it, so a change of provider does not touch the data:
-
-| Key        | On      | Form                                            | Resolves to                                       |
-| ---------- | ------- | ----------------------------------------------- | ------------------------------------------------- |
-| `viaf`     | author  | digits, e.g. `49226972`                         | `https://viaf.org/viaf/<id>`                      |
-| `wikidata` | author  | `Q` + digits, e.g. `Q37160`                     | `https://www.wikidata.org/wiki/<id>`              |
-| `estc`     | edition | `N`/`P`/`R`/`S`/`T`/`W` + digits, e.g. `T77181` | `https://datb.cerl.org/estc/<id>`                 |
-| `tcp`      | edition | `A00002`, `K000039.000`                         | `https://github.com/textcreationpartnership/<id>` |
-
-- **`viaf`** — the [VIAF](https://viaf.org) cluster for the author: the identifier libraries agree on, and the hub from which the national authority files (LC, BnF, DNB, …) hang. Digits only; VIAF clusters do merge, in which case the old ID redirects.
-- **`wikidata`** — the [Wikidata](https://www.wikidata.org) item for the author. Preferred over a Wikipedia article title because it survives a page rename, and because it reaches the article in every language (and the author's other identifiers) from one stable ID.
-- **`estc`** — the citation number of the record in the [English Short Title Catalogue](https://datb.cerl.org/estc) describing the printed item this edition transcribes. ESTC describes items **as published**, so the key belongs on the edition that was itself a printed item. An edition that only ever appeared inside a collection (a single essay, or a part reprinted unchanged within a larger volume) has no ESTC record of its own and carries no `estc`; the collection edition that _was_ printed carries it. ESTC moved from the British Library to CERL, which serves the records at `datb.cerl.org` (the old `estc.bl.uk/<id>` URLs no longer resolve to a record).
-- **`tcp`** — the [Text Creation Partnership](https://github.com/textcreationpartnership) text ID, where a TCP transcription of this same edition exists. The prefix names the phase: `A`/`B` = EEBO-TCP 1/2, `K` = ECCO-TCP, `N` = Evans-TCP. Set it only when the TCP text transcribes _this_ edition, not merely the same work. The ID resolves to the TCP text's own repository, which is the project's distribution point for every phase; where the corpus took its text from a reading interface over TCP (Michigan's `quod.lib.umich.edu`), that URL is in `sourceUrl`.
-
-### Block metadata
-
-| Key          | Type     | Notes                                                                     |
-| ------------ | -------- | ------------------------------------------------------------------------- |
-| `pages`      | string   | page range in the source text, e.g. `"253"`, `"253-5"`                    |
-| `speaker`    | string   | who speaks this block, in dialogues (e.g. `"Philo"` in the _Dialogues_)   |
-| `subsection` | string   | numbered subdivision this block opens, where sections have internal parts |
-| `authors`    | string[] | author(s) of this block, where they differ from the section's authors     |
-
-## The dictionary
-
-The dictionary (`data/dictionary/`) is the corpus's curated register of surface forms: every word as printed, lower-cased (the only mechanical normalisation). It aspires to be a **full register**, not an exception table, so that we can highlight unseen words in the texts as potential typographical errors. It records each surface's modern spelling and its **lemma** (citation form), and marks the ambiguous cases.
-
-See **[DICTIONARY.md](DICTIONARY.md)** for the full reference: the lemmatisation policy (what collapses onto a shared lemma and what stays apart), the on-disk micro-syntax, the accounting rule, `[w:]` markup and edition overrides, and the validation tiers.
-
-## Formatting
-
-Every `.mit` file must compile without errors and be formatted exactly as the Markit formatter (`format()` from `@earlytexts/markit`) would emit it, and every dictionary shard must match the canonical form written by `deno task fmt`. The test pipeline checks both.
-
-## Validation
+## Development
 
 ```sh
-deno task build      # compile the catalogue to catalogue/ (the computer's input)
-deno task test       # unit tests for the catalogue build + full corpus validation
-                     #   (compile + formatting + schema + layout + dictionary checks,
-                     #   and the dictionary coverage report)
-deno task fmt        # apply deno fmt, the Markit formatter to every .mit file,
-                     #   and canonicalise the dictionary shards
-deno task check      # typecheck and lint the source and test code
+deno task build      # compile the catalogue to catalogue/
+deno task test       # unit tests + full corpus validation + the coverage report
+deno task check      # typecheck + lint
+deno task fmt        # format the TypeScript, the .mit texts, and the shards
+deno task fmt:check  # verify all three
 ```
 
-The rules themselves live in `src/validation/rules.ts` as pure functions returning structured violations; `tests/validate.test.ts` is a thin test wrapper that runs each rule over the real corpus.
+The corpus is published to [JSR](https://jsr.io/@earlytexts/corpus) as
+`@earlytexts/corpus`, with a deliberately narrow surface: the wire contract the
+computer reads, and a test harness. The VS Code extension is a separate npm
+package in [compositor/](./compositor/). See
+[the architecture notes](./ARCHITECTURE.md).
 
-## Architecture
+## Licence
 
-The code implements two pipelines over the data model above, plus the foundations they share. Everything in `src/` is runtime-neutral and pure: filesystem access goes through the `CorpusFs` port (`src/fs/ports.ts`), so any host — the Deno scripts here, the Node-based Compositor, the computer's Deno build wrapper, an in-memory test corpus — brings its own binding. `src/` groups by concern: the two entry-point modules (`wire`, `index`) sit at the top and re-export the implementations beneath them, grouped into `fs/` (the injected disk layer), `dictionary/` (the register), `catalogue/` (the compiled catalogue's shape), `build/` (the effectful bindings that produce it on disk), and `validation/` (the corpus rules). Those directories are also the publish boundary: `wire` and the pure `fs/`, `dictionary/`, `catalogue/` ship to JSR, while `build/`, `validation/`, and `index` stay in-repo — so the published surface is a whole-directory subset rather than a carve-out (see [deno.json](deno.json)'s `publish.include`). The third published entry point is the test harness (`tests/harness.ts`, the `@earlytexts/corpus/test` subpath): fixture-building helper logic, so it lives under `tests/` with the tests it serves rather than in `src/`. Modules read top-down: each file's entry points come first, with helpers below their callers.
-
-**The build pipeline** compiles the corpus into `catalogue/`, the boundary artefact every read-side consumer works from:
-
-```
-data/*.mit ──buildCatalogue──▶ Catalogue ──serializeCatalogue──▶ writeCatalogue ──▶ catalogue/
- (source)  (catalogue/compile) (in memory) (catalogue/serialize) (build/write)        │
-                                                                                       ▼
-                              Catalogue ◀──────loadCatalogue───────────────── catalogue.json
-                             (in memory)   (catalogue/deserialize)           + documents/*.json
-```
-
-- `catalogue/compile.ts` — scans `data/`, compiles every file with `@earlytexts/markit`, resolves borrowed children, and derives the author/work/edition structure (plus the parsed dictionary).
-- `catalogue/serialize.ts` / `catalogue/deserialize.ts` — the wire format, owned here in both directions. Documents are written _uncomposed_ (a borrowed child is a `{ __ref }` placeholder); `loadCatalogue` splices the single shared instance back in, recreating the object graph.
-- `catalogue/types.ts` — the catalogue types: each entity is a shared metadata base plus the field that differs between the in-memory and serialised layers.
-- `build/write.ts` — writes `catalogue/catalogue.json` plus one document file per edition and the expanded `dictionary.json`, replacing the directory wholesale so stale files never linger. It lives in `build/` (not `catalogue/`) because it is effectful and in-repo only: no read-side consumer writes the catalogue. `build/node.ts`, the disk-backed `CorpusFs` binding these scripts run on, sits beside it.
-
-**The validation pipeline** (`validation/rules.ts`) enforces this document's rules: `loadCorpus` compiles every file standalone, and each `Rule` returns structured violations. The same rules drive corpus validation (part of `deno task test`) and the Compositor's editor diagnostics. `validation/schema.ts` holds the metadata schema as data (the tables above are its prose form), and `validation/account.ts` is the accounting rule — token coverage — shared with the Compositor's live squiggle engine; it reads the register but is a validation rule, so it lives here rather than in `dictionary/`.
-
-**The dictionary** (`dictionary/`) is the register of surface forms, split by concern: `words.ts` (word identity: segmentation, folding, roman numerals, and the block tokenizer — the primitive the register is keyed on, exported on `wire` so every consumer shares one definition of "a word"), `types.ts` (the expanded and authored shapes), `resolve.ts` (the read-side: `[w:]`/override selection, re-exported on `wire`), `shards.ts` (the on-disk shard micro-syntax, both directions), and `expand.ts` (composing authored facts into the expanded dictionary, plus the register-level violations).
-
-**Foundations**: `fs/` holds the injected disk layer both pipelines share — `ports.ts` (the `CorpusFs` filesystem ports) and `paths.ts` (slug and resolution conventions). The concrete disk binding (`build/node.ts`) and the catalogue writer (`build/write.ts`) are the effectful `build/` tier above, kept off the published surface.
-
-## As a library
-
-The package is published to [JSR](https://jsr.io/@earlytexts/corpus) as unbundled TypeScript source; JSR generates the type declarations, and its npm compatibility layer (`npm.jsr.io`, package name `@jsr/earlytexts__corpus`) serves transpiled JS + `.d.ts` to Node consumers. Deno consumers (the computer) import `jsr:@earlytexts/corpus` directly. The published package exists for the computer alone, so its surface is deliberately narrow — just two subpaths:
-
-- `@earlytexts/corpus/wire` (`src/wire.ts`) — the wire contract only: the catalogue types, serialize/deserialize, `loadCatalogue`. This is all the computer's _application_ code imports; its runtime reads `catalogue/` and never scans or compiles `.mit`.
-- `@earlytexts/corpus/test` (`tests/harness.ts`) — the in-memory corpus builder the corpus's and the computer's tests share, plus `buildCatalogue` (the compiler) to compile a fixture map into a catalogue in memory. It is test-support code, so it lives under `tests/`, not `src/` — the one published file outside `src/`. This is the computer's only door onto the compiler: in production it builds `catalogue/` by running this checkout's own `deno task build` (its `scripts/build-corpus.ts` shells out to it), not by importing the compiler.
+MIT — see [the licence](./LICENSE.md). The underlying printed texts are in the
+public domain, and the Centre claims no new rights in them. See
+[the citation guide](./CITATION.md).
